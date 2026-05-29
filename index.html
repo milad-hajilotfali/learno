@@ -3,11 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Flashcards — Persian & German</title>
+  <title>Memzy — Persian & German Flashcards</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Memzy" />
+  <meta name="theme-color" content="#5A4FE3" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 200 200'><rect width='200' height='200' rx='44' fill='%23F1F0F6'/><path d='M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z' transform='translate(100,112) scale(1.10) translate(-100,-112)' fill='%234036A6'/><path d='M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z' transform='translate(100,110) scale(1.05) translate(-100,-110)' fill='%2325A98C'/><path d='M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z' transform='translate(100,109) scale(1.02) translate(-100,-109)' fill='%23FFFFFF'/><path d='M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z' fill='%235A4FE3'/><path d='M70,110 Q80,99 90,110' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/><path d='M110,110 Q120,99 130,110' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/><path d='M82,128 Q100,146 118,128' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/></svg>" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 200 200'><rect width='200' height='200' rx='44' fill='%23F1F0F6'/><path d='M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z' fill='%235A4FE3'/><path d='M70,110 Q80,99 90,110' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/><path d='M110,110 Q120,99 130,110' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/><path d='M82,128 Q100,146 118,128' stroke='%23FFFFFF' stroke-width='7' fill='none' stroke-linecap='round'/></svg>" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     html, body { margin: 0; padding: 0; background: #F5F4FB; overflow: hidden; }
     #root { height: 100vh; height: 100dvh; }
@@ -23,49 +31,61 @@ const { useState, useRef, useEffect, useMemo } = React;
 const TTS_KEY = ""; // <-- paste your Google Cloud TTS API key here for reliable Persian audio
 
 /* =========================================================================
-   DATA LAYER — mock service.
+   DATA — flashcards grouped by CEFR level.
    ========================================================================= */
 const WORDS = [
-  { id: "fa1",  language: "fa", word: "salam",        farsi: "سلام",        pron: "sa-LÂM",        translation: "hello",          imageWord: "hello,wave",     example: "Salam, chetori?",            farsiExample: "سلام، چطوری؟",            exampleTranslation: "Hello, how are you?",        note: "greeting" },
-  { id: "fa2",  language: "fa", word: "mamnoon",      farsi: "ممنون",       pron: "mam-NOON",      translation: "thank you",      imageWord: "thankyou,gift",  example: "Mamnoon az komaket.",        farsiExample: "ممنون از کمکت.",          exampleTranslation: "Thanks for your help.",      note: "interjection" },
-  { id: "fa3",  language: "fa", word: "ab",           farsi: "آب",          pron: "ÂB",            translation: "water",          imageWord: "water,glass",    example: "Lotfan yek livan ab.",       farsiExample: "لطفاً یک لیوان آب.",       exampleTranslation: "A glass of water, please.",  note: "noun" },
-  { id: "fa4",  language: "fa", word: "nan",          farsi: "نان",         pron: "NÂN",           translation: "bread",          imageWord: "bread,loaf",     example: "Man nan doost daram.",       farsiExample: "من نان دوست دارم.",        exampleTranslation: "I like bread.",              note: "noun" },
-  { id: "fa5",  language: "fa", word: "khoone",       farsi: "خونه",        pron: "KHOO-ne",       translation: "house / home",   imageWord: "house,home",     example: "Khoone-ye man bozorg ast.",  farsiExample: "خونه‌ی من بزرگ است.",      exampleTranslation: "My house is big.",           note: "noun · colloquial of 'khaneh'" },
-  { id: "fa6",  language: "fa", word: "doost",        farsi: "دوست",        pron: "DOOST",         translation: "friend",         imageWord: "friends",        example: "Oo doost-e man ast.",        farsiExample: "او دوست من است.",          exampleTranslation: "He/she is my friend.",       note: "noun" },
-  { id: "fa7",  language: "fa", word: "ketab",        farsi: "کتاب",        pron: "ke-TÂB",        translation: "book",           imageWord: "book",           example: "In ketab jaleb ast.",        farsiExample: "این کتاب جالب است.",       exampleTranslation: "This book is interesting.",  note: "noun" },
-  { id: "fa8",  language: "fa", word: "dooset daram", farsi: "دوستت دارم",  pron: "DOO-set DÂ-ram", translation: "I love you",    imageWord: "love,heart",     example: "Man dooset daram.",          farsiExample: "من دوستت دارم.",           exampleTranslation: "I love you.",                note: "phrase" },
-  { id: "fa9",  language: "fa", word: "gorbe",        farsi: "گربه",        pron: "GOR-be",        translation: "cat",            imageWord: "cat,kitten",     example: "Gorbe roo miz ast.",         farsiExample: "گربه روی میز است.",        exampleTranslation: "The cat is on the table.",   note: "noun" },
-  { id: "fa10", language: "fa", word: "sag",          farsi: "سگ",          pron: "SAG",           translation: "dog",            imageWord: "dog,puppy",      example: "Sag-e man kuchik ast.",      farsiExample: "سگ من کوچک است.",          exampleTranslation: "My dog is small.",           note: "noun" },
-  { id: "fa11", language: "fa", word: "bozorg",       farsi: "بزرگ",        pron: "bo-ZORG",       translation: "big",            imageWord: "elephant,big",   example: "Yek khaneye bozorg.",        farsiExample: "یک خانه‌ی بزرگ.",          exampleTranslation: "A big house.",               note: "adjective" },
-  { id: "fa12", language: "fa", word: "kuchik",       farsi: "کوچک",        pron: "koo-CHIK",      translation: "small",          imageWord: "mouse,tiny",     example: "Yek gorbeye kuchik.",        farsiExample: "یک گربه‌ی کوچک.",          exampleTranslation: "A small cat.",               note: "adjective" },
-  { id: "fa13", language: "fa", word: "emrooz",       farsi: "امروز",       pron: "em-ROOZ",       translation: "today",          imageWord: "calendar",       example: "Emrooz hava khoob ast.",     farsiExample: "امروز هوا خوب است.",       exampleTranslation: "Today the weather is good.", note: "adverb" },
-  { id: "fa14", language: "fa", word: "farda",        farsi: "فردا",        pron: "far-DÂ",        translation: "tomorrow",       imageWord: "sunrise",        example: "Farda mibinamet.",           farsiExample: "فردا می‌بینمت.",           exampleTranslation: "See you tomorrow.",          note: "adverb" },
-  { id: "fa15", language: "fa", word: "khoob",        farsi: "خوب",         pron: "KHOOB",         translation: "good",           imageWord: "thumbsup",       example: "Hal-e man khoob ast.",       farsiExample: "حال من خوب است.",          exampleTranslation: "I'm good.",                  note: "adjective" },
-  { id: "de1",  language: "de", word: "hallo",        pron: "HA-lo",         translation: "hello",          imageWord: "hello,wave",     example: "Hallo, wie geht's?",         exampleTranslation: "Hello, how are you?",        note: "greeting" },
-  { id: "de2",  language: "de", word: "danke",        pron: "DAN-ke",        translation: "thank you",      imageWord: "thankyou,gift",  example: "Danke für deine Hilfe.",     exampleTranslation: "Thanks for your help.",      note: "interjection" },
-  { id: "de3",  language: "de", word: "das Wasser",   pron: "das VA-ser",    translation: "water",          imageWord: "water,glass",    example: "Ein Glas Wasser, bitte.",    exampleTranslation: "A glass of water, please.",  note: "noun · neuter (das)" },
-  { id: "de4",  language: "de", word: "das Brot",     pron: "das BROHT",     translation: "bread",          imageWord: "bread,loaf",     example: "Ich mag Brot.",              exampleTranslation: "I like bread.",              note: "noun · neuter (das)" },
-  { id: "de5",  language: "de", word: "das Haus",     pron: "das HOWS",      translation: "house",          imageWord: "house,home",     example: "Mein Haus ist groß.",        exampleTranslation: "My house is big.",           note: "noun · neuter (das)" },
-  { id: "de6",  language: "de", word: "der Freund",   pron: "dair FROYNT",   translation: "friend",         imageWord: "friends",        example: "Er ist mein Freund.",        exampleTranslation: "He is my friend.",           note: "noun · masculine (der)" },
-  { id: "de7",  language: "de", word: "das Buch",     pron: "das BOOKH",     translation: "book",           imageWord: "book",           example: "Das Buch ist interessant.",  exampleTranslation: "The book is interesting.",   note: "noun · neuter (das)" },
-  { id: "de8",  language: "de", word: "die Katze",    pron: "dee KAT-se",    translation: "cat",            imageWord: "cat,kitten",     example: "Die Katze ist auf dem Tisch.", exampleTranslation: "The cat is on the table.", note: "noun · feminine (die)" },
-  { id: "de9",  language: "de", word: "der Hund",     pron: "dair HUNT",     translation: "dog",            imageWord: "dog,puppy",      example: "Mein Hund ist klein.",       exampleTranslation: "My dog is small.",           note: "noun · masculine (der)" },
-  { id: "de10", language: "de", word: "gut",          pron: "GOOT",          translation: "good",           imageWord: "thumbsup",       example: "Mir geht es gut.",           exampleTranslation: "I'm good.",                  note: "adjective" },
-  { id: "de11", language: "de", word: "groß",         pron: "GROHSS",        translation: "big",            imageWord: "elephant,big",   example: "Ein großes Haus.",           exampleTranslation: "A big house.",               note: "adjective" },
-  { id: "de12", language: "de", word: "klein",        pron: "KLINE",         translation: "small",          imageWord: "mouse,tiny",     example: "Eine kleine Katze.",         exampleTranslation: "A small cat.",               note: "adjective" },
-  { id: "de13", language: "de", word: "heute",        pron: "HOY-te",        translation: "today",          imageWord: "calendar",       example: "Heute ist das Wetter schön.", exampleTranslation: "Today the weather is nice.", note: "adverb" },
-  { id: "de14", language: "de", word: "morgen",       pron: "MOR-gen",       translation: "tomorrow",       imageWord: "sunrise",        example: "Bis morgen!",                exampleTranslation: "See you tomorrow!",          note: "adverb" },
-  { id: "de15", language: "de", word: "schön",        pron: "SHURN",         translation: "beautiful / nice", imageWord: "flower,beauty",  example: "Das ist sehr schön.",        exampleTranslation: "That is very nice.",         note: "adjective" },
+  { id: "fa1",  language: "fa", level: "A1", word: "salam",        farsi: "سلام",        pron: "sa-LÂM",        translation: "hello",          example: "Salam, chetori?",            farsiExample: "سلام، چطوری؟",            exampleTranslation: "Hello, how are you?",        note: "greeting" },
+  { id: "fa2",  language: "fa", level: "A1", word: "mamnoon",      farsi: "ممنون",       pron: "mam-NOON",      translation: "thank you",      example: "Mamnoon az komaket.",        farsiExample: "ممنون از کمکت.",          exampleTranslation: "Thanks for your help.",      note: "interjection" },
+  { id: "fa3",  language: "fa", level: "A1", word: "ab",           farsi: "آب",          pron: "ÂB",            translation: "water",          example: "Lotfan yek livan ab.",       farsiExample: "لطفاً یک لیوان آب.",       exampleTranslation: "A glass of water, please.",  note: "noun" },
+  { id: "fa4",  language: "fa", level: "A1", word: "nan",          farsi: "نان",         pron: "NÂN",           translation: "bread",          example: "Man nan doost daram.",       farsiExample: "من نان دوست دارم.",        exampleTranslation: "I like bread.",              note: "noun" },
+  { id: "fa15", language: "fa", level: "A1", word: "khoob",        farsi: "خوب",         pron: "KHOOB",         translation: "good",           example: "Hal-e man khoob ast.",       farsiExample: "حال من خوب است.",          exampleTranslation: "I'm good.",                  note: "adjective" },
+  { id: "fa8",  language: "fa", level: "A1", word: "dooset daram", farsi: "دوستت دارم",  pron: "DOO-set DÂ-ram", translation: "I love you",    example: "Man dooset daram.",          farsiExample: "من دوستت دارم.",           exampleTranslation: "I love you.",                note: "phrase" },
+  { id: "fa5",  language: "fa", level: "A2", word: "khoone",       farsi: "خونه",        pron: "KHOO-ne",       translation: "house / home",   example: "Khoone-ye man bozorg ast.",  farsiExample: "خونه‌ی من بزرگ است.",      exampleTranslation: "My house is big.",           note: "noun · colloquial" },
+  { id: "fa6",  language: "fa", level: "A2", word: "doost",        farsi: "دوست",        pron: "DOOST",         translation: "friend",         example: "Oo doost-e man ast.",        farsiExample: "او دوست من است.",          exampleTranslation: "He/she is my friend.",       note: "noun" },
+  { id: "fa7",  language: "fa", level: "A2", word: "ketab",        farsi: "کتاب",        pron: "ke-TÂB",        translation: "book",           example: "In ketab jaleb ast.",        farsiExample: "این کتاب جالب است.",       exampleTranslation: "This book is interesting.",  note: "noun" },
+  { id: "fa9",  language: "fa", level: "A2", word: "gorbe",        farsi: "گربه",        pron: "GOR-be",        translation: "cat",            example: "Gorbe roo miz ast.",         farsiExample: "گربه روی میز است.",        exampleTranslation: "The cat is on the table.",   note: "noun" },
+  { id: "fa10", language: "fa", level: "A2", word: "sag",          farsi: "سگ",          pron: "SAG",           translation: "dog",            example: "Sag-e man kuchik ast.",      farsiExample: "سگ من کوچک است.",          exampleTranslation: "My dog is small.",           note: "noun" },
+  { id: "fa11", language: "fa", level: "B1", word: "bozorg",       farsi: "بزرگ",        pron: "bo-ZORG",       translation: "big",            example: "Yek khaneye bozorg.",        farsiExample: "یک خانه‌ی بزرگ.",          exampleTranslation: "A big house.",               note: "adjective" },
+  { id: "fa12", language: "fa", level: "B1", word: "kuchik",       farsi: "کوچک",        pron: "koo-CHIK",      translation: "small",          example: "Yek gorbeye kuchik.",        farsiExample: "یک گربه‌ی کوچک.",          exampleTranslation: "A small cat.",               note: "adjective" },
+  { id: "fa13", language: "fa", level: "B1", word: "emrooz",       farsi: "امروز",       pron: "em-ROOZ",       translation: "today",          example: "Emrooz hava khoob ast.",     farsiExample: "امروز هوا خوب است.",       exampleTranslation: "Today the weather is good.", note: "adverb" },
+  { id: "fa14", language: "fa", level: "B1", word: "farda",        farsi: "فردا",        pron: "far-DÂ",        translation: "tomorrow",       example: "Farda mibinamet.",           farsiExample: "فردا می‌بینمت.",           exampleTranslation: "See you tomorrow.",          note: "adverb" },
+  { id: "fa16", language: "fa", level: "B2", word: "tajrobe",      farsi: "تجربه",       pron: "taj-RO-be",     translation: "experience",     example: "In yek tajrobe-ye khoob bood.", farsiExample: "این یک تجربه‌ی خوب بود.", exampleTranslation: "That was a good experience.", note: "noun" },
+  { id: "fa17", language: "fa", level: "B2", word: "moshkel",      farsi: "مشکل",        pron: "mosh-KEL",      translation: "problem",        example: "Moshkeli nist.",             farsiExample: "مشکلی نیست.",              exampleTranslation: "No problem.",                note: "noun" },
+  { id: "fa18", language: "fa", level: "B2", word: "tasmim",       farsi: "تصمیم",       pron: "tas-MIM",       translation: "decision",       example: "Man tasmim gereftam.",       farsiExample: "من تصمیم گرفتم.",          exampleTranslation: "I made a decision.",         note: "noun" },
+  { id: "fa19", language: "fa", level: "C1", word: "farhang",      farsi: "فرهنگ",       pron: "far-HANG",      translation: "culture",        example: "Farhang-e Iran ghani ast.",  farsiExample: "فرهنگ ایران غنی است.",     exampleTranslation: "Iranian culture is rich.",   note: "noun" },
+  { id: "fa20", language: "fa", level: "C1", word: "eqtesad",      farsi: "اقتصاد",      pron: "eq-te-SÂD",     translation: "economy",        example: "Eqtesad roshd kard.",        farsiExample: "اقتصاد رشد کرد.",          exampleTranslation: "The economy grew.",          note: "noun" },
+  { id: "fa21", language: "fa", level: "C1", word: "barresi",      farsi: "بررسی",       pron: "bar-ra-SI",     translation: "analysis / review", example: "Barresi-ye daghigh lazem ast.", farsiExample: "بررسی دقیق لازم است.",   exampleTranslation: "A careful analysis is needed.", note: "noun" },
+  { id: "de1",  language: "de", level: "A1", word: "hallo",        pron: "HA-lo",         translation: "hello",          example: "Hallo, wie geht's?",         exampleTranslation: "Hello, how are you?",        note: "greeting" },
+  { id: "de2",  language: "de", level: "A1", word: "danke",        pron: "DAN-ke",        translation: "thank you",      example: "Danke für deine Hilfe.",     exampleTranslation: "Thanks for your help.",      note: "interjection" },
+  { id: "de3",  language: "de", level: "A1", word: "das Wasser",   pron: "das VA-ser",    translation: "water",          example: "Ein Glas Wasser, bitte.",    exampleTranslation: "A glass of water, please.",  note: "noun · neuter (das)" },
+  { id: "de4",  language: "de", level: "A1", word: "das Brot",     pron: "das BROHT",     translation: "bread",          example: "Ich mag Brot.",              exampleTranslation: "I like bread.",              note: "noun · neuter (das)" },
+  { id: "de10", language: "de", level: "A1", word: "gut",          pron: "GOOT",          translation: "good",           example: "Mir geht es gut.",           exampleTranslation: "I'm good.",                  note: "adjective" },
+  { id: "de5",  language: "de", level: "A2", word: "das Haus",     pron: "das HOWS",      translation: "house",          example: "Mein Haus ist groß.",        exampleTranslation: "My house is big.",           note: "noun · neuter (das)" },
+  { id: "de6",  language: "de", level: "A2", word: "der Freund",   pron: "dair FROYNT",   translation: "friend",         example: "Er ist mein Freund.",        exampleTranslation: "He is my friend.",           note: "noun · masculine (der)" },
+  { id: "de7",  language: "de", level: "A2", word: "das Buch",     pron: "das BOOKH",     translation: "book",           example: "Das Buch ist interessant.",  exampleTranslation: "The book is interesting.",   note: "noun · neuter (das)" },
+  { id: "de8",  language: "de", level: "A2", word: "die Katze",    pron: "dee KAT-se",    translation: "cat",            example: "Die Katze ist auf dem Tisch.", exampleTranslation: "The cat is on the table.", note: "noun · feminine (die)" },
+  { id: "de9",  language: "de", level: "A2", word: "der Hund",     pron: "dair HUNT",     translation: "dog",            example: "Mein Hund ist klein.",       exampleTranslation: "My dog is small.",           note: "noun · masculine (der)" },
+  { id: "de11", language: "de", level: "B1", word: "groß",         pron: "GROHSS",        translation: "big",            example: "Ein großes Haus.",           exampleTranslation: "A big house.",               note: "adjective" },
+  { id: "de12", language: "de", level: "B1", word: "klein",        pron: "KLINE",         translation: "small",          example: "Eine kleine Katze.",         exampleTranslation: "A small cat.",               note: "adjective" },
+  { id: "de13", language: "de", level: "B1", word: "heute",        pron: "HOY-te",        translation: "today",          example: "Heute ist das Wetter schön.", exampleTranslation: "Today the weather is nice.", note: "adverb" },
+  { id: "de14", language: "de", level: "B1", word: "morgen",       pron: "MOR-gen",       translation: "tomorrow",       example: "Bis morgen!",                exampleTranslation: "See you tomorrow!",          note: "adverb" },
+  { id: "de15", language: "de", level: "B1", word: "schön",        pron: "SHURN",         translation: "beautiful / nice", example: "Das ist sehr schön.",        exampleTranslation: "That is very nice.",         note: "adjective" },
+  { id: "de16", language: "de", level: "B2", word: "die Erfahrung", pron: "dee er-FA-rung", translation: "experience",   example: "Das war eine gute Erfahrung.", exampleTranslation: "That was a good experience.", note: "noun · feminine (die)" },
+  { id: "de17", language: "de", level: "B2", word: "das Problem",  pron: "das pro-BLAYM", translation: "problem",        example: "Kein Problem.",              exampleTranslation: "No problem.",                note: "noun · neuter (das)" },
+  { id: "de18", language: "de", level: "B2", word: "die Entscheidung", pron: "dee ent-SHY-dung", translation: "decision", example: "Ich habe eine Entscheidung getroffen.", exampleTranslation: "I made a decision.", note: "noun · feminine (die)" },
+  { id: "de19", language: "de", level: "C1", word: "die Kultur",   pron: "dee kul-TOOR",  translation: "culture",        example: "Die deutsche Kultur ist vielfältig.", exampleTranslation: "German culture is diverse.", note: "noun · feminine (die)" },
+  { id: "de20", language: "de", level: "C1", word: "die Wirtschaft", pron: "dee VIRT-shaft", translation: "economy",     example: "Die Wirtschaft wächst.",     exampleTranslation: "The economy is growing.",    note: "noun · feminine (die)" },
+  { id: "de21", language: "de", level: "C1", word: "die Analyse",  pron: "dee a-na-LUE-ze", translation: "analysis",     example: "Eine genaue Analyse ist nötig.", exampleTranslation: "A precise analysis is needed.", note: "noun · feminine (die)" },
 ];
 const MOCK_USERS = [
-  { id: "u1", name: "Sara",  avatar: "Sara",    points: 168, streak: 11, fa: { done: 15, total: 15 }, de: { done: 7,  total: 15 } },
-  { id: "u2", name: "Jonas", avatar: "Jonas",   points: 132, streak: 6,  fa: { done: 4,  total: 15 }, de: { done: 15, total: 15 } },
-  { id: "u3", name: "Niloofar", avatar: "Niloo", points: 96, streak: 3,  fa: { done: 12, total: 15 }, de: { done: 0,  total: 0  } },
-  { id: "u4", name: "Lena",  avatar: "Lena",    points: 210, streak: 18, fa: { done: 9,  total: 15 }, de: { done: 14, total: 15 } },
-  { id: "u5", name: "Reza",  avatar: "Reza",    points: 54,  streak: 2,  fa: { done: 8,  total: 15 }, de: { done: 0,  total: 0  } },
-  { id: "u6", name: "Mira",  avatar: "Mira",    points: 121, streak: 5,  fa: { done: 6,  total: 15 }, de: { done: 9,  total: 15 } },
-  { id: "u7", name: "Tobias", avatar: "Tobias", points: 78,  streak: 4,  fa: { done: 0,  total: 0  }, de: { done: 11, total: 15 } },
-  { id: "u8", name: "Darya", avatar: "Darya",   points: 145, streak: 8,  fa: { done: 13, total: 15 }, de: { done: 5,  total: 15 } },
+  { id: "u1", name: "Sara",  avatar: "Sara",    points: 168, streak: 11, fa: { done: 15, total: 21 }, de: { done: 7,  total: 21 } },
+  { id: "u2", name: "Jonas", avatar: "Jonas",   points: 132, streak: 6,  fa: { done: 4,  total: 21 }, de: { done: 18, total: 21 } },
+  { id: "u3", name: "Niloofar", avatar: "Niloo", points: 96, streak: 3,  fa: { done: 12, total: 21 }, de: { done: 0,  total: 0  } },
+  { id: "u4", name: "Lena",  avatar: "Lena",    points: 210, streak: 18, fa: { done: 9,  total: 21 }, de: { done: 19, total: 21 } },
+  { id: "u5", name: "Reza",  avatar: "Reza",    points: 54,  streak: 2,  fa: { done: 8,  total: 21 }, de: { done: 0,  total: 0  } },
+  { id: "u6", name: "Mira",  avatar: "Mira",    points: 121, streak: 5,  fa: { done: 6,  total: 21 }, de: { done: 11, total: 21 } },
+  { id: "u7", name: "Tobias", avatar: "Tobias", points: 78,  streak: 4,  fa: { done: 0,  total: 0  }, de: { done: 13, total: 21 } },
+  { id: "u8", name: "Darya", avatar: "Darya",   points: 145, streak: 8,  fa: { done: 17, total: 21 }, de: { done: 5,  total: 21 } },
 ];
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,13 +108,13 @@ const dataService = {
     const sys = "You are a precise language-learning assistant. Respond ONLY with a single minified JSON object. No markdown, no code fences, no commentary.";
     const targetFmt = language === "fa" ? "Finglish (Latin-script transliteration of Persian, never Farsi script)" : "German (include the article der/die/das for nouns)";
     const persianExtra = language === "fa" ? ',\n"farsi": the headword in real Farsi/Persian script,\n"farsiExample": the example sentence in real Farsi/Persian script' : "";
-    const prompt = "The learner studies " + langFull(language) + '. Build a flashcard for: "' + rawWord + '".\nReturn JSON with exactly these string fields:\n{"word": the headword in ' + targetFmt + ',\n"pron": a simple pronunciation guide,\n"translation": concise English meaning,\n"example": one short natural sentence in ' + (language === "fa" ? "Finglish" : "German") + ',\n"exampleTranslation": English translation,\n"note": part of speech' + (language === "de" ? " plus gender for nouns" : "") + ',\n"imageWord": 1-2 simple English keywords, comma-separated' + persianExtra + "}";
+    const prompt = "The learner studies " + langFull(language) + '. Build a flashcard for: "' + rawWord + '".\nReturn JSON with exactly these string fields:\n{"word": the headword in ' + targetFmt + ',\n"pron": a simple pronunciation guide,\n"translation": concise English meaning,\n"example": one short natural sentence in ' + (language === "fa" ? "Finglish" : "German") + ',\n"exampleTranslation": English translation,\n"note": part of speech' + (language === "de" ? " plus gender for nouns" : "") + '}';
     const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: sys, messages: [{ role: "user", content: prompt }] }) });
     const data = await res.json();
     let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
     text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
     let obj; try { obj = JSON.parse(text); } catch (_) { const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error("parse"); obj = JSON.parse(m[0]); }
-    return { word: obj.word || rawWord, pron: obj.pron || "", translation: obj.translation || "", example: obj.example || "", exampleTranslation: obj.exampleTranslation || "", note: obj.note || "", imageWord: obj.imageWord || obj.translation || rawWord, farsi: obj.farsi || "", farsiExample: obj.farsiExample || "" };
+    return { word: obj.word || rawWord, pron: obj.pron || "", translation: obj.translation || "", example: obj.example || "", exampleTranslation: obj.exampleTranslation || "", note: obj.note || "", farsi: obj.farsi || "", farsiExample: obj.farsiExample || "" };
   },
 };
 
@@ -105,6 +125,7 @@ const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
 const AVATARS = ["Milad","Aneka","Bella","Leo","Zoe","Felix","Mia","Max","Luna","Kai","Nova","Remy","Sara","Jonas","Niloofar","Lena","Reza","Mira","Tobias","Darya","Oliver","Emma","Liam","Sophia","Noah","Ava","Ethan","Isla","Aria","Jack","Maya","Theo","Ivy","Hugo","Nora","Finn","Ruby","Milo","Cleo","Atlas","Vivian","Caleb","Hazel","Owen","Stella","Jude","Willow","Asher","Iris","Ezra"];
 const avatarURL = (seed) => "https://api.dicebear.com/9.x/open-peeps/svg?seed=" + encodeURIComponent(seed || "Milad");
 
+const LEVELS_ORDER = ["A1", "A2", "B1", "B2", "C1"];
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const nextLevel = (lv) => CEFR[Math.min(CEFR.length - 1, Math.max(0, CEFR.indexOf(lv)) + 1)];
 const LEVEL_TITLE = { A1: "Beginner", A2: "Elementary", B1: "Intermediate", B2: "Upper-intermediate", C1: "Advanced", C2: "Mastery" };
@@ -126,8 +147,6 @@ const REWARDS = [
 
 const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
-const hashNum = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
-const imgURL = (card) => { const tags = (card.imageWord || card.translation || "word").replace(/\s+/g, ","); return "https://loremflickr.com/400/400/" + encodeURIComponent(tags) + "?lock=" + (hashNum(card.id) % 1000); };
 const randAvatar = () => AVATARS[Math.floor(Math.random() * AVATARS.length)];
 
 /* ===================== AUDIO ===================== */
@@ -157,7 +176,6 @@ function speak(text, langCode) {
   if (TTS_KEY) { cloudTTS(text, langCode).catch(deviceOrNet); return; }
   deviceOrNet();
 }
-
 function playChime() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
@@ -169,6 +187,18 @@ function playChime() {
   } catch (_) {}
 }
 function shareText(points, streak, name) { return (name || "I") + " just earned ⭐" + points + " points and is on a " + streak + "-day streak learning languages! 🔥📚"; }
+
+async function shareImage(node, text, filename, bg) {
+  if (!node || !window.html2canvas) return "nolib";
+  try {
+    const canvas = await window.html2canvas(node, { backgroundColor: bg || "#FFFFFF", scale: 2, useCORS: true, logging: false });
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    if (!blob) return "error";
+    const file = new File([blob], filename, { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return "shared"; }
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500); return "downloaded";
+  } catch (e) { return "error"; }
+}
 
 /* ===================== HISTORY ===================== */
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -195,7 +225,7 @@ function useCountUp(target, duration) { duration = duration || 700; const [val, 
 
 function Avatar({ seed, size = 44, ring }) {
   const [err, setErr] = useState(false);
-  return (<div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", background: C.primarySoft, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: ring ? ("0 0 0 3px " + ring) : "none" }}>{!err ? <img src={avatarURL(seed)} onError={() => setErr(true)} alt="" style={{ width: "100%", height: "100%" }} /> : <Icon name="user" size={size * 0.5} color={C.primary} />}</div>);
+  return (<div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", background: C.primarySoft, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: ring ? ("0 0 0 3px " + ring) : "none" }}>{!err ? <img src={avatarURL(seed)} crossOrigin="anonymous" onError={() => setErr(true)} alt="" style={{ width: "100%", height: "100%" }} /> : <Icon name="user" size={size * 0.5} color={C.primary} />}</div>);
 }
 
 function Confetti() {
@@ -213,29 +243,25 @@ function SpeakBtn({ text, lang, color, size = 38 }) {
   return (<button onPointerDown={stop} onClick={(e) => { stop(e); speak(text, lang); }} className="press" aria-label="Play pronunciation" style={{ width: size, height: size, borderRadius: "50%", border: "none", cursor: "pointer", background: color + "1A", color: color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon name="volume-high" size={size * 0.42} color={color} /></button>);
 }
 
-function WordImage({ card, soft, width = "100%", height = 116 }) {
-  const [loaded, setLoaded] = useState(false); const [err, setErr] = useState(false);
-  return (<div style={{ width: width, height: height, borderRadius: 18, overflow: "hidden", background: soft, position: "relative", flexShrink: 0 }}>{!err && <img src={imgURL(card)} alt={card.translation} referrerPolicy="no-referrer" onLoad={() => setLoaded(true)} onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: loaded ? 1 : 0, transition: "opacity .4s" }} />}{(!loaded || err) && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.sub, fontSize: 12.5, fontWeight: 700, gap: 6, flexDirection: "column" }}><Icon name="image" size={20} color={C.sub} />{err ? card.translation : "loading…"}</div>}</div>);
-}
+const sayWordOf = (card) => (card.language === "fa" ? (card.farsi || card.word) : card.word);
+const sayExampleOf = (card) => (card.language === "fa" ? (card.farsiExample || card.example) : card.example);
 
 function Sheet({ children, onClose, title }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
-      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", maxHeight: "85vh", overflowY: "auto", fontFamily: FONT }}>
+      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", maxHeight: "85vh", overflowY: "auto", fontFamily: FONT, position: "relative" }}>
         <div style={{ width: 40, height: 5, background: C.line, borderRadius: 4, margin: "0 auto 16px" }} />
-        {title && <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, margin: "0 0 14px" }}>{title}</h2>}
+        <button onClick={onClose} className="press" aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 34, height: 34, borderRadius: "50%", border: "none", background: C.bg, color: C.sub, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="xmark" size={15} color={C.sub} /></button>
+        {title && <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, margin: "0 0 14px", paddingRight: 36 }}>{title}</h2>}
         {children}
       </div>
     </div>
   );
 }
 
-const sayWordOf = (card) => (card.language === "fa" ? (card.farsi || card.word) : card.word);
-const sayExampleOf = (card) => (card.language === "fa" ? (card.farsiExample || card.example) : card.example);
-
 /* ===================== APP ===================== */
 function App() {
-  const [screen, setScreen] = useState("welcome");   // 0) intro onboarding
+  const [screen, setScreen] = useState("welcome");
   const [tab, setTab] = useState("dashboard");
   const [selectedLangs, setSelectedLangs] = useState([]);
   const [user, setUser] = useState(null);
@@ -248,14 +274,19 @@ function App() {
   const dayStreak = useMemo(() => calcStreak(history), [history]);
   const totalPoints = useMemo(() => history.reduce((a, d) => a + d.points, 0), [history]);
   const committed = useRef(false); const navBusy = useRef(false);
-  const remaining = useMemo(() => allCards.filter((c) => !learnedIds.includes(c.id)), [allCards, learnedIds]);
   const initData = async (langs) => { const words = await dataService.fetchWords(langs); setAllCards(words); setLearnedIds([]); setQueue([]); };
 
-  const startSession = (review) => { const pool = review || remaining.length === 0 ? allCards : remaining; setQueue(shuffle(pool)); setReviewCount(0); setRoundPoints(0); committed.current = false; setFlipped(false); setDragX(0); setExitDir(null); setScreen("deck"); };
+  const curLevel = (user && user.level) || "A1";
+  const levelCards = useMemo(() => allCards.filter((c) => c.level === curLevel), [allCards, curLevel]);
+  const levelRemaining = useMemo(() => levelCards.filter((c) => !learnedIds.includes(c.id)), [levelCards, learnedIds]);
+
+  const startSession = (review) => { const pool = (review || levelRemaining.length === 0) ? levelCards : levelRemaining; if (!pool.length) return; setQueue(shuffle(pool)); setReviewCount(0); setRoundPoints(0); committed.current = false; setFlipped(false); setDragX(0); setExitDir(null); setScreen("deck"); };
   const commitRound = (pts) => { if (pts <= 0) return; setHistory((h) => { const c = [...h]; c[c.length - 1] = { ...c[c.length - 1], points: c[c.length - 1].points + pts }; return c; }); };
-  useEffect(() => { if (screen === "deck" && allCards.length > 0 && queue.length === 0 && !committed.current) { committed.current = true; commitRound(roundPoints); } }, [screen, queue.length, roundPoints, allCards.length]);
+  useEffect(() => { if (screen === "deck" && queue.length === 0 && !committed.current && allCards.length) { committed.current = true; commitRound(roundPoints); } }, [screen, queue.length, roundPoints, allCards.length]);
   const exitToApp = () => { if (!committed.current && roundPoints > 0) { committed.current = true; commitRound(roundPoints); } setTab("dashboard"); setScreen("app"); };
   const signOut = () => { setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setQueue([]); setHistory(buildHistory()); setTab("dashboard"); setScreen("welcome"); };
+  const setLearned = (id, known) => setLearnedIds((ids) => known ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((x) => x !== id));
+  const changeLevel = (dir) => setUser((u) => { const i = LEVELS_ORDER.indexOf((u && u.level) || "A1"); const ni = Math.min(LEVELS_ORDER.length - 1, Math.max(0, i + dir)); return { ...u, level: LEVELS_ORDER[ni] }; });
 
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
@@ -275,14 +306,10 @@ function App() {
   const addCard = (card) => { setAllCards((prev) => [...prev, card]); };
   const deleteCard = (id) => { setAllCards((p) => p.filter((c) => c.id !== id)); setQueue((q) => q.filter((c) => c.id !== id)); setLearnedIds((ids) => ids.filter((x) => x !== id)); };
 
-  // 0) WELCOME / intro
   if (screen === "welcome") return <Welcome onStart={() => setScreen("register")} onSignIn={() => setScreen("signin")} />;
-
-  // 1) AUTH
   if (screen === "register" || screen === "signin")
     return <AuthScreen mode={screen} onSwitch={setScreen} onDone={(u) => { setUser(u); setScreen("language"); }} />;
 
-  // 2) Choose language — tap selects and advances (no Continue button)
   if (screen === "language") {
     const choose = (l) => { setSelectedLangs([l]); setScreen("level"); };
     return (
@@ -293,9 +320,9 @@ function App() {
           <p style={{ color: C.sub, margin: 0, fontSize: 15.5 }}>Tap a language to continue.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 28 }}>
             {["fa", "de"].map((l) => { const m = langMeta[l]; return (
-              <button key={l} onClick={() => choose(l)} className="press" style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px", borderRadius: 20, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 10px rgba(20,20,50,0.04)", transition: "all .2s", fontFamily: FONT }}>
+              <button key={l} onClick={() => choose(l)} className="press" style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px", borderRadius: 20, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 10px rgba(20,20,50,0.04)", fontFamily: FONT }}>
                 <div style={{ width: 52, height: 52, borderRadius: 16, background: m.soft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{m.flag}</div>
-                <div style={{ flex: 1 }}><div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{m.label}</div><div style={{ fontSize: 13.5, color: C.sub, fontWeight: 500 }}>{m.sub} · 15 starter words</div></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{m.label}</div><div style={{ fontSize: 13.5, color: C.sub, fontWeight: 500 }}>{m.sub} · 5 levels</div></div>
                 <Icon name="chevron-right" size={16} color={C.sub} />
               </button>); })}
           </div>
@@ -304,18 +331,18 @@ function App() {
     );
   }
 
-  // 3) Choose level — tap selects and goes to dashboard (no button)
   if (screen === "level") {
     const choose = async (lv) => { if (navBusy.current) return; navBusy.current = true; setUser((u) => ({ ...u, level: lv })); await initData(selectedLangs); setTab("dashboard"); setScreen("app"); navBusy.current = false; };
     return (
       <Shell><StyleTag />
-        <div style={{ padding: "48px 24px 24px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <button onClick={() => setScreen("language")} className="press" aria-label="Back" style={{ alignSelf: "flex-start", width: 42, height: 42, borderRadius: 13, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", marginBottom: 14 }}><Icon name="arrow-left" size={16} color={C.ink} /></button>
           <div style={{ fontSize: 38 }}>📈</div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, margin: "14px 0 6px", letterSpacing: -0.7, lineHeight: 1.15 }}>Where are you<br />starting from?</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, margin: "12px 0 6px", letterSpacing: -0.7, lineHeight: 1.15 }}>Where are you<br />starting from?</h1>
           <p style={{ color: C.sub, margin: 0, fontSize: 15 }}>Tap the level that sounds most like you to begin.</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 22 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 20 }}>
             {LEVELS.map((lv) => (
-              <button key={lv.id} onClick={() => choose(lv.id)} className="press" style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 18, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 8px rgba(20,20,50,0.04)", transition: "all .18s", fontFamily: FONT }}>
+              <button key={lv.id} onClick={() => choose(lv.id)} className="press" style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 18, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 8px rgba(20,20,50,0.04)", fontFamily: FONT }}>
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: C.primarySoft, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{lv.id}</div>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{lv.title}</div><div style={{ fontSize: 12.8, color: C.sub, fontWeight: 500, lineHeight: 1.3 }}>{lv.desc}</div></div>
                 <Icon name="chevron-right" size={15} color={C.sub} />
@@ -327,7 +354,8 @@ function App() {
   }
 
   if (screen === "deck") {
-    const current = queue[0]; const sessionDone = queue.length === 0; const totalChosen = allCards.length;
+    const current = queue[0]; const sessionDone = queue.length === 0;
+    const lvlDone = levelCards.filter((c) => learnedIds.includes(c.id)).length;
     const knowHint = Math.max(0, Math.min(1, dragX / 110)); const reviewHint = Math.max(0, Math.min(1, -dragX / 110));
     const topTransform = exitDir ? ("translateX(" + (exitDir === "right" ? 640 : -640) + "px) rotate(" + (exitDir === "right" ? 26 : -26) + "deg)") : ("translateX(" + dragX + "px) rotate(" + (dragX / 22) + "deg)");
     const topTransition = dragging ? "none" : "transform .34s cubic-bezier(.2,.8,.2,1)";
@@ -337,13 +365,13 @@ function App() {
         <div style={{ padding: "18px 18px 4px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
           <button onClick={exitToApp} className="press" aria-label="Exit" style={{ background: C.surface, border: "1.5px solid " + C.line, borderRadius: 14, width: 44, height: 44, cursor: "pointer", color: C.ink }}><Icon name="xmark" size={18} color={C.ink} /></button>
           <div style={{ flex: 1 }}>
-            <div style={{ height: 10, background: C.line, borderRadius: 8, overflow: "hidden" }}><div style={{ width: (totalChosen ? (learnedIds.length / totalChosen) * 100 : 0) + "%", height: "100%", background: C.primary, borderRadius: 8, transition: "width .4s cubic-bezier(.2,.8,.2,1)" }} /></div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: C.sub, marginTop: 5 }}>{queue.length} left this round</div>
+            <div style={{ height: 10, background: C.line, borderRadius: 8, overflow: "hidden" }}><div style={{ width: (levelCards.length ? (lvlDone / levelCards.length) * 100 : 0) + "%", height: "100%", background: C.primary, borderRadius: 8, transition: "width .4s cubic-bezier(.2,.8,.2,1)" }} /></div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.sub, marginTop: 5 }}>{curLevel} · {queue.length} left this round</div>
           </div>
           <div style={{ background: C.amber + "1A", border: "1.5px solid " + C.amber + "44", borderRadius: 14, padding: "8px 12px", fontWeight: 800, fontSize: 15, color: C.amber, display: "flex", alignItems: "center", gap: 5 }}><Icon name="star" size={13} color={C.amber} /> {roundPoints}</div>
         </div>
         <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 20px 0", minHeight: 0 }}>
-          {sessionDone ? (<SessionComplete points={roundPoints} reviews={reviewCount} dayStreak={dayStreak} name={user && user.name} onDashboard={exitToApp} />) : (
+          {sessionDone ? (<SessionComplete points={roundPoints} reviews={reviewCount} dayStreak={dayStreak} name={user && user.name} level={curLevel} onDashboard={exitToApp} />) : (
             <div style={{ position: "relative", width: "100%", maxWidth: 360, height: 470, margin: "0 auto" }}>
               {queue.slice(1, 3).map((card, i) => { const d = i + 1; return (<div key={card.id} style={{ position: "absolute", inset: 0, transform: "translateY(" + (d * 13) + "px) scale(" + (1 - d * 0.045) + ")", zIndex: 1 }}><div style={{ ...cardBase, border: "1px solid " + C.line }} /></div>); })}
               {current && (
@@ -364,14 +392,30 @@ function App() {
 
   return (
     <Shell><StyleTag />
-      <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
-        {tab === "dashboard" && <Dashboard user={user} allCards={allCards} learnedIds={learnedIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} onStart={() => startSession(false)} onOpenProfile={() => setTab("profile")} onJumpLevel={() => setUser((u) => ({ ...u, level: nextLevel((u && u.level) || "A1") }))} />}
-        {tab === "mywords" && <MyWordsPage allCards={allCards} learnedIds={learnedIds} selectedLangs={selectedLangs} onAdd={addCard} onDelete={deleteCard} />}
+      <div style={{ flex: 1, overflowY: tab === "profile" ? "hidden" : "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
+        {tab === "dashboard" && <Dashboard user={user} levelCards={levelCards} learnedIds={learnedIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} curLevel={curLevel} onStart={() => startSession(false)} onOpenProfile={() => setTab("profile")} onChangeLevel={changeLevel} />}
+        {tab === "stats" && <StatsPage history={history} totalPoints={totalPoints} dayStreak={dayStreak} allCards={allCards} learnedIds={learnedIds} />}
+        {tab === "mywords" && <MyFlashcardsPage allCards={allCards} learnedIds={learnedIds} curLevel={curLevel} onResult={setLearned} onAdd={addCard} onDelete={deleteCard} />}
         {tab === "friends" && <FriendsPage />}
         {tab === "profile" && <ProfilePage user={user} setUser={setUser} selectedLangs={selectedLangs} setSelectedLangs={setSelectedLangs} dayStreak={dayStreak} totalPoints={totalPoints} onLangsChanged={async (langs) => { await initData(langs); }} onSignOut={signOut} />}
       </div>
       <TabBar tab={tab} setTab={setTab} />
     </Shell>
+  );
+}
+
+function Logo({ size = 96 }) {
+  const BOOK = "M100,80 C116,60 142,54 160,61 C164,62 166,65 166,68 C168,95 169,125 168,150 C145,150 116,156 100,168 C84,156 55,150 32,150 C31,125 32,95 34,68 C34,65 36,62 40,61 C58,54 84,60 100,80 Z";
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-label="Memzy logo">
+      <path d={BOOK} transform="translate(100,112) scale(1.10) translate(-100,-112)" fill="#4036A6" />
+      <path d={BOOK} transform="translate(100,110) scale(1.05) translate(-100,-110)" fill="#25A98C" />
+      <path d={BOOK} transform="translate(100,109) scale(1.02) translate(-100,-109)" fill="#FFFFFF" />
+      <path d={BOOK} fill="#5A4FE3" />
+      <path d="M70,110 Q80,99 90,110" stroke="#FFFFFF" strokeWidth="7" fill="none" strokeLinecap="round" />
+      <path d="M110,110 Q120,99 130,110" stroke="#FFFFFF" strokeWidth="7" fill="none" strokeLinecap="round" />
+      <path d="M82,128 Q100,146 118,128" stroke="#FFFFFF" strokeWidth="7" fill="none" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -382,7 +426,8 @@ function Welcome({ onStart, onSignIn }) {
     <Shell><StyleTag />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "56px 26px 28px", overflowY: "auto", minHeight: 0 }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center" }}>
-          <div style={{ width: 96, height: 96, borderRadius: 28, background: "linear-gradient(135deg,#6A5BFF,#A06BFF)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 16px 36px " + C.primary + "55", marginBottom: 22 }}><Icon name="layer-group" size={44} color="#fff" /></div>
+          <div style={{ width: 96, height: 96, borderRadius: 28, background: "linear-gradient(135deg,#6A5BFF,#A06BFF)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 16px 36px " + C.primary + "55", marginBottom: 16 }}><span style={{ fontSize: 56, fontWeight: 900, color: "#fff", lineHeight: 1, fontFamily: FONT, letterSpacing: -2 }}>M</span></div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.primary, letterSpacing: 3, marginBottom: 8 }}>MEMZY</div>
           <h1 style={{ fontSize: 34, fontWeight: 800, color: C.ink, margin: "0 0 10px", letterSpacing: -1, lineHeight: 1.1 }}>Learn words<br />that stick.</h1>
           <p style={{ color: C.sub, fontSize: 16, margin: 0, lineHeight: 1.45, maxWidth: 300 }}>Swipe through Persian & German flashcards, build streaks, and learn with friends.</p>
           <div style={{ display: "flex", marginTop: 30 }}>{faces.map((a, i) => (<div key={a} style={{ marginLeft: i ? -14 : 0, borderRadius: "50%", border: "3px solid " + C.bg }}><Avatar seed={a} size={48} /></div>))}</div>
@@ -395,12 +440,12 @@ function Welcome({ onStart, onSignIn }) {
   );
 }
 
-/* ===================== TAB BAR (pinned) ===================== */
+/* ===================== TAB BAR ===================== */
 function TabBar({ tab, setTab }) {
-  const items = [{ k: "dashboard", icon: "house", label: "Home" }, { k: "mywords", icon: "layer-group", label: "My Words" }, { k: "friends", icon: "user-group", label: "Friends" }, { k: "profile", icon: "user", label: "Profile" }];
+  const items = [{ k: "dashboard", icon: "house", label: "Home" }, { k: "stats", icon: "chart-column", label: "Stats" }, { k: "mywords", icon: "layer-group", label: "Flashcards" }, { k: "friends", icon: "handshake", label: "Friends" }, { k: "profile", icon: "user", label: "Profile" }];
   return (
-    <div style={{ flexShrink: 0, display: "flex", borderTop: "1px solid " + C.line, background: C.surface, paddingTop: 8, paddingLeft: 6, paddingRight: 6, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 16px rgba(28,26,46,0.04)" }}>
-      {items.map((it) => { const on = tab === it.k; return (<button key={it.k} onClick={() => setTab(it.k)} className="press" style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "6px 0", fontFamily: FONT }}><Icon name={it.icon} size={19} color={on ? C.primary : "#B6B2CE"} /><span style={{ fontSize: 11, fontWeight: 800, color: on ? C.primary : C.sub }}>{it.label}</span></button>); })}
+    <div style={{ flexShrink: 0, display: "flex", borderTop: "1px solid " + C.line, background: C.surface, paddingTop: 8, paddingLeft: 2, paddingRight: 2, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 16px rgba(28,26,46,0.04)" }}>
+      {items.map((it) => { const on = tab === it.k; return (<button key={it.k} onClick={() => setTab(it.k)} className="press" style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "6px 0", fontFamily: FONT }}><Icon name={it.icon} size={18} color={on ? C.primary : "#B6B2CE"} /><span style={{ fontSize: 10.5, fontWeight: 800, color: on ? C.primary : C.sub }}>{it.label}</span></button>); })}
     </div>
   );
 }
@@ -424,13 +469,52 @@ function CardFront({ card }) {
 function CardBack({ card }) {
   const m = langMeta[card.language];
   return (
-    <div style={{ ...cardBase, transform: "rotateY(180deg)", display: "flex", flexDirection: "column", padding: 22, justifyContent: "space-between", background: "#FBFAFF" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ flex: 1, fontSize: 18, fontWeight: 800, color: C.ink }}>{card.word}</div><SpeakBtn text={sayWordOf(card)} lang={m.ttsLang} color={m.color} size={34} /></div>
-      <div style={{ display: "flex", justifyContent: "center" }}><WordImage card={card} soft={m.soft} width={172} height={172} /></div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div><div style={{ fontSize: 11, color: m.color, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6 }}>Meaning</div><div style={{ fontSize: 25, fontWeight: 800, color: C.ink, letterSpacing: -0.5, lineHeight: 1.1 }}>{card.translation}</div></div>
-        <div style={{ background: C.surface, borderRadius: 16, padding: "12px 14px", border: "1px solid " + C.line, display: "flex", alignItems: "flex-start", gap: 10 }}><div style={{ flex: 1 }}><div style={{ fontSize: 15.5, fontWeight: 700, color: C.ink }}>{card.example}</div><div style={{ fontSize: 13, color: C.sub, fontWeight: 500, marginTop: 2 }}>{card.exampleTranslation}</div></div><SpeakBtn text={sayExampleOf(card)} lang={m.ttsLang} color={m.color} size={32} /></div>
-        {card.note && <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Icon name="circle-info" size={12} color={C.sub} />{card.note}</div>}
+    <div style={{ ...cardBase, transform: "rotateY(180deg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 28, gap: 18, background: "#FBFAFF" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 24, fontWeight: 800, color: C.ink }}>{card.word}</div><SpeakBtn text={sayWordOf(card)} lang={m.ttsLang} color={m.color} size={34} /></div>
+      <div>
+        <div style={{ fontSize: 11, color: m.color, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6 }}>Meaning</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: C.ink, letterSpacing: -0.5, lineHeight: 1.12, marginTop: 2 }}>{card.translation}</div>
+      </div>
+      {card.example && (
+        <div style={{ background: C.surface, borderRadius: 16, padding: "14px 16px", border: "1px solid " + C.line, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxWidth: 280 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.ink }}>{card.example}</div>
+          {card.exampleTranslation && <div style={{ fontSize: 13, color: C.sub, fontWeight: 500 }}>{card.exampleTranslation}</div>}
+          <SpeakBtn text={sayExampleOf(card)} lang={m.ttsLang} color={m.color} size={32} />
+        </div>
+      )}
+      {card.note && <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Icon name="circle-info" size={12} color={C.sub} />{card.note}</div>}
+    </div>
+  );
+}
+
+/* ===================== SINGLE FLASHCARD MODAL ===================== */
+function FlashcardModal({ card, learned, onResult, onClose }) {
+  const [flipped, setFlipped] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [exitDir, setExitDir] = useState(null);
+  const sx = useRef(0); const sy = useRef(0); const moved = useRef(false); const act = useRef(false); const lock = useRef(false);
+  const finish = (dir) => { if (lock.current) return; lock.current = true; setExitDir(dir); setTimeout(() => { onResult(card.id, dir === "right"); onClose(); }, 300); };
+  const down = (e) => { if (exitDir) return; act.current = true; moved.current = false; sx.current = e.clientX; sy.current = e.clientY; setDragging(true); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {} };
+  const move = (e) => { if (!act.current || exitDir) return; const dx = e.clientX - sx.current, dy = e.clientY - sy.current; if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved.current = true; setDragX(dx); };
+  const up = () => { if (!act.current) return; act.current = false; setDragging(false); if (!moved.current) { setFlipped((f) => !f); setDragX(0); return; } if (dragX > 100) finish("right"); else if (dragX < -100) finish("left"); else setDragX(0); };
+  const knowHint = Math.max(0, Math.min(1, dragX / 100)); const reviewHint = Math.max(0, Math.min(1, -dragX / 100));
+  const transform = exitDir ? ("translateX(" + (exitDir === "right" ? 560 : -560) + "px) rotate(" + (exitDir === "right" ? 24 : -24) + "deg)") : ("translateX(" + dragX + "px) rotate(" + (dragX / 24) + "deg)");
+  const tint = exitDir === "right" ? { c: C.green, o: 0.9, t: "DONE" } : exitDir === "left" ? { c: C.red, o: 0.9, t: "LATER" } : dragX > 0 ? { c: C.green, o: knowHint * 0.85, t: "DONE" } : dragX < 0 ? { c: C.red, o: reviewHint * 0.85, t: "LATER" } : { c: C.green, o: 0, t: "" };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.55)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 110, padding: 22 }}>
+      <button onClick={onClose} className="press" aria-label="Close" style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.92)", color: C.ink, cursor: "pointer" }}><Icon name="xmark" size={17} color={C.ink} /></button>
+      <div onClick={(e) => e.stopPropagation()} className="card-pop" style={{ width: "100%", maxWidth: 330 }}>
+        <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.85)", fontWeight: 700, textAlign: "center", marginBottom: 10 }}>{learned ? "Marked done ✓ — swipe to update" : "Swipe right when you know it"}</div>
+        <div onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ position: "relative", width: "100%", height: 450, transform, transition: dragging ? "none" : "transform .3s cubic-bezier(.2,.8,.2,1)", touchAction: "none", cursor: "grab" }}>
+          <div style={{ position: "absolute", inset: 0, perspective: 1300 }}><div style={{ position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d", transform: "rotateY(" + (flipped ? 180 : 0) + "deg)", transition: "transform .55s cubic-bezier(.4,.15,.2,1)" }}><CardFront card={card} /><CardBack card={card} /></div></div>
+          <div style={{ position: "absolute", inset: 0, borderRadius: 28, background: tint.c, opacity: tint.o, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 6 }}>{tint.t && <span style={{ color: "#fff", fontWeight: 900, fontSize: 34, letterSpacing: 2 }}>{tint.t}</span>}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginTop: 18 }}>
+          <button onClick={() => finish("left")} className="press" style={actionBtn(C.red, 56)} aria-label="Later"><Icon name="xmark" size={22} color="#fff" /></button>
+          <button onClick={() => setFlipped((f) => !f)} className="press" style={{ background: "rgba(255,255,255,0.92)", border: "none", borderRadius: "50%", width: 48, height: 48, cursor: "pointer", color: C.sub }}><Icon name="arrows-rotate" size={17} color={C.sub} /></button>
+          <button onClick={() => finish("right")} className="press" style={actionBtn(C.green, 56)} aria-label="Done"><Icon name="check" size={22} color="#fff" /></button>
+        </div>
       </div>
     </div>
   );
@@ -487,12 +571,10 @@ function AuthScreen({ mode, onDone, onSwitch }) {
 const lbl = { fontSize: 13, fontWeight: 700, color: C.sub, display: "block" };
 const inputStyle = { width: "100%", marginTop: 6, padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" };
 
-/* ===================== AVATAR PICKER ===================== */
 function AvatarPicker({ current, onPick, onClose }) {
   return (
     <Sheet onClose={onClose} title="Choose your character">
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>{AVATARS.map((a) => (<button key={a} onClick={() => { onPick(a); onClose(); }} className="press" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", justifyContent: "center", padding: 2 }}><Avatar seed={a} size={62} ring={current === a ? C.primary : null} /></button>))}</div>
-      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Done</button>
     </Sheet>
   );
 }
@@ -513,7 +595,6 @@ function StreakDialog({ history, streak, onClose }) {
       <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 10 }}>{MONTHS[month]} {year}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 }}>{["S", "M", "T", "W", "T", "F", "S"].map((w, i) => <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.sub }}>{w}</div>)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>{cells.map((c, i) => (<div key={i} style={{ aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>{c && <div style={{ width: "84%", height: "84%", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, fontWeight: 700, background: c.active ? C.amber : C.bg, color: c.active ? "#fff" : C.sub, boxShadow: c.today ? "0 0 0 2.5px " + C.primary : "none" }}>{c.d}</div>}</div>))}</div>
-      <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 12, color: C.sub, fontWeight: 600 }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: C.amber, display: "inline-block" }} /> Practised</span><span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: "50%", boxShadow: "0 0 0 2px " + C.primary, display: "inline-block" }} /> Today</span></div>
     </Sheet>
   );
 }
@@ -558,15 +639,15 @@ function StatBox({ icon, value, label, color, onClick }) {
     </button>
   );
 }
-function Dashboard({ user, allCards, learnedIds, dayStreak, history, totalPoints, onStart, onOpenProfile, onJumpLevel }) {
-  const total = allCards.length;
-  const done = allCards.filter((c) => learnedIds.includes(c.id)).length;
+function Dashboard({ user, levelCards, learnedIds, dayStreak, history, totalPoints, curLevel, onStart, onOpenProfile, onChangeLevel }) {
+  const total = levelCards.length;
+  const done = levelCards.filter((c) => learnedIds.includes(c.id)).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  const cur = (user && user.level) || "A1";
-  const nxt = nextLevel(cur);
+  const idx = LEVELS_ORDER.indexOf(curLevel);
   const pts = useCountUp(totalPoints); const streak = useCountUp(dayStreak); const pctUp = useCountUp(pct);
   const [grow, setGrow] = useState(false); const [dlg, setDlg] = useState(null);
-  useEffect(() => { const t = setTimeout(() => setGrow(true), 80); return () => clearTimeout(t); }, []);
+  useEffect(() => { setGrow(false); const t = setTimeout(() => setGrow(true), 80); return () => clearTimeout(t); }, [curLevel]);
+  const lvBtn = (dir, enabled) => (<button onClick={enabled ? () => onChangeLevel(dir) : undefined} disabled={!enabled} className="press" style={{ width: 34, height: 34, borderRadius: 11, border: "1.5px solid " + C.line, background: C.surface, color: enabled ? C.primary : "#D8D5E8", cursor: enabled ? "pointer" : "default", flexShrink: 0 }}><Icon name={dir < 0 ? "chevron-left" : "chevron-right"} size={13} color={enabled ? C.primary : "#D8D5E8"} /></button>);
   return (
     <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -578,24 +659,17 @@ function Dashboard({ user, allCards, learnedIds, dayStreak, history, totalPoints
         </div>
       </div>
 
-      {/* level progress card */}
       <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>Level progress</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}%</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 10 }}>
+          {lvBtn(-1, idx > 0)}
+          <div style={{ textAlign: "center", flex: 1 }}><div style={{ fontSize: 17, fontWeight: 800, color: C.ink }}>{curLevel} · {LEVEL_TITLE[curLevel]}</div><div style={{ fontSize: 11.5, color: C.sub, fontWeight: 600 }}>your current level</div></div>
+          {lvBtn(1, idx < LEVELS_ORDER.length - 1)}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ flex: 1, height: 14, background: C.line, borderRadius: 10, overflow: "hidden" }}><div style={{ width: (grow ? pct : 0) + "%", height: "100%", borderRadius: 10, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width 1s cubic-bezier(.2,.8,.2,1)" }} /></div>
-          <span style={{ fontSize: 13, fontWeight: 800, color: C.primary, whiteSpace: "nowrap" }}>{LEVEL_TITLE[nxt]}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>{done} of {total} words learned</span>
-          <button onClick={onJumpLevel} className="press" style={{ padding: "7px 12px", borderRadius: 11, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>Jump to next level <Icon name="arrow-right" size={11} color={C.primary} /></button>
-        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>Level progress</span><span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}%</span></div>
+        <div style={{ height: 14, background: C.line, borderRadius: 10, overflow: "hidden" }}><div style={{ width: (grow ? pct : 0) + "%", height: "100%", borderRadius: 10, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width 1s cubic-bezier(.2,.8,.2,1)" }} /></div>
+        <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, marginTop: 10 }}>{done} of {total} flashcards learned at {curLevel}</div>
         <div style={{ marginTop: 16 }}><PrimaryButton onClick={onStart}>Push it forward</PrimaryButton></div>
       </div>
-
-      <PointsChart history={history} />
 
       {dlg === "streak" && <StreakDialog history={history} streak={dayStreak} onClose={() => setDlg(null)} />}
       {dlg === "points" && <PointsDialog points={totalPoints} onClose={() => setDlg(null)} />}
@@ -603,13 +677,13 @@ function Dashboard({ user, allCards, learnedIds, dayStreak, history, totalPoints
   );
 }
 
+/* ===================== STATS ===================== */
 function PointsChart({ history }) {
   const [mode, setMode] = useState("week");
   const [offset, setOffset] = useState(0);
   const [grow, setGrow] = useState(false);
   useEffect(() => { setOffset(0); }, [mode]);
   useEffect(() => { setGrow(false); const t = setTimeout(() => setGrow(true), 40); return () => clearTimeout(t); }, [mode, offset]);
-
   const total = history.length; const todayIdx = total - 1; const weeksAvail = Math.ceil(total / 7);
   let bars = [], rangeLabel = "", periodTotal = 0, canPrev = false, canNext = false;
   if (mode === "week") {
@@ -628,12 +702,9 @@ function PointsChart({ history }) {
   const goPrev = () => { if (canPrev) setOffset((o) => o - 1); };
   const goNext = () => { if (canNext) setOffset((o) => o + 1); };
   const navBtn = (dir, enabled, onClick) => (<button onClick={enabled ? onClick : undefined} disabled={!enabled} className="press" style={{ width: 34, height: 34, borderRadius: 11, border: "1.5px solid " + C.line, background: C.surface, color: enabled ? C.ink : "#D8D5E8", cursor: enabled ? "pointer" : "default" }}><Icon name={dir === "prev" ? "chevron-left" : "chevron-right"} size={13} color={enabled ? C.ink : "#D8D5E8"} /></button>);
-
-  // swipe support
   const sx = useRef(0); const sw = useRef(false);
   const down = (e) => { sw.current = true; sx.current = e.clientX; };
   const up = (e) => { if (!sw.current) return; sw.current = false; const dx = e.clientX - sx.current; if (Math.abs(dx) < 40) return; if (dx < 0) goNext(); else goPrev(); };
-
   return (
     <div style={{ background: C.surface, borderRadius: 22, padding: "18px 18px 14px", border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 10 }}>
@@ -641,12 +712,46 @@ function PointsChart({ history }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: C.amber, display: "flex", alignItems: "center", gap: 5 }}><Icon name="star" size={13} color={C.amber} /> {periodTotal} pts</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        {navBtn("prev", canPrev, goPrev)}
-        <span style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>{rangeLabel}</span>
-        {navBtn("next", canNext, goNext)}
+        {navBtn("prev", canPrev, goPrev)}<span style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>{rangeLabel}</span>{navBtn("next", canNext, goNext)}
       </div>
       <div onPointerDown={down} onPointerUp={up} onPointerCancel={() => { sw.current = false; }} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8, height: 104, touchAction: "pan-y", cursor: "grab" }}>{bars.map((d, i) => { const h = grow ? Math.max(d.points > 0 ? 8 : 3, (d.points / max) * 84) : 3; return (<div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}><span style={{ fontSize: 10.5, fontWeight: 700, color: d.points ? C.ink : "transparent" }}>{d.points || 0}</span><div style={{ width: "100%", maxWidth: 28, height: h, borderRadius: 8, background: d.ghost ? C.line : (d.today ? "linear-gradient(180deg,#6A5BFF,#A06BFF)" : C.primarySoft), transition: "height .8s cubic-bezier(.2,.8,.2,1)", boxShadow: d.today ? "0 4px 12px " + C.primary + "55" : "none", opacity: d.ghost ? 0.5 : 1 }} /><span style={{ fontSize: mode === "month" ? 9.5 : 11, fontWeight: 700, color: d.today ? C.primary : C.sub, whiteSpace: "nowrap" }}>{d.label}</span></div>); })}</div>
       <div style={{ textAlign: "center", fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 8 }}>swipe or use arrows to browse</div>
+    </div>
+  );
+}
+function MiniStat({ icon, value, label, color }) {
+  return (<div style={{ flex: 1, background: color + "12", border: "1px solid " + color + "2A", borderRadius: 16, padding: "14px 8px", textAlign: "center" }}><Icon name={icon} size={16} color={color} /><div style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginTop: 4, letterSpacing: -0.5 }}>{value}</div><div style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>{label}</div></div>);
+}
+function StatsPage({ history, totalPoints, dayStreak, allCards, learnedIds }) {
+  const learned = allCards.filter((c) => learnedIds.includes(c.id)).length;
+  const totalCards = allCards.length;
+  const best = Math.max(0, ...history.map((d) => d.points));
+  const activeDays = history.filter((d) => d.points > 0).length;
+  const avg = activeDays ? Math.round(history.reduce((a, d) => a + d.points, 0) / activeDays) : 0;
+  const perLevel = LEVELS_ORDER.map((lv) => { const cs = allCards.filter((c) => c.level === lv); const dn = cs.filter((c) => learnedIds.includes(c.id)).length; return { lv, total: cs.length, done: dn }; }).filter((x) => x.total > 0);
+  return (
+    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>Your stats</h1>
+      <div style={{ display: "flex", gap: 10 }}>
+        <MiniStat icon="star" value={totalPoints} label="points" color={C.primary} />
+        <MiniStat icon="fire" value={dayStreak} label="day streak" color={C.amber} />
+        <MiniStat icon="circle-check" value={learned + "/" + totalCards} label="learned" color={C.green} />
+      </div>
+      <PointsChart history={history} />
+      <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 14 }}>Progress by level</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{perLevel.map(({ lv, total, done }) => { const p = total ? Math.round((done / total) * 100) : 0; return (
+          <div key={lv} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 26, fontSize: 12.5, fontWeight: 800, color: C.primary }}>{lv}</span>
+            <div style={{ flex: 1, height: 12, background: C.line, borderRadius: 8, overflow: "hidden" }}><div style={{ width: p + "%", height: "100%", borderRadius: 8, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width .8s cubic-bezier(.2,.8,.2,1)" }} /></div>
+            <span style={{ width: 40, textAlign: "right", fontSize: 12, fontWeight: 700, color: C.sub }}>{done}/{total}</span>
+          </div>); })}</div>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <MiniStat icon="trophy" value={best} label="best day" color={C.fa} />
+        <MiniStat icon="calendar-check" value={activeDays} label="active days" color={C.de} />
+        <MiniStat icon="gauge-high" value={avg} label="avg / day" color={C.green} />
+      </div>
     </div>
   );
 }
@@ -659,86 +764,99 @@ function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, dayStreak
   const [name, setName] = useState((user && user.name) || "");
   const [lang, setLang] = useState(selectedLangs[0] || "fa");
   const [saved, setSaved] = useState(false);
+  const [shareMsg, setShareMsg] = useState("");
+  const cardRef = useRef(null);
   const langDirty = lang !== (selectedLangs[0] || "fa");
   const dirty = name.trim() !== ((user && user.name) || "") || langDirty;
   const lvl = (user && user.level) || "A1";
   const save = async () => { if (!dirty) return; if (name.trim()) setUser((u) => ({ ...u, name: name.trim() })); if (langDirty) { setSelectedLangs([lang]); await onLangsChanged([lang]); } setSaved(true); setTimeout(() => setSaved(false), 1800); };
+  const share = async () => {
+    setShareMsg("Preparing…");
+    const r = await shareImage(cardRef.current, shareText(totalPoints, dayStreak, user && user.name), "lingo-profile.png", C.surface);
+    setShareMsg(r === "shared" ? "" : r === "downloaded" ? "Image saved!" : "Couldn't share image");
+    setTimeout(() => setShareMsg(""), 2200);
+  };
   const InfoBox = ({ icon, big, sub, color }) => (
-    <div style={{ flex: 1, background: color + "12", border: "1px solid " + color + "2C", borderRadius: 16, padding: "14px 8px", textAlign: "center" }}>
-      <Icon name={icon} size={16} color={color} />
-      <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginTop: 4, letterSpacing: -0.5 }}>{big}</div>
-      <div style={{ fontSize: 11.5, color: C.sub, fontWeight: 700 }}>{sub}</div>
+    <div style={{ flex: 1, background: color + "12", border: "1px solid " + color + "2C", borderRadius: 14, padding: "12px 6px", textAlign: "center" }}>
+      <Icon name={icon} size={15} color={color} />
+      <div style={{ fontSize: 17, fontWeight: 800, color: C.ink, marginTop: 3, letterSpacing: -0.5 }}>{big}</div>
+      <div style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>{sub}</div>
     </div>
   );
   return (
-    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>Profile</h1>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginTop: 2 }}>
+    <div style={{ padding: "18px 20px 14px", display: "flex", flexDirection: "column", gap: 14, height: "100%", boxSizing: "border-box", overflow: "hidden" }}>
+      <h1 style={{ fontSize: 23, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>Profile</h1>
+
+      <div ref={cardRef} style={{ position: "relative", background: C.surface, borderRadius: 22, padding: "22px 18px 20px", border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+        <button onClick={share} data-html2canvas-ignore="true" className="press" aria-label="Share my card" style={{ position: "absolute", top: 14, right: 14, width: 36, height: 36, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, color: C.primary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="arrow-up-from-bracket" size={14} color={C.primary} /></button>
         <button onClick={() => setPicker(true)} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative" }}>
-          <Avatar seed={user && user.avatar} size={108} ring={C.primary} />
-          <span style={{ position: "absolute", right: 2, bottom: 2, width: 32, height: 32, borderRadius: "50%", background: C.primary, border: "3px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="pen" size={12} color="#fff" /></span>
+          <Avatar seed={user && user.avatar} size={84} ring={C.primary} />
+          <span data-html2canvas-ignore="true" style={{ position: "absolute", right: 0, bottom: 0, width: 28, height: 28, borderRadius: "50%", background: C.primary, border: "3px solid " + C.surface, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="pen" size={11} color="#fff" /></span>
         </button>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{(user && user.name) || "You"}</div>
-        <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>Tap your character to change it</div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: C.ink }}>{(user && user.name) || "You"}</div>
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <InfoBox icon="graduation-cap" big={lvl} sub={LEVEL_TITLE[lvl]} color={C.primary} />
+          <InfoBox icon="fire" big={dayStreak} sub="day streak" color={C.amber} />
+          <InfoBox icon="star" big={totalPoints} sub="points" color={C.green} />
+        </div>
       </div>
+      {shareMsg && <div style={{ textAlign: "center", fontSize: 12.5, color: C.green, fontWeight: 700, marginTop: -6 }}>{shareMsg}</div>}
 
-      {/* read-only stats */}
-      <div style={{ display: "flex", gap: 10 }}>
-        <InfoBox icon="graduation-cap" big={lvl} sub={LEVEL_TITLE[lvl]} color={C.primary} />
-        <InfoBox icon="fire" big={dayStreak} sub="day streak" color={C.amber} />
-        <InfoBox icon="star" big={totalPoints} sub="points" color={C.green} />
-      </div>
-
-      <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line }}>
+      <div style={{ background: C.surface, borderRadius: 18, padding: 16, border: "1px solid " + C.line }}>
         <label style={lbl}>Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
-        <label style={{ ...lbl, marginTop: 16, marginBottom: 8 }}>Language</label>
-        <div style={{ display: "flex", gap: 10 }}>{["fa", "de"].map((l) => { const m = langMeta[l]; const on = lang === l; return (<button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "13px", borderRadius: 14, border: on ? "2px solid " + m.color : "2px solid " + C.line, background: on ? m.soft : C.surface, cursor: "pointer", fontFamily: FONT, fontWeight: 700, color: C.ink, fontSize: 14 }}>{m.flag} {m.label}{on ? " ✓" : ""}</button>); })}</div>
-        {langDirty && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>Changing the language resets your current word set.</div>}
-        <button onClick={save} disabled={!dirty} className="press" style={{ width: "100%", marginTop: 14, padding: 13, borderRadius: 14, border: "none", background: dirty ? C.primary : C.line, color: dirty ? "#fff" : C.sub, fontWeight: 800, cursor: dirty ? "pointer" : "default", fontFamily: FONT }}>{saved ? "Saved ✓" : "Save changes"}</button>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={{ ...inputStyle, padding: "11px 13px" }} />
+        <label style={{ ...lbl, marginTop: 12, marginBottom: 6 }}>Language</label>
+        <div style={{ position: "relative" }}>
+          <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ width: "100%", padding: "11px 38px 11px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, background: C.surface, appearance: "none", WebkitAppearance: "none", cursor: "pointer", boxSizing: "border-box" }}>
+            <option value="fa">🇮🇷 Persian (Finglish)</option>
+            <option value="de">🇩🇪 German (Deutsch)</option>
+          </select>
+          <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}><Icon name="chevron-down" size={13} color={C.sub} /></span>
+        </div>
+        {langDirty && <div style={{ fontSize: 11.5, color: C.sub, marginTop: 8 }}>Changing the language resets your current flashcard set.</div>}
+        <button onClick={save} disabled={!dirty} className="press" style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 13, border: "none", background: dirty ? C.primary : C.line, color: dirty ? "#fff" : C.sub, fontWeight: 800, cursor: dirty ? "pointer" : "default", fontFamily: FONT }}>{saved ? "Saved ✓" : "Save changes"}</button>
       </div>
-      <button onClick={onSignOut} className="press" style={{ padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.red, fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT }}>Sign out</button>
+
+      <div style={{ flex: 1, minHeight: 4 }} />
+      <button onClick={onSignOut} className="press" style={{ padding: 13, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.red, fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT }}>Sign out</button>
       {picker && <AvatarPicker current={user && user.avatar} onPick={(a) => setUser((u) => ({ ...u, avatar: a }))} onClose={() => setPicker(false)} />}
     </div>
   );
 }
 
-/* ===================== MY WORDS ===================== */
-function Section({ title, count, defaultOpen, children }) {
-  const [open, setOpen] = useState(!!defaultOpen);
-  return (
-    <div style={{ background: C.surface, border: "1px solid " + C.line, borderRadius: 18, overflow: "hidden" }}>
-      <button onClick={() => setOpen((o) => !o)} className="press" style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "15px 16px", background: "transparent", border: "none", cursor: "pointer", fontFamily: FONT }}>
-        <span style={{ flex: 1, textAlign: "left", fontSize: 14.5, fontWeight: 800, color: C.ink }}>{title} <span style={{ color: C.sub, fontWeight: 700 }}>({count})</span></span>
-        <Icon name={open ? "chevron-up" : "chevron-down"} size={14} color={C.sub} />
-      </button>
-      {open && <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 9 }}>{children}</div>}
-    </div>
-  );
-}
-function MyWordsPage({ allCards, learnedIds, selectedLangs, onAdd, onDelete }) {
+/* ===================== MY FLASHCARDS ===================== */
+function MyFlashcardsPage({ allCards, learnedIds, curLevel, onResult, onAdd, onDelete }) {
   const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState(null);
+  const [group, setGroup] = useState(curLevel);
+  const [q, setQ] = useState("");
   const langsPresent = ["fa", "de"].filter((l) => allCards.some((c) => c.language === l));
-  const mine = allCards.filter((c) => c.custom);
-  const starter = allCards.filter((c) => !c.custom);
+  const groupList = group === "mine" ? allCards.filter((c) => c.custom) : allCards.filter((c) => !c.custom && c.level === group);
+  const s = q.trim().toLowerCase();
+  const list = s ? groupList.filter((c) => c.word.toLowerCase().includes(s) || (c.translation || "").toLowerCase().includes(s)) : groupList;
+  const groupDone = groupList.filter((c) => learnedIds.includes(c.id)).length;
+  const chips = LEVELS_ORDER.map((lv) => ({ k: lv, label: lv, n: allCards.filter((c) => !c.custom && c.level === lv).length })).concat([{ k: "mine", label: "Yours", n: allCards.filter((c) => c.custom).length }]);
   const Row = ({ c }) => { const m = langMeta[c.language]; const done = learnedIds.includes(c.id); return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#FBFAFF", border: "1px solid " + C.line, borderRadius: 14, padding: "11px 12px" }}>
+    <div onClick={() => setOpen(c)} style={{ display: "flex", alignItems: "center", gap: 12, background: "#FBFAFF", border: "1px solid " + C.line, borderRadius: 14, padding: "11px 12px", cursor: "pointer" }}>
       <SpeakBtn text={sayWordOf(c)} lang={m.ttsLang} color={m.color} size={34} />
       <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, color: C.ink, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.word}</div><div style={{ fontSize: 12.5, color: C.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.pron ? ("/ " + c.pron + " / · ") : ""}{c.translation}</div></div>
-      {done && <Icon name="circle-check" size={16} color={C.green} />}
-      <button onClick={() => onDelete(c.id)} className="press" aria-label="Remove" style={{ background: "transparent", border: "none", color: C.sub, cursor: "pointer", padding: 4 }}><Icon name="xmark" size={15} color={C.sub} /></button>
+      {done ? <span style={{ fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "3px 8px", borderRadius: 8, display: "flex", alignItems: "center", gap: 4 }}><Icon name="check" size={10} color={C.green} />Done</span> : <span style={{ fontSize: 11, fontWeight: 800, color: C.sub, background: C.bg, padding: "3px 8px", borderRadius: 8 }}>Not done</span>}
+      {c.custom && <button onClick={(e) => { e.stopPropagation(); onDelete(c.id); }} className="press" aria-label="Remove" style={{ background: "transparent", border: "none", color: C.sub, cursor: "pointer", padding: 4 }}><Icon name="xmark" size={14} color={C.sub} /></button>}
     </div>); };
   return (
-    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>My Words</h1>
-      <button onClick={() => setAdding(true)} className="press" style={{ padding: 15, borderRadius: 18, border: "2px dashed " + C.primary + "55", background: C.primarySoft, color: C.primary, fontSize: 15.5, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="plus" size={15} color={C.primary} /> Add a word</button>
-      <Section title="Words you added" count={mine.length} defaultOpen={true}>
-        {mine.length === 0 ? <div style={{ color: C.sub, fontSize: 13.5, textAlign: "center", padding: "12px 0" }}>Nothing yet — tap “Add a word” to create your own.</div> : mine.map((c) => <Row key={c.id} c={c} />)}
-      </Section>
-      <Section title="Starter words" count={starter.length} defaultOpen={false}>
-        {starter.map((c) => <Row key={c.id} c={c} />)}
-      </Section>
-      {adding && <AddWordModal selectedLangs={selectedLangs.length ? selectedLangs : langsPresent} onClose={() => setAdding(false)} onAdd={onAdd} />}
+    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>My Flashcards</h1>
+      <button onClick={() => setAdding(true)} className="press" style={{ padding: 14, borderRadius: 16, border: "2px dashed " + C.primary + "55", background: C.primarySoft, color: C.primary, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="plus" size={14} color={C.primary} /> Add a flashcard</button>
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, margin: "0 -4px", padding: "0 4px 2px" }}>
+        {chips.map((ch) => { const on = group === ch.k; return (<button key={ch.k} onClick={() => setGroup(ch.k)} className="press" style={{ flexShrink: 0, padding: "9px 14px", borderRadius: 13, border: "1.5px solid " + (on ? C.primary : C.line), background: on ? C.primary : C.surface, color: on ? "#fff" : C.sub, fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: FONT }}>{ch.label} <span style={{ opacity: 0.75, fontWeight: 700 }}>{ch.n}</span></button>); })}
+      </div>
+      <div style={{ position: "relative" }}><span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}><Icon name="magnifying-glass" size={14} color={C.sub} /></span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search this level…" style={{ width: "100%", padding: "11px 14px 11px 38px", fontSize: 14.5, borderRadius: 13, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" }} /></div>
+      <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 700 }}>{group === "mine" ? "Your flashcards" : group + " · " + LEVEL_TITLE[group]} — {groupDone}/{groupList.length} done</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {list.length === 0 ? <div style={{ color: C.sub, fontSize: 13.5, textAlign: "center", padding: "18px 0" }}>{group === "mine" ? "No flashcards yet — tap “Add a flashcard”." : "No matches."}</div> : list.map((c) => <Row key={c.id} c={c} />)}
+      </div>
+      {adding && <AddWordModal selectedLangs={langsPresent} curLevel={group === "mine" ? curLevel : group} onClose={() => setAdding(false)} onAdd={onAdd} />}
+      {open && <FlashcardModal card={open} learned={learnedIds.includes(open.id)} onResult={onResult} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -771,16 +889,15 @@ function FriendDetail({ user, onClose }) {
     <Sheet onClose={onClose}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}><Avatar seed={user.avatar} size={64} ring={C.primary} /><div><div style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>{user.name}</div><div style={{ fontSize: 13, color: C.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Icon name="fire" size={12} color={C.amber} /> {user.streak}-day · <Icon name="star" size={12} color={C.amber} /> {user.points} pts</div></div></div>
       <div style={{ marginTop: 18, background: "#FBFAFF", border: "1px solid " + C.line, borderRadius: 18, padding: 18, display: "flex", justifyContent: "space-around", gap: 14, flexWrap: "wrap" }}>{langs.map((l) => { const m = langMeta[l]; const d = user[l]; return <Ring key={l} pct={d.total ? d.done / d.total : 0} color={m.color} value={d.done + "/" + d.total} label={m.flag + " " + m.label} />; })}</div>
-      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Close</button>
     </Sheet>
   );
 }
 
-/* ===================== ADD WORD ===================== */
+/* ===================== ADD FLASHCARD ===================== */
 function Field({ label, value, onChange, placeholder, dir }) {
   return (<div style={{ marginTop: 12 }}><label style={{ fontSize: 12.5, fontWeight: 700, color: C.sub }}>{label}</label><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} dir={dir || "ltr"} style={{ width: "100%", marginTop: 5, padding: "11px 13px", fontSize: 14.5, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" }} /></div>);
 }
-function AddWordModal({ selectedLangs, onClose, onAdd }) {
+function AddWordModal({ selectedLangs, curLevel, onClose, onAdd }) {
   const [lang, setLang] = useState(selectedLangs[0] || "fa");
   const [f, setF] = useState({ word: "", translation: "", pron: "", example: "", exampleTranslation: "", farsi: "", farsiExample: "" });
   const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
@@ -793,12 +910,12 @@ function AddWordModal({ selectedLangs, onClose, onAdd }) {
     setAuto("error");
   };
   const canAdd = f.word.trim() && f.translation.trim();
-  const add = () => { if (!canAdd) return; onAdd({ id: "u" + Date.now(), language: lang, word: f.word.trim(), translation: f.translation.trim(), pron: f.pron.trim(), example: f.example.trim(), exampleTranslation: f.exampleTranslation.trim(), note: "added by you", imageWord: f.translation.trim(), farsi: f.farsi.trim(), farsiExample: f.farsiExample.trim(), custom: true }); onClose(); };
+  const add = () => { if (!canAdd) return; onAdd({ id: "u" + Date.now(), language: lang, level: curLevel, word: f.word.trim(), translation: f.translation.trim(), pron: f.pron.trim(), example: f.example.trim(), exampleTranslation: f.exampleTranslation.trim(), note: "added by you", farsi: f.farsi.trim(), farsiExample: f.farsiExample.trim(), custom: true }); onClose(); };
   return (
-    <Sheet onClose={onClose} title="Add a word">
-      <p style={{ color: C.sub, fontSize: 14, margin: "-8px 0 14px" }}>Type the word, tap auto-fill, or just fill it in yourself.</p>
+    <Sheet onClose={onClose} title="Add a flashcard">
+      <p style={{ color: C.sub, fontSize: 14, margin: "-8px 0 14px" }}>Type the flashcard, tap auto-fill, or just fill it in yourself.</p>
       {selectedLangs.length > 1 && (<div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{selectedLangs.map((l) => { const lm = langMeta[l]; const on = lang === l; return <button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "10px", borderRadius: 12, border: on ? "2px solid " + lm.color : "2px solid " + C.line, background: on ? lm.soft : C.surface, fontWeight: 700, color: C.ink, cursor: "pointer", fontFamily: FONT }}>{lm.flag} {lm.label}</button>; })}</div>)}
-      <Field label={"Word (" + langMeta[lang].label + (lang === "fa" ? ", Finglish" : "") + ")"} value={f.word} onChange={set("word")} placeholder={lang === "fa" ? "e.g. mehraboon" : "e.g. der Apfel"} />
+      <Field label={"Flashcard (" + langMeta[lang].label + (lang === "fa" ? ", Finglish" : "") + ")"} value={f.word} onChange={set("word")} placeholder={lang === "fa" ? "e.g. mehraboon" : "e.g. der Apfel"} />
       <button onClick={autofill} disabled={!f.word.trim() || auto === "loading"} className="press" style={{ width: "100%", marginTop: 10, padding: 11, borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontWeight: 800, fontSize: 14, cursor: f.word.trim() ? "pointer" : "default", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{auto === "loading" ? <><span className="spinner" /> Auto-filling…</> : <><Icon name="wand-magic-sparkles" size={14} color={C.primary} /> Auto-fill card</>}</button>
       {auto === "done" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Filled in meaning, pronunciation & example — edit anything you like.</div>}
       {auto === "partial" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Added the translation — add an example/pronunciation if you like.</div>}
@@ -808,21 +925,25 @@ function AddWordModal({ selectedLangs, onClose, onAdd }) {
       <Field label="Example sentence (optional)" value={f.example} onChange={set("example")} placeholder="a short sentence" />
       <Field label="Example in English (optional)" value={f.exampleTranslation} onChange={set("exampleTranslation")} placeholder="its translation" />
       {lang === "fa" && <Field label="Farsi script (optional · used for audio)" value={f.farsi} onChange={set("farsi")} placeholder="e.g. مهربون" dir="rtl" />}
-      <button onClick={add} disabled={!canAdd} className="press" style={{ width: "100%", marginTop: 18, padding: 15, borderRadius: 16, border: "none", background: canAdd ? C.green : C.line, color: canAdd ? "#fff" : C.sub, fontWeight: 800, fontSize: 15.5, cursor: canAdd ? "pointer" : "default", fontFamily: FONT, boxShadow: canAdd ? "0 6px 16px " + C.green + "55" : "none" }}>Add to my words</button>
-      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+      <div style={{ fontSize: 12, color: C.sub, marginTop: 12, fontWeight: 600 }}>Will be added to your <b style={{ color: C.primary }}>{curLevel}</b> set.</div>
+      <button onClick={add} disabled={!canAdd} className="press" style={{ width: "100%", marginTop: 14, padding: 15, borderRadius: 16, border: "none", background: canAdd ? C.green : C.line, color: canAdd ? "#fff" : C.sub, fontWeight: 800, fontSize: 15.5, cursor: canAdd ? "pointer" : "default", fontFamily: FONT, boxShadow: canAdd ? "0 6px 16px " + C.green + "55" : "none" }}>Add to my flashcards</button>
     </Sheet>
   );
 }
 
 /* ===================== SESSION COMPLETE ===================== */
 const CHEERS = [(n) => "You smashed it, " + n + "! 💥", (n) => "On fire, " + n + "! 🔥", (n) => "Nailed it, " + n + "! 🎉", (n) => "Look at you go, " + n + "! ✨", (n) => "Unstoppable, " + n + "! ⚡"];
-function SessionComplete({ points, reviews, dayStreak, name, onDashboard }) {
+function SessionComplete({ points, reviews, dayStreak, name, level, onDashboard }) {
   const pts = useCountUp(points);
   const line = useMemo(() => CHEERS[Math.floor(Math.random() * CHEERS.length)]((name || "friend")), [name]);
   const [shared, setShared] = useState("");
+  const capRef = useRef(null);
   useEffect(() => { playChime(); }, []);
   const onShare = async () => {
     const txt = shareText(points, dayStreak, name);
+    const r = await shareImage(capRef.current, txt, "lingo-result.png", C.bg);
+    if (r === "shared") return;
+    if (r === "downloaded") { setShared("Image saved!"); setTimeout(() => setShared(""), 2200); return; }
     try { if (navigator.share) { await navigator.share({ text: txt }); return; } } catch (_) {}
     try { await navigator.clipboard.writeText(txt); setShared("Copied to clipboard!"); setTimeout(() => setShared(""), 2000); return; } catch (_) {}
     setShared("Share not available here"); setTimeout(() => setShared(""), 2000);
@@ -830,13 +951,15 @@ function SessionComplete({ points, reviews, dayStreak, name, onDashboard }) {
   return (
     <div style={{ position: "relative", width: "100%", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 0" }}>
       <Confetti />
-      <div className="pop" style={{ width: 96, height: 96, borderRadius: "50%", background: C.greenSoft, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 10px 30px " + C.green + "33" }}><Icon name="check" size={44} color={C.green} /></div>
-      <h1 style={{ fontSize: 27, fontWeight: 800, color: C.ink, margin: "0 0 4px", letterSpacing: -0.6 }}>{line}</h1>
-      <p style={{ color: C.sub, margin: "0 0 8px", fontSize: 15 }}>You earned</p>
-      <div style={{ fontSize: 52, fontWeight: 800, color: C.amber, letterSpacing: -2, lineHeight: 1, display: "flex", alignItems: "center", gap: 10 }}><Icon name="star" size={40} color={C.amber} /> {pts}</div>
-      <p style={{ color: C.sub, margin: "6px 0 22px", fontSize: 14, fontWeight: 600 }}>points this round</p>
-      <div style={{ background: C.surface, borderRadius: 22, padding: "16px 26px", border: "1px solid " + C.line, display: "flex", gap: 26, boxShadow: "0 10px 30px rgba(28,26,46,0.08)" }}><Stat big={reviews} label="Reviews" color={C.fa} /><Divider /><Stat big={dayStreak} label={<span>Day streak <Icon name="fire" size={11} color={C.primary} /></span>} color={C.primary} /></div>
-      <div style={{ width: "100%", maxWidth: 320, marginTop: 26, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div ref={capRef} style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "12px 16px", borderRadius: 24, width: "100%", maxWidth: 320 }}>
+        <div className="pop" style={{ width: 88, height: 88, borderRadius: "50%", background: C.greenSoft, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14, boxShadow: "0 10px 30px " + C.green + "33" }}><Icon name="check" size={40} color={C.green} /></div>
+        <h1 style={{ fontSize: 25, fontWeight: 800, color: C.ink, margin: "0 0 4px", letterSpacing: -0.6 }}>{line}</h1>
+        <p style={{ color: C.sub, margin: "0 0 8px", fontSize: 14.5 }}>{level ? level + " session complete · you earned" : "You earned"}</p>
+        <div style={{ fontSize: 50, fontWeight: 800, color: C.amber, letterSpacing: -2, lineHeight: 1, display: "flex", alignItems: "center", gap: 10 }}><Icon name="star" size={38} color={C.amber} /> {pts}</div>
+        <p style={{ color: C.sub, margin: "6px 0 18px", fontSize: 14, fontWeight: 600 }}>points this round</p>
+        <div style={{ background: C.surface, borderRadius: 22, padding: "16px 26px", border: "1px solid " + C.line, display: "flex", gap: 26, boxShadow: "0 10px 30px rgba(28,26,46,0.08)" }}><Stat big={reviews} label="Reviews" color={C.fa} /><Divider /><Stat big={dayStreak} label={<span>Day streak 🔥</span>} color={C.primary} /></div>
+      </div>
+      <div style={{ width: "100%", maxWidth: 320, marginTop: 22, display: "flex", flexDirection: "column", gap: 12 }}>
         <PrimaryButton onClick={onDashboard}>Back to dashboard</PrimaryButton>
         <button onClick={onShare} className="press" style={{ padding: 14, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="arrow-up-from-bracket" size={14} color={C.ink} /> Share result</button>
         {shared && <div style={{ fontSize: 13, color: C.green, fontWeight: 700 }}>{shared}</div>}
@@ -848,21 +971,23 @@ function SessionComplete({ points, reviews, dayStreak, name, onDashboard }) {
 /* ===================== PRIMITIVES ===================== */
 function Shell({ children }) { return (<div style={{ height: "100vh", height: "100dvh", width: "100%", display: "flex", justifyContent: "center", background: C.bg, fontFamily: FONT, overflow: "hidden" }}><div className="frame" style={{ width: "100%", maxWidth: 440, height: "100%", position: "relative", display: "flex", flexDirection: "column", overflow: "hidden" }}>{children}</div></div>); }
 function PrimaryButton({ children, onClick, disabled }) { return (<button onClick={onClick} disabled={disabled} className="press" style={{ width: "100%", padding: 16, borderRadius: 18, border: "none", cursor: disabled ? "not-allowed" : "pointer", background: disabled ? C.line : C.primary, color: disabled ? C.sub : "#fff", fontSize: 16.5, fontWeight: 800, fontFamily: FONT, letterSpacing: -0.2, boxShadow: disabled ? "none" : "0 8px 22px " + C.primary + "44", transition: "all .15s" }}>{children}</button>); }
-function actionBtn(color) { return { width: 64, height: 64, borderRadius: "50%", border: "none", cursor: "pointer", background: color, color: "#fff", boxShadow: "0 8px 20px " + color + "55", display: "flex", alignItems: "center", justifyContent: "center" }; }
+function actionBtn(color, size) { size = size || 64; return { width: size, height: size, borderRadius: "50%", border: "none", cursor: "pointer", background: color, color: "#fff", boxShadow: "0 8px 20px " + color + "55", display: "flex", alignItems: "center", justifyContent: "center" }; }
 function StyleTag() {
   return (<style>{`
     @keyframes confetti { 0% { transform: translateY(-20px) rotate(0); opacity:1 } 85% { opacity:1 } 100% { transform: translateY(680px) rotate(560deg); opacity:0 } }
     @keyframes pop { 0% { transform: scale(0); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
     @keyframes sheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes cardpop { from { transform: translateY(34px) scale(.92); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
     @keyframes spin { to { transform: rotate(360deg); } }
     .pop { animation: pop .5s cubic-bezier(.2,.8,.2,1); }
     .sheet-in { animation: sheet .3s cubic-bezier(.2,.8,.2,1); }
+    .card-pop { animation: cardpop .32s cubic-bezier(.2,.8,.2,1); }
     .spinner { width:15px; height:15px; border:3px solid rgba(0,0,0,0.12); border-top-color:currentColor; border-radius:50%; animation: spin .7s linear infinite; display:inline-block; vertical-align:middle; }
     .press { transition: transform .08s ease; }
     .press:active { transform: scale(0.95); }
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
     input::placeholder { color: #B6B2CE; }
-    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-thumb { background: ` + C.line + `; border-radius: 4px; }
   `}</style>);
 }
