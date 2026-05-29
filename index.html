@@ -107,12 +107,21 @@ const avatarURL = (seed) => "https://api.dicebear.com/9.x/open-peeps/svg?seed=" 
 
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const nextLevel = (lv) => CEFR[Math.min(CEFR.length - 1, Math.max(0, CEFR.indexOf(lv)) + 1)];
+const LEVEL_TITLE = { A1: "Beginner", A2: "Elementary", B1: "Intermediate", B2: "Upper-intermediate", C1: "Advanced", C2: "Mastery" };
 const LEVELS = [
   { id: "A1", title: "Beginner", desc: "I'm just starting and know only a few words." },
   { id: "A2", title: "Elementary", desc: "I can use simple, everyday phrases." },
   { id: "B1", title: "Intermediate", desc: "I can handle most everyday conversations." },
   { id: "B2", title: "Upper-intermediate", desc: "I can talk comfortably about many topics." },
   { id: "C1", title: "Advanced", desc: "I'm nearly fluent and rarely get stuck." },
+];
+const REWARDS = [
+  { at: 50, name: "Spark badge", icon: "bolt" },
+  { at: 150, name: "Bronze medal", icon: "medal" },
+  { at: 300, name: "Silver medal", icon: "award" },
+  { at: 600, name: "Gold trophy", icon: "trophy" },
+  { at: 1000, name: "Diamond badge", icon: "gem" },
+  { at: 1500, name: "Legend crown", icon: "crown" },
 ];
 
 const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -209,12 +218,24 @@ function WordImage({ card, soft, width = "100%", height = 116 }) {
   return (<div style={{ width: width, height: height, borderRadius: 18, overflow: "hidden", background: soft, position: "relative", flexShrink: 0 }}>{!err && <img src={imgURL(card)} alt={card.translation} referrerPolicy="no-referrer" onLoad={() => setLoaded(true)} onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: loaded ? 1 : 0, transition: "opacity .4s" }} />}{(!loaded || err) && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.sub, fontSize: 12.5, fontWeight: 700, gap: 6, flexDirection: "column" }}><Icon name="image" size={20} color={C.sub} />{err ? card.translation : "loading…"}</div>}</div>);
 }
 
+function Sheet({ children, onClose, title }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
+      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", maxHeight: "85vh", overflowY: "auto", fontFamily: FONT }}>
+        <div style={{ width: 40, height: 5, background: C.line, borderRadius: 4, margin: "0 auto 16px" }} />
+        {title && <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, margin: "0 0 14px" }}>{title}</h2>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const sayWordOf = (card) => (card.language === "fa" ? (card.farsi || card.word) : card.word);
 const sayExampleOf = (card) => (card.language === "fa" ? (card.farsiExample || card.example) : card.example);
 
 /* ===================== APP ===================== */
 function App() {
-  const [screen, setScreen] = useState("register");  // 1) create account
+  const [screen, setScreen] = useState("welcome");   // 0) intro onboarding
   const [tab, setTab] = useState("dashboard");
   const [selectedLangs, setSelectedLangs] = useState([]);
   const [user, setUser] = useState(null);
@@ -226,7 +247,7 @@ function App() {
   const [history, setHistory] = useState(() => buildHistory());
   const dayStreak = useMemo(() => calcStreak(history), [history]);
   const totalPoints = useMemo(() => history.reduce((a, d) => a + d.points, 0), [history]);
-  const committed = useRef(false);
+  const committed = useRef(false); const navBusy = useRef(false);
   const remaining = useMemo(() => allCards.filter((c) => !learnedIds.includes(c.id)), [allCards, learnedIds]);
   const initData = async (langs) => { const words = await dataService.fetchWords(langs); setAllCards(words); setLearnedIds([]); setQueue([]); };
 
@@ -234,7 +255,7 @@ function App() {
   const commitRound = (pts) => { if (pts <= 0) return; setHistory((h) => { const c = [...h]; c[c.length - 1] = { ...c[c.length - 1], points: c[c.length - 1].points + pts }; return c; }); };
   useEffect(() => { if (screen === "deck" && allCards.length > 0 && queue.length === 0 && !committed.current) { committed.current = true; commitRound(roundPoints); } }, [screen, queue.length, roundPoints, allCards.length]);
   const exitToApp = () => { if (!committed.current && roundPoints > 0) { committed.current = true; commitRound(roundPoints); } setTab("dashboard"); setScreen("app"); };
-  const signOut = () => { setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setQueue([]); setHistory(buildHistory()); setTab("dashboard"); setScreen("register"); };
+  const signOut = () => { setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setQueue([]); setHistory(buildHistory()); setTab("dashboard"); setScreen("welcome"); };
 
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
@@ -254,55 +275,52 @@ function App() {
   const addCard = (card) => { setAllCards((prev) => [...prev, card]); };
   const deleteCard = (id) => { setAllCards((p) => p.filter((c) => c.id !== id)); setQueue((q) => q.filter((c) => c.id !== id)); setLearnedIds((ids) => ids.filter((x) => x !== id)); };
 
-  // 1) AUTH — register or sign in
-  if (screen === "register" || screen === "signin")
-    return <AuthScreen mode={screen} onSwitch={setScreen} onDone={(u) => { setUser(u); setScreen("onboarding"); }} />;
+  // 0) WELCOME / intro
+  if (screen === "welcome") return <Welcome onStart={() => setScreen("register")} onSignIn={() => setScreen("signin")} />;
 
-  // 2) Choose ONE language
-  if (screen === "onboarding") {
-    const choose = (l) => setSelectedLangs([l]);
+  // 1) AUTH
+  if (screen === "register" || screen === "signin")
+    return <AuthScreen mode={screen} onSwitch={setScreen} onDone={(u) => { setUser(u); setScreen("language"); }} />;
+
+  // 2) Choose language — tap selects and advances (no Continue button)
+  if (screen === "language") {
+    const choose = (l) => { setSelectedLangs([l]); setScreen("level"); };
     return (
       <Shell><StyleTag />
         <div style={{ padding: "52px 24px 28px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
-          <div style={{ fontSize: 40 }}>👋</div>
+          <div style={{ fontSize: 40 }}>🌍</div>
           <h1 style={{ fontSize: 30, fontWeight: 800, color: C.ink, margin: "16px 0 6px", letterSpacing: -0.8, lineHeight: 1.15 }}>What do you<br />want to learn?</h1>
-          <p style={{ color: C.sub, margin: 0, fontSize: 15.5 }}>Pick one language to start. You can switch anytime.</p>
+          <p style={{ color: C.sub, margin: 0, fontSize: 15.5 }}>Tap a language to continue.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 28 }}>
-            {["fa", "de"].map((l) => { const m = langMeta[l]; const on = selectedLangs[0] === l; return (
-              <button key={l} onClick={() => choose(l)} className="press" style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px", borderRadius: 20, cursor: "pointer", textAlign: "left", background: C.surface, border: on ? "2px solid " + m.color : "2px solid " + C.line, boxShadow: on ? "0 10px 24px " + m.color + "33" : "0 2px 10px rgba(20,20,50,0.04)", transition: "all .2s cubic-bezier(.2,.8,.2,1)", fontFamily: FONT }}>
+            {["fa", "de"].map((l) => { const m = langMeta[l]; return (
+              <button key={l} onClick={() => choose(l)} className="press" style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px", borderRadius: 20, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 10px rgba(20,20,50,0.04)", transition: "all .2s", fontFamily: FONT }}>
                 <div style={{ width: 52, height: 52, borderRadius: 16, background: m.soft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{m.flag}</div>
                 <div style={{ flex: 1 }}><div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{m.label}</div><div style={{ fontSize: 13.5, color: C.sub, fontWeight: 500 }}>{m.sub} · 15 starter words</div></div>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", border: on ? "none" : "2px solid " + C.line, background: on ? m.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{on && <Icon name="check" size={13} color="#fff" />}</div>
+                <Icon name="chevron-right" size={16} color={C.sub} />
               </button>); })}
           </div>
-          <div style={{ flex: 1, minHeight: 24 }} />
-          <PrimaryButton disabled={!selectedLangs.length} onClick={() => setScreen("level")}>Continue</PrimaryButton>
         </div>
       </Shell>
     );
   }
 
-  // 3) Choose level
+  // 3) Choose level — tap selects and goes to dashboard (no button)
   if (screen === "level") {
-    const cur = (user && user.level) || "";
-    const pick = (lv) => setUser((u) => ({ ...u, level: lv }));
-    const cont = async () => { await initData(selectedLangs); setTab("dashboard"); setScreen("app"); };
+    const choose = async (lv) => { if (navBusy.current) return; navBusy.current = true; setUser((u) => ({ ...u, level: lv })); await initData(selectedLangs); setTab("dashboard"); setScreen("app"); navBusy.current = false; };
     return (
       <Shell><StyleTag />
         <div style={{ padding: "48px 24px 24px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
           <div style={{ fontSize: 38 }}>📈</div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, margin: "14px 0 6px", letterSpacing: -0.7, lineHeight: 1.15 }}>Where are you<br />starting from?</h1>
-          <p style={{ color: C.sub, margin: 0, fontSize: 15 }}>Not sure of your level? Just pick the one that sounds most like you.</p>
+          <p style={{ color: C.sub, margin: 0, fontSize: 15 }}>Tap the level that sounds most like you to begin.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 22 }}>
-            {LEVELS.map((lv) => { const on = cur === lv.id; return (
-              <button key={lv.id} onClick={() => pick(lv.id)} className="press" style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 18, cursor: "pointer", textAlign: "left", background: C.surface, border: on ? "2px solid " + C.primary : "2px solid " + C.line, boxShadow: on ? "0 8px 20px " + C.primary + "26" : "0 2px 8px rgba(20,20,50,0.04)", transition: "all .18s", fontFamily: FONT }}>
-                <div style={{ width: 46, height: 46, borderRadius: 13, background: on ? C.primary : C.primarySoft, color: on ? "#fff" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{lv.id}</div>
+            {LEVELS.map((lv) => (
+              <button key={lv.id} onClick={() => choose(lv.id)} className="press" style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 18, cursor: "pointer", textAlign: "left", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 2px 8px rgba(20,20,50,0.04)", transition: "all .18s", fontFamily: FONT }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: C.primarySoft, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{lv.id}</div>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{lv.title}</div><div style={{ fontSize: 12.8, color: C.sub, fontWeight: 500, lineHeight: 1.3 }}>{lv.desc}</div></div>
-                <div style={{ width: 24, height: 24, borderRadius: "50%", border: on ? "none" : "2px solid " + C.line, background: on ? C.primary : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Icon name="check" size={12} color="#fff" />}</div>
-              </button>); })}
+                <Icon name="chevron-right" size={15} color={C.sub} />
+              </button>))}
           </div>
-          <div style={{ flex: 1, minHeight: 18 }} />
-          <div style={{ paddingTop: 14 }}><PrimaryButton disabled={!cur} onClick={cont}>Start learning</PrimaryButton></div>
         </div>
       </Shell>
     );
@@ -347,12 +365,32 @@ function App() {
   return (
     <Shell><StyleTag />
       <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
-        {tab === "dashboard" && <Dashboard user={user} allCards={allCards} learnedIds={learnedIds} remaining={remaining} dayStreak={dayStreak} history={history} totalPoints={totalPoints} onStart={() => startSession(false)} onOpenProfile={() => setTab("profile")} />}
+        {tab === "dashboard" && <Dashboard user={user} allCards={allCards} learnedIds={learnedIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} onStart={() => startSession(false)} onOpenProfile={() => setTab("profile")} onJumpLevel={() => setUser((u) => ({ ...u, level: nextLevel((u && u.level) || "A1") }))} />}
         {tab === "mywords" && <MyWordsPage allCards={allCards} learnedIds={learnedIds} selectedLangs={selectedLangs} onAdd={addCard} onDelete={deleteCard} />}
         {tab === "friends" && <FriendsPage />}
-        {tab === "profile" && <ProfilePage user={user} setUser={setUser} selectedLangs={selectedLangs} setSelectedLangs={setSelectedLangs} onLangsChanged={async (langs) => { await initData(langs); }} onSignOut={signOut} />}
+        {tab === "profile" && <ProfilePage user={user} setUser={setUser} selectedLangs={selectedLangs} setSelectedLangs={setSelectedLangs} dayStreak={dayStreak} totalPoints={totalPoints} onLangsChanged={async (langs) => { await initData(langs); }} onSignOut={signOut} />}
       </div>
       <TabBar tab={tab} setTab={setTab} />
+    </Shell>
+  );
+}
+
+/* ===================== WELCOME ===================== */
+function Welcome({ onStart, onSignIn }) {
+  const faces = useMemo(() => shuffle(AVATARS).slice(0, 5), []);
+  return (
+    <Shell><StyleTag />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "56px 26px 28px", overflowY: "auto", minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center" }}>
+          <div style={{ width: 96, height: 96, borderRadius: 28, background: "linear-gradient(135deg,#6A5BFF,#A06BFF)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 16px 36px " + C.primary + "55", marginBottom: 22 }}><Icon name="layer-group" size={44} color="#fff" /></div>
+          <h1 style={{ fontSize: 34, fontWeight: 800, color: C.ink, margin: "0 0 10px", letterSpacing: -1, lineHeight: 1.1 }}>Learn words<br />that stick.</h1>
+          <p style={{ color: C.sub, fontSize: 16, margin: 0, lineHeight: 1.45, maxWidth: 300 }}>Swipe through Persian & German flashcards, build streaks, and learn with friends.</p>
+          <div style={{ display: "flex", marginTop: 30 }}>{faces.map((a, i) => (<div key={a} style={{ marginLeft: i ? -14 : 0, borderRadius: "50%", border: "3px solid " + C.bg }}><Avatar seed={a} size={48} /></div>))}</div>
+          <div style={{ fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 10 }}>Join thousands of learners</div>
+        </div>
+        <PrimaryButton onClick={onStart}>Get started</PrimaryButton>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 14.5, color: C.sub, fontWeight: 500 }}>Already have an account? <span onClick={onSignIn} style={{ color: C.primary, fontWeight: 800, cursor: "pointer" }}>Sign in</span></div>
+      </div>
     </Shell>
   );
 }
@@ -398,7 +436,7 @@ function CardBack({ card }) {
   );
 }
 
-/* ===================== AUTH (register / sign in) ===================== */
+/* ===================== AUTH ===================== */
 function AuthScreen({ mode, onDone, onSwitch }) {
   const isReg = mode === "register";
   const [name, setName] = useState("");
@@ -415,7 +453,6 @@ function AuthScreen({ mode, onDone, onSwitch }) {
       <div style={{ padding: "40px 24px 28px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
         <h1 style={{ fontSize: 27, fontWeight: 800, color: C.ink, textAlign: "center", margin: "0 0 4px", letterSpacing: -0.6 }}>{isReg ? "Create your account" : "Welcome back"}</h1>
         <p style={{ color: C.sub, textAlign: "center", margin: 0, fontSize: 14.5 }}>{isReg ? "Set up your profile to start learning." : "Sign in to keep your streak going."}</p>
-
         {isReg && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, margin: "20px 0 4px" }}>
             <button onClick={() => setPicker(true)} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative" }}>
@@ -428,7 +465,6 @@ function AuthScreen({ mode, onDone, onSwitch }) {
             </div>
           </div>
         )}
-
         <div style={{ background: C.surface, borderRadius: 24, padding: 22, marginTop: isReg ? 14 : 24, border: "1px solid " + C.line, boxShadow: "0 8px 28px rgba(28,26,46,0.06)" }}>
           {isReg && (<><label style={lbl}>Your name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Milad" disabled={loading} style={inputStyle} /></>)}
           <label style={{ ...lbl, marginTop: isReg ? 14 : 0 }}>Email</label>
@@ -439,7 +475,6 @@ function AuthScreen({ mode, onDone, onSwitch }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}><div style={{ flex: 1, height: 1, background: C.line }} /><span style={{ fontSize: 12, color: C.sub, fontWeight: 700 }}>OR</span><div style={{ flex: 1, height: 1, background: C.line }} /></div>
           <button onClick={google} disabled={loading} className="press" style={{ width: "100%", padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: FONT }}><i className="fa-brands fa-google" style={{ color: "#4285F4", fontSize: 16 }}></i> {isReg ? "Sign up with Google" : "Continue with Google"}</button>
         </div>
-
         <div style={{ textAlign: "center", marginTop: 18, fontSize: 14, color: C.sub, fontWeight: 500 }}>
           {isReg ? "Already have an account? " : "New here? "}
           <span onClick={() => onSwitch(isReg ? "signin" : "register")} style={{ color: C.primary, fontWeight: 800, cursor: "pointer" }}>{isReg ? "Sign in" : "Create an account"}</span>
@@ -455,34 +490,82 @@ const inputStyle = { width: "100%", marginTop: 6, padding: "13px 15px", fontSize
 /* ===================== AVATAR PICKER ===================== */
 function AvatarPicker({ current, onPick, onClose }) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
-      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", fontFamily: FONT, maxHeight: "78vh", overflowY: "auto" }}>
-        <div style={{ width: 40, height: 5, background: C.line, borderRadius: 4, margin: "0 auto 16px" }} />
-        <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, margin: "0 0 14px" }}>Choose your character</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>{AVATARS.map((a) => (<button key={a} onClick={() => { onPick(a); onClose(); }} className="press" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", justifyContent: "center", padding: 2 }}><Avatar seed={a} size={62} ring={current === a ? C.primary : null} /></button>))}</div>
-        <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Done</button>
+    <Sheet onClose={onClose} title="Choose your character">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>{AVATARS.map((a) => (<button key={a} onClick={() => { onPick(a); onClose(); }} className="press" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", justifyContent: "center", padding: 2 }}><Avatar seed={a} size={62} ring={current === a ? C.primary : null} /></button>))}</div>
+      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Done</button>
+    </Sheet>
+  );
+}
+
+/* ===================== STREAK & POINTS DIALOGS ===================== */
+function StreakDialog({ history, streak, onClose }) {
+  const now = new Date(); const year = now.getFullYear(), month = now.getMonth();
+  const map = {}; history.forEach((d) => { map[d.date] = d.points; });
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = []; for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) { const ds = new Date(year, month, d).toISOString().slice(0, 10); cells.push({ d, active: (map[ds] || 0) > 0, today: d === now.getDate() }); }
+  return (
+    <Sheet onClose={onClose} title="Your streak">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.amber + "14", border: "1px solid " + C.amber + "30", borderRadius: 16, padding: "12px 16px", marginBottom: 16 }}>
+        <Icon name="fire" size={22} color={C.amber} /><div><div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>{streak}-day streak</div><div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>Keep practising daily to grow it 🔥</div></div>
       </div>
-    </div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 10 }}>{MONTHS[month]} {year}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 }}>{["S", "M", "T", "W", "T", "F", "S"].map((w, i) => <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.sub }}>{w}</div>)}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>{cells.map((c, i) => (<div key={i} style={{ aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>{c && <div style={{ width: "84%", height: "84%", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, fontWeight: 700, background: c.active ? C.amber : C.bg, color: c.active ? "#fff" : C.sub, boxShadow: c.today ? "0 0 0 2.5px " + C.primary : "none" }}>{c.d}</div>}</div>))}</div>
+      <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 12, color: C.sub, fontWeight: 600 }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: C.amber, display: "inline-block" }} /> Practised</span><span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: "50%", boxShadow: "0 0 0 2px " + C.primary, display: "inline-block" }} /> Today</span></div>
+    </Sheet>
+  );
+}
+function PointsDialog({ points, onClose }) {
+  const idx = REWARDS.findIndex((r) => r.at > points);
+  const next = idx >= 0 ? REWARDS[idx] : null;
+  const prevAt = idx > 0 ? REWARDS[idx - 1].at : 0;
+  const pct = next ? Math.min(100, Math.round(((points - prevAt) / (next.at - prevAt)) * 100)) : 100;
+  return (
+    <Sheet onClose={onClose} title="Points & rewards">
+      <div style={{ textAlign: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 44, fontWeight: 800, color: C.amber, letterSpacing: -1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="star" size={32} color={C.amber} />{points}</div>
+        <div style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>total points earned</div>
+      </div>
+      {next ? (
+        <div style={{ background: C.primarySoft, border: "1px solid " + C.primary + "33", borderRadius: 18, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 13, background: C.surface, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name={next.icon} size={20} color={C.primary} /></div>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 12, color: C.primary, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>Next reward</div><div style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{next.name}</div></div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.primary }}>{next.at - points} pts</div>
+          </div>
+          <div style={{ height: 12, background: C.surface, borderRadius: 8, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", borderRadius: 8, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)" }} /></div>
+        </div>
+      ) : <div style={{ textAlign: "center", color: C.green, fontWeight: 800, marginBottom: 16 }}>🎉 You've unlocked every reward!</div>}
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, marginBottom: 10 }}>All rewards</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{REWARDS.map((r) => { const got = points >= r.at; return (
+        <div key={r.at} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 14, border: "1px solid " + C.line, background: got ? C.greenSoft : "#FBFAFF" }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: got ? C.green : C.line, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name={got ? "check" : r.icon} size={15} color={got ? "#fff" : C.sub} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{r.name}</div><div style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>{r.at} points</div></div>
+          {got && <span style={{ fontSize: 12, fontWeight: 800, color: C.green }}>Unlocked</span>}
+        </div>); })}</div>
+    </Sheet>
   );
 }
 
 /* ===================== DASHBOARD ===================== */
-function StatBox({ icon, value, label, color }) {
+function StatBox({ icon, value, label, color, onClick }) {
   return (
-    <div style={{ background: color + "14", border: "1px solid " + color + "30", borderRadius: 16, padding: "9px 12px", textAlign: "center", minWidth: 62 }}>
+    <button onClick={onClick} className="press" style={{ background: color + "14", border: "1px solid " + color + "30", borderRadius: 16, padding: "9px 12px", textAlign: "center", minWidth: 62, cursor: "pointer", fontFamily: FONT }}>
       <div style={{ fontSize: 19, fontWeight: 800, color: color, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}><Icon name={icon} size={13} color={color} />{value}</div>
       <div style={{ fontSize: 10.5, color: C.sub, fontWeight: 700, marginTop: 1 }}>{label}</div>
-    </div>
+    </button>
   );
 }
-function Dashboard({ user, allCards, learnedIds, remaining, dayStreak, history, totalPoints, onStart, onOpenProfile }) {
+function Dashboard({ user, allCards, learnedIds, dayStreak, history, totalPoints, onStart, onOpenProfile, onJumpLevel }) {
   const total = allCards.length;
   const done = allCards.filter((c) => learnedIds.includes(c.id)).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const cur = (user && user.level) || "A1";
   const nxt = nextLevel(cur);
   const pts = useCountUp(totalPoints); const streak = useCountUp(dayStreak); const pctUp = useCountUp(pct);
-  const [grow, setGrow] = useState(false);
+  const [grow, setGrow] = useState(false); const [dlg, setDlg] = useState(null);
   useEffect(() => { const t = setTimeout(() => setGrow(true), 80); return () => clearTimeout(t); }, []);
   return (
     <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -490,27 +573,32 @@ function Dashboard({ user, allCards, learnedIds, remaining, dayStreak, history, 
         <button onClick={onOpenProfile} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}><Avatar seed={user && user.avatar} size={50} ring={C.primary} /></button>
         <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>Welcome back</div><h1 style={{ fontSize: 21, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(user && user.name) || "there"} 👋</h1></div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <StatBox icon="star" value={pts} label="points" color={C.amber} />
-          <StatBox icon="fire" value={streak} label="streak" color={C.primary} />
+          <StatBox icon="star" value={pts} label="points" color={C.primary} onClick={() => setDlg("points")} />
+          <StatBox icon="fire" value={streak} label="streak" color={C.amber} onClick={() => setDlg("streak")} />
         </div>
       </div>
 
-      {/* level progress card — Continue learning lives inside, at the top */}
+      {/* level progress card */}
       <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
-        <div style={{ marginTop: 0, marginBottom: 16 }}><PrimaryButton onClick={onStart}>Continue learning</PrimaryButton></div>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>Level progress</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}% to {nxt}</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}%</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.sub, width: 22 }}>{cur}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ flex: 1, height: 14, background: C.line, borderRadius: 10, overflow: "hidden" }}><div style={{ width: (grow ? pct : 0) + "%", height: "100%", borderRadius: 10, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width 1s cubic-bezier(.2,.8,.2,1)" }} /></div>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.primary, width: 22 }}>{nxt}</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.primary, whiteSpace: "nowrap" }}>{LEVEL_TITLE[nxt]}</span>
         </div>
-        <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, marginTop: 10 }}>{done} of {total} words learned</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 10 }}>
+          <span style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>{done} of {total} words learned</span>
+          <button onClick={onJumpLevel} className="press" style={{ padding: "7px 12px", borderRadius: 11, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>Jump to next level <Icon name="arrow-right" size={11} color={C.primary} /></button>
+        </div>
+        <div style={{ marginTop: 16 }}><PrimaryButton onClick={onStart}>Push it forward</PrimaryButton></div>
       </div>
 
       <PointsChart history={history} />
+
+      {dlg === "streak" && <StreakDialog history={history} streak={dayStreak} onClose={() => setDlg(null)} />}
+      {dlg === "points" && <PointsDialog points={totalPoints} onClose={() => setDlg(null)} />}
     </div>
   );
 }
@@ -522,33 +610,29 @@ function PointsChart({ history }) {
   useEffect(() => { setOffset(0); }, [mode]);
   useEffect(() => { setGrow(false); const t = setTimeout(() => setGrow(true), 40); return () => clearTimeout(t); }, [mode, offset]);
 
-  const total = history.length;
-  const todayIdx = total - 1;
-  const weeksAvail = Math.ceil(total / 7);
-
+  const total = history.length; const todayIdx = total - 1; const weeksAvail = Math.ceil(total / 7);
   let bars = [], rangeLabel = "", periodTotal = 0, canPrev = false, canNext = false;
   if (mode === "week") {
     const end = total + offset * 7, start = end - 7;
-    for (let idx = start; idx < end; idx++) {
-      if (idx < 0 || idx >= total) { bars.push({ label: "", points: 0, ghost: true }); continue; }
-      const d = history[idx];
-      bars.push({ label: d.label, points: d.points, today: idx === todayIdx });
-      periodTotal += d.points;
-    }
+    for (let idx = start; idx < end; idx++) { if (idx < 0 || idx >= total) { bars.push({ label: "", points: 0, ghost: true }); continue; } const d = history[idx]; bars.push({ label: d.label, points: d.points, today: idx === todayIdx }); periodTotal += d.points; }
     rangeLabel = offset === 0 ? "This week" : history[Math.max(0, start)].dm + " – " + history[Math.min(total - 1, end - 1)].dm;
     canNext = offset < 0; canPrev = -offset < weeksAvail - 1;
   } else {
-    const buckets = [];
-    for (let e = total; e > 0; e -= 7) { const s = Math.max(0, e - 7); const slice = history.slice(s, e); buckets.push({ dm: history[s].dm, points: slice.reduce((a, x) => a + x.points, 0), current: e === total }); }
-    const pages = Math.ceil(buckets.length / 4);
-    const pageStart = (-offset) * 4;
-    const page = buckets.slice(pageStart, pageStart + 4).reverse();
+    const buckets = []; for (let e = total; e > 0; e -= 7) { const s = Math.max(0, e - 7); const slice = history.slice(s, e); buckets.push({ dm: history[s].dm, points: slice.reduce((a, x) => a + x.points, 0), current: e === total }); }
+    const pages = Math.ceil(buckets.length / 4); const pageStart = (-offset) * 4; const page = buckets.slice(pageStart, pageStart + 4).reverse();
     page.forEach((b) => { bars.push({ label: b.dm, points: b.points, today: b.current }); periodTotal += b.points; });
     rangeLabel = offset === 0 ? "Last 4 weeks" : (page.length ? page[0].dm + " – " + page[page.length - 1].dm : "");
     canNext = offset < 0; canPrev = -offset < pages - 1;
   }
   const max = Math.max(10, ...bars.map((b) => b.points));
+  const goPrev = () => { if (canPrev) setOffset((o) => o - 1); };
+  const goNext = () => { if (canNext) setOffset((o) => o + 1); };
   const navBtn = (dir, enabled, onClick) => (<button onClick={enabled ? onClick : undefined} disabled={!enabled} className="press" style={{ width: 34, height: 34, borderRadius: 11, border: "1.5px solid " + C.line, background: C.surface, color: enabled ? C.ink : "#D8D5E8", cursor: enabled ? "pointer" : "default" }}><Icon name={dir === "prev" ? "chevron-left" : "chevron-right"} size={13} color={enabled ? C.ink : "#D8D5E8"} /></button>);
+
+  // swipe support
+  const sx = useRef(0); const sw = useRef(false);
+  const down = (e) => { sw.current = true; sx.current = e.clientX; };
+  const up = (e) => { if (!sw.current) return; sw.current = false; const dx = e.clientX - sx.current; if (Math.abs(dx) < 40) return; if (dx < 0) goNext(); else goPrev(); };
 
   return (
     <div style={{ background: C.surface, borderRadius: 22, padding: "18px 18px 14px", border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
@@ -557,11 +641,12 @@ function PointsChart({ history }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: C.amber, display: "flex", alignItems: "center", gap: 5 }}><Icon name="star" size={13} color={C.amber} /> {periodTotal} pts</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        {navBtn("prev", canPrev, () => setOffset((o) => o - 1))}
+        {navBtn("prev", canPrev, goPrev)}
         <span style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>{rangeLabel}</span>
-        {navBtn("next", canNext, () => setOffset((o) => o + 1))}
+        {navBtn("next", canNext, goNext)}
       </div>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8, height: 104 }}>{bars.map((d, i) => { const h = grow ? Math.max(d.points > 0 ? 8 : 3, (d.points / max) * 84) : 3; return (<div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}><span style={{ fontSize: 10.5, fontWeight: 700, color: d.points ? C.ink : "transparent" }}>{d.points || 0}</span><div style={{ width: "100%", maxWidth: 28, height: h, borderRadius: 8, background: d.ghost ? C.line : (d.today ? "linear-gradient(180deg,#6A5BFF,#A06BFF)" : C.primarySoft), transition: "height .8s cubic-bezier(.2,.8,.2,1)", boxShadow: d.today ? "0 4px 12px " + C.primary + "55" : "none", opacity: d.ghost ? 0.5 : 1 }} /><span style={{ fontSize: mode === "month" ? 9.5 : 11, fontWeight: 700, color: d.today ? C.primary : C.sub, whiteSpace: "nowrap" }}>{d.label}</span></div>); })}</div>
+      <div onPointerDown={down} onPointerUp={up} onPointerCancel={() => { sw.current = false; }} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8, height: 104, touchAction: "pan-y", cursor: "grab" }}>{bars.map((d, i) => { const h = grow ? Math.max(d.points > 0 ? 8 : 3, (d.points / max) * 84) : 3; return (<div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}><span style={{ fontSize: 10.5, fontWeight: 700, color: d.points ? C.ink : "transparent" }}>{d.points || 0}</span><div style={{ width: "100%", maxWidth: 28, height: h, borderRadius: 8, background: d.ghost ? C.line : (d.today ? "linear-gradient(180deg,#6A5BFF,#A06BFF)" : C.primarySoft), transition: "height .8s cubic-bezier(.2,.8,.2,1)", boxShadow: d.today ? "0 4px 12px " + C.primary + "55" : "none", opacity: d.ghost ? 0.5 : 1 }} /><span style={{ fontSize: mode === "month" ? 9.5 : 11, fontWeight: 700, color: d.today ? C.primary : C.sub, whiteSpace: "nowrap" }}>{d.label}</span></div>); })}</div>
+      <div style={{ textAlign: "center", fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 8 }}>swipe or use arrows to browse</div>
     </div>
   );
 }
@@ -569,16 +654,22 @@ function Stat({ big, label, color }) { return (<div style={{ textAlign: "center"
 function Divider() { return <div style={{ width: 1, background: C.line }} />; }
 
 /* ===================== PROFILE ===================== */
-function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, onLangsChanged, onSignOut }) {
+function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, dayStreak, totalPoints, onLangsChanged, onSignOut }) {
   const [picker, setPicker] = useState(false);
   const [name, setName] = useState((user && user.name) || "");
   const [lang, setLang] = useState(selectedLangs[0] || "fa");
-  const [level, setLevel] = useState((user && user.level) || "A1");
   const [saved, setSaved] = useState(false);
   const langDirty = lang !== (selectedLangs[0] || "fa");
-  const levelDirty = level !== ((user && user.level) || "A1");
-  const dirty = name.trim() !== ((user && user.name) || "") || langDirty || levelDirty;
-  const save = async () => { if (!dirty) return; if (name.trim() || levelDirty) setUser((u) => ({ ...u, name: name.trim() || u.name, level })); if (langDirty) { setSelectedLangs([lang]); await onLangsChanged([lang]); } setSaved(true); setTimeout(() => setSaved(false), 1800); };
+  const dirty = name.trim() !== ((user && user.name) || "") || langDirty;
+  const lvl = (user && user.level) || "A1";
+  const save = async () => { if (!dirty) return; if (name.trim()) setUser((u) => ({ ...u, name: name.trim() })); if (langDirty) { setSelectedLangs([lang]); await onLangsChanged([lang]); } setSaved(true); setTimeout(() => setSaved(false), 1800); };
+  const InfoBox = ({ icon, big, sub, color }) => (
+    <div style={{ flex: 1, background: color + "12", border: "1px solid " + color + "2C", borderRadius: 16, padding: "14px 8px", textAlign: "center" }}>
+      <Icon name={icon} size={16} color={color} />
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginTop: 4, letterSpacing: -0.5 }}>{big}</div>
+      <div style={{ fontSize: 11.5, color: C.sub, fontWeight: 700 }}>{sub}</div>
+    </div>
+  );
   return (
     <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>Profile</h1>
@@ -590,13 +681,19 @@ function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, onLangsCh
         <div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{(user && user.name) || "You"}</div>
         <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>Tap your character to change it</div>
       </div>
+
+      {/* read-only stats */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <InfoBox icon="graduation-cap" big={lvl} sub={LEVEL_TITLE[lvl]} color={C.primary} />
+        <InfoBox icon="fire" big={dayStreak} sub="day streak" color={C.amber} />
+        <InfoBox icon="star" big={totalPoints} sub="points" color={C.green} />
+      </div>
+
       <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line }}>
         <label style={lbl}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
         <label style={{ ...lbl, marginTop: 16, marginBottom: 8 }}>Language</label>
         <div style={{ display: "flex", gap: 10 }}>{["fa", "de"].map((l) => { const m = langMeta[l]; const on = lang === l; return (<button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "13px", borderRadius: 14, border: on ? "2px solid " + m.color : "2px solid " + C.line, background: on ? m.soft : C.surface, cursor: "pointer", fontFamily: FONT, fontWeight: 700, color: C.ink, fontSize: 14 }}>{m.flag} {m.label}{on ? " ✓" : ""}</button>); })}</div>
-        <label style={{ ...lbl, marginTop: 16, marginBottom: 8 }}>Level</label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{["A1", "A2", "B1", "B2", "C1"].map((lv) => { const on = level === lv; return (<button key={lv} onClick={() => setLevel(lv)} className="press" style={{ flex: "1 0 18%", padding: "10px 0", borderRadius: 12, border: on ? "2px solid " + C.primary : "1.5px solid " + C.line, background: on ? C.primarySoft : C.surface, cursor: "pointer", fontFamily: FONT, fontWeight: 800, color: on ? C.primary : C.sub, fontSize: 13.5 }}>{lv}</button>); })}</div>
         {langDirty && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>Changing the language resets your current word set.</div>}
         <button onClick={save} disabled={!dirty} className="press" style={{ width: "100%", marginTop: 14, padding: 13, borderRadius: 14, border: "none", background: dirty ? C.primary : C.line, color: dirty ? "#fff" : C.sub, fontWeight: 800, cursor: dirty ? "pointer" : "default", fontFamily: FONT }}>{saved ? "Saved ✓" : "Save changes"}</button>
       </div>
@@ -671,14 +768,11 @@ function FriendsPage() {
 function FriendDetail({ user, onClose }) {
   const langs = ["fa", "de"].filter((l) => user[l].total > 0);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
-      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", fontFamily: FONT }}>
-        <div style={{ width: 40, height: 5, background: C.line, borderRadius: 4, margin: "0 auto 16px" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}><Avatar seed={user.avatar} size={64} ring={C.primary} /><div><div style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>{user.name}</div><div style={{ fontSize: 13, color: C.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Icon name="fire" size={12} color={C.amber} /> {user.streak}-day · <Icon name="star" size={12} color={C.amber} /> {user.points} pts</div></div></div>
-        <div style={{ marginTop: 18, background: "#FBFAFF", border: "1px solid " + C.line, borderRadius: 18, padding: 18, display: "flex", justifyContent: "space-around", gap: 14, flexWrap: "wrap" }}>{langs.map((l) => { const m = langMeta[l]; const d = user[l]; return <Ring key={l} pct={d.total ? d.done / d.total : 0} color={m.color} value={d.done + "/" + d.total} label={m.flag + " " + m.label} />; })}</div>
-        <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Close</button>
-      </div>
-    </div>
+    <Sheet onClose={onClose}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}><Avatar seed={user.avatar} size={64} ring={C.primary} /><div><div style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>{user.name}</div><div style={{ fontSize: 13, color: C.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Icon name="fire" size={12} color={C.amber} /> {user.streak}-day · <Icon name="star" size={12} color={C.amber} /> {user.points} pts</div></div></div>
+      <div style={{ marginTop: 18, background: "#FBFAFF", border: "1px solid " + C.line, borderRadius: 18, padding: 18, display: "flex", justifyContent: "space-around", gap: 14, flexWrap: "wrap" }}>{langs.map((l) => { const m = langMeta[l]; const d = user[l]; return <Ring key={l} pct={d.total ? d.done / d.total : 0} color={m.color} value={d.done + "/" + d.total} label={m.flag + " " + m.label} />; })}</div>
+      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 18, padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Close</button>
+    </Sheet>
   );
 }
 
@@ -701,26 +795,22 @@ function AddWordModal({ selectedLangs, onClose, onAdd }) {
   const canAdd = f.word.trim() && f.translation.trim();
   const add = () => { if (!canAdd) return; onAdd({ id: "u" + Date.now(), language: lang, word: f.word.trim(), translation: f.translation.trim(), pron: f.pron.trim(), example: f.example.trim(), exampleTranslation: f.exampleTranslation.trim(), note: "added by you", imageWord: f.translation.trim(), farsi: f.farsi.trim(), farsiExample: f.farsiExample.trim(), custom: true }); onClose(); };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,40,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
-      <div onClick={(e) => e.stopPropagation()} className="sheet-in" style={{ width: "100%", maxWidth: 440, background: C.surface, borderRadius: "26px 26px 0 0", padding: 22, paddingBottom: "calc(22px + env(safe-area-inset-bottom))", maxHeight: "90vh", overflowY: "auto", fontFamily: FONT }}>
-        <div style={{ width: 40, height: 5, background: C.line, borderRadius: 4, margin: "0 auto 16px" }} />
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, margin: "0 0 4px", letterSpacing: -0.4 }}>Add a word</h2>
-        <p style={{ color: C.sub, fontSize: 14, margin: "0 0 14px" }}>Type the word, tap auto-fill, or just fill it in yourself.</p>
-        {selectedLangs.length > 1 && (<div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{selectedLangs.map((l) => { const lm = langMeta[l]; const on = lang === l; return <button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "10px", borderRadius: 12, border: on ? "2px solid " + lm.color : "2px solid " + C.line, background: on ? lm.soft : C.surface, fontWeight: 700, color: C.ink, cursor: "pointer", fontFamily: FONT }}>{lm.flag} {lm.label}</button>; })}</div>)}
-        <Field label={"Word (" + langMeta[lang].label + (lang === "fa" ? ", Finglish" : "") + ")"} value={f.word} onChange={set("word")} placeholder={lang === "fa" ? "e.g. mehraboon" : "e.g. der Apfel"} />
-        <button onClick={autofill} disabled={!f.word.trim() || auto === "loading"} className="press" style={{ width: "100%", marginTop: 10, padding: 11, borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontWeight: 800, fontSize: 14, cursor: f.word.trim() ? "pointer" : "default", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{auto === "loading" ? <><span className="spinner" /> Auto-filling…</> : <><Icon name="wand-magic-sparkles" size={14} color={C.primary} /> Auto-fill card</>}</button>
-        {auto === "done" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Filled in meaning, pronunciation & example — edit anything you like.</div>}
-        {auto === "partial" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Added the translation — add an example/pronunciation if you like.</div>}
-        {auto === "error" && <div style={{ fontSize: 12.5, color: C.sub, marginTop: 8 }}>Couldn't auto-fill right now — just fill in the fields below.</div>}
-        <Field label="Translation (English)" value={f.translation} onChange={set("translation")} placeholder="e.g. the apple" />
-        <Field label="Pronunciation (optional)" value={f.pron} onChange={set("pron")} placeholder="e.g. dair AP-fel" />
-        <Field label="Example sentence (optional)" value={f.example} onChange={set("example")} placeholder="a short sentence" />
-        <Field label="Example in English (optional)" value={f.exampleTranslation} onChange={set("exampleTranslation")} placeholder="its translation" />
-        {lang === "fa" && <Field label="Farsi script (optional · used for audio)" value={f.farsi} onChange={set("farsi")} placeholder="e.g. مهربون" dir="rtl" />}
-        <button onClick={add} disabled={!canAdd} className="press" style={{ width: "100%", marginTop: 18, padding: 15, borderRadius: 16, border: "none", background: canAdd ? C.green : C.line, color: canAdd ? "#fff" : C.sub, fontWeight: 800, fontSize: 15.5, cursor: canAdd ? "pointer" : "default", fontFamily: FONT, boxShadow: canAdd ? "0 6px 16px " + C.green + "55" : "none" }}>Add to my words</button>
-        <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-      </div>
-    </div>
+    <Sheet onClose={onClose} title="Add a word">
+      <p style={{ color: C.sub, fontSize: 14, margin: "-8px 0 14px" }}>Type the word, tap auto-fill, or just fill it in yourself.</p>
+      {selectedLangs.length > 1 && (<div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{selectedLangs.map((l) => { const lm = langMeta[l]; const on = lang === l; return <button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "10px", borderRadius: 12, border: on ? "2px solid " + lm.color : "2px solid " + C.line, background: on ? lm.soft : C.surface, fontWeight: 700, color: C.ink, cursor: "pointer", fontFamily: FONT }}>{lm.flag} {lm.label}</button>; })}</div>)}
+      <Field label={"Word (" + langMeta[lang].label + (lang === "fa" ? ", Finglish" : "") + ")"} value={f.word} onChange={set("word")} placeholder={lang === "fa" ? "e.g. mehraboon" : "e.g. der Apfel"} />
+      <button onClick={autofill} disabled={!f.word.trim() || auto === "loading"} className="press" style={{ width: "100%", marginTop: 10, padding: 11, borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontWeight: 800, fontSize: 14, cursor: f.word.trim() ? "pointer" : "default", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{auto === "loading" ? <><span className="spinner" /> Auto-filling…</> : <><Icon name="wand-magic-sparkles" size={14} color={C.primary} /> Auto-fill card</>}</button>
+      {auto === "done" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Filled in meaning, pronunciation & example — edit anything you like.</div>}
+      {auto === "partial" && <div style={{ fontSize: 12.5, color: C.green, marginTop: 8, fontWeight: 600 }}>Added the translation — add an example/pronunciation if you like.</div>}
+      {auto === "error" && <div style={{ fontSize: 12.5, color: C.sub, marginTop: 8 }}>Couldn't auto-fill right now — just fill in the fields below.</div>}
+      <Field label="Translation (English)" value={f.translation} onChange={set("translation")} placeholder="e.g. the apple" />
+      <Field label="Pronunciation (optional)" value={f.pron} onChange={set("pron")} placeholder="e.g. dair AP-fel" />
+      <Field label="Example sentence (optional)" value={f.example} onChange={set("example")} placeholder="a short sentence" />
+      <Field label="Example in English (optional)" value={f.exampleTranslation} onChange={set("exampleTranslation")} placeholder="its translation" />
+      {lang === "fa" && <Field label="Farsi script (optional · used for audio)" value={f.farsi} onChange={set("farsi")} placeholder="e.g. مهربون" dir="rtl" />}
+      <button onClick={add} disabled={!canAdd} className="press" style={{ width: "100%", marginTop: 18, padding: 15, borderRadius: 16, border: "none", background: canAdd ? C.green : C.line, color: canAdd ? "#fff" : C.sub, fontWeight: 800, fontSize: 15.5, cursor: canAdd ? "pointer" : "default", fontFamily: FONT, boxShadow: canAdd ? "0 6px 16px " + C.green + "55" : "none" }}>Add to my words</button>
+      <button onClick={onClose} className="press" style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+    </Sheet>
   );
 }
 
