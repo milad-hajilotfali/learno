@@ -9,9 +9,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <style>
-    html, body { margin: 0; padding: 0; background: #F5F4FB; }
-    #root { min-height: 100vh; }
-    .boot { min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; color: #807DA0; }
+    html, body { margin: 0; padding: 0; background: #F5F4FB; overflow: hidden; }
+    #root { height: 100vh; height: 100dvh; }
+    .boot { height: 100vh; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; color: #807DA0; }
   </style>
 </head>
 <body>
@@ -20,10 +20,7 @@
   <script type="text/babel" data-presets="react">
 const { useState, useRef, useEffect, useMemo } = React;
 
-/* =========================================================================
-   OPTIONAL CLOUD TTS  (for reliable Persian/Farsi audio)
-   ========================================================================= */
-const TTS_KEY = ""; // <-- paste your Google Cloud TTS API key here
+const TTS_KEY = ""; // <-- paste your Google Cloud TTS API key here for reliable Persian audio
 
 /* =========================================================================
    DATA LAYER — mock service.
@@ -80,7 +77,6 @@ const dataService = {
   fetchWords: async (langs) => { await delay(150); return WORDS.filter((w) => langs.includes(w.language)); },
   saveProgress: async (_p) => { await delay(40); return true; },
   searchUsers: async (q) => { await delay(180); const s = (q || "").trim().toLowerCase(); return MOCK_USERS.filter((u) => !s || u.name.toLowerCase().includes(s)); },
-  // Free, keyless translation fallback for the English meaning only.
   translate: async (text, from, to) => {
     const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) + "&langpair=" + from + "|" + to);
     const d = await r.json();
@@ -88,7 +84,6 @@ const dataService = {
     if (!t) throw new Error("no translation");
     return t;
   },
-  // PRIMARY auto-fill: full AI-generated flashcard (meaning + pronunciation + example).
   generateCard: async (rawWord, language) => {
     const sys = "You are a precise language-learning assistant. Respond ONLY with a single minified JSON object. No markdown, no code fences, no commentary.";
     const targetFmt = language === "fa" ? "Finglish (Latin-script transliteration of Persian, never Farsi script)" : "German (include the article der/die/das for nouns)";
@@ -107,14 +102,24 @@ const dataService = {
 const C = { bg: "#F5F4FB", surface: "#FFFFFF", ink: "#1C1A2E", sub: "#807DA0", line: "#ECEAF6", primary: "#5A4FE3", primarySoft: "#ECEAFD", green: "#10B981", greenSoft: "#D6F5EA", red: "#F4515E", redSoft: "#FFE4E7", fa: "#FF6B4A", faSoft: "#FFE9E1", de: "#4C6EF5", deSoft: "#E4EAFF", amber: "#F59E0B" };
 const langMeta = { fa: { label: "Persian", sub: "Finglish", flag: "🇮🇷", color: C.fa, soft: C.faSoft, ttsLang: "fa-IR" }, de: { label: "German", sub: "Deutsch", flag: "🇩🇪", color: C.de, soft: C.deSoft, ttsLang: "de-DE" } };
 const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
-// Lots of Open Peeps characters to choose from.
 const AVATARS = ["Milad","Aneka","Bella","Leo","Zoe","Felix","Mia","Max","Luna","Kai","Nova","Remy","Sara","Jonas","Niloofar","Lena","Reza","Mira","Tobias","Darya","Oliver","Emma","Liam","Sophia","Noah","Ava","Ethan","Isla","Aria","Jack","Maya","Theo","Ivy","Hugo","Nora","Finn","Ruby","Milo","Cleo","Atlas","Vivian","Caleb","Hazel","Owen","Stella","Jude","Willow","Asher","Iris","Ezra"];
 const avatarURL = (seed) => "https://api.dicebear.com/9.x/open-peeps/svg?seed=" + encodeURIComponent(seed || "Milad");
+
+const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const nextLevel = (lv) => CEFR[Math.min(CEFR.length - 1, Math.max(0, CEFR.indexOf(lv)) + 1)];
+const LEVELS = [
+  { id: "A1", title: "Beginner", desc: "I'm just starting and know only a few words." },
+  { id: "A2", title: "Elementary", desc: "I can use simple, everyday phrases." },
+  { id: "B1", title: "Intermediate", desc: "I can handle most everyday conversations." },
+  { id: "B2", title: "Upper-intermediate", desc: "I can talk comfortably about many topics." },
+  { id: "C1", title: "Advanced", desc: "I'm nearly fluent and rarely get stuck." },
+];
 
 const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 const hashNum = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
 const imgURL = (card) => { const tags = (card.imageWord || card.translation || "word").replace(/\s+/g, ","); return "https://loremflickr.com/400/400/" + encodeURIComponent(tags) + "?lock=" + (hashNum(card.id) % 1000); };
+const randAvatar = () => AVATARS[Math.floor(Math.random() * AVATARS.length)];
 
 /* ===================== AUDIO ===================== */
 let _voices = [];
@@ -156,7 +161,7 @@ function playChime() {
 }
 function shareText(points, streak, name) { return (name || "I") + " just earned ⭐" + points + " points and is on a " + streak + "-day streak learning languages! 🔥📚"; }
 
-/* ===================== HISTORY (12 weeks of daily data) ===================== */
+/* ===================== HISTORY ===================== */
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function buildHistory() {
@@ -166,8 +171,8 @@ function buildHistory() {
     const seed = d.getFullYear() * 372 + (d.getMonth() + 1) * 31 + d.getDate();
     const r = Math.abs(Math.sin(seed));
     let pts;
-    if (i === 0) pts = 0;                          // today starts empty
-    else if (i <= 10) pts = Math.round(8 + r * 14); // recent active streak
+    if (i === 0) pts = 0;
+    else if (i <= 10) pts = Math.round(8 + r * 14);
     else pts = r > 0.32 ? Math.round(5 + r * 16) : 0;
     out.push({ date: d.toISOString().slice(0, 10), label: DAY_NAMES[d.getDay()], dm: MONTHS[d.getMonth()] + " " + d.getDate(), points: pts });
   }
@@ -209,9 +214,9 @@ const sayExampleOf = (card) => (card.language === "fa" ? (card.farsiExample || c
 
 /* ===================== APP ===================== */
 function App() {
-  const [screen, setScreen] = useState("signin");   // login FIRST
+  const [screen, setScreen] = useState("register");  // 1) create account
   const [tab, setTab] = useState("dashboard");
-  const [selectedLangs, setSelectedLangs] = useState([]); // single language, kept as 1-item array
+  const [selectedLangs, setSelectedLangs] = useState([]);
   const [user, setUser] = useState(null);
   const [allCards, setAllCards] = useState([]);
   const [learnedIds, setLearnedIds] = useState([]);
@@ -229,7 +234,7 @@ function App() {
   const commitRound = (pts) => { if (pts <= 0) return; setHistory((h) => { const c = [...h]; c[c.length - 1] = { ...c[c.length - 1], points: c[c.length - 1].points + pts }; return c; }); };
   useEffect(() => { if (screen === "deck" && allCards.length > 0 && queue.length === 0 && !committed.current) { committed.current = true; commitRound(roundPoints); } }, [screen, queue.length, roundPoints, allCards.length]);
   const exitToApp = () => { if (!committed.current && roundPoints > 0) { committed.current = true; commitRound(roundPoints); } setTab("dashboard"); setScreen("app"); };
-  const signOut = () => { setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setQueue([]); setHistory(buildHistory()); setTab("dashboard"); setScreen("signin"); };
+  const signOut = () => { setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setQueue([]); setHistory(buildHistory()); setTab("dashboard"); setScreen("register"); };
 
   const [flipped, setFlipped] = useState(false);
   const [dragX, setDragX] = useState(0);
@@ -249,16 +254,16 @@ function App() {
   const addCard = (card) => { setAllCards((prev) => [...prev, card]); };
   const deleteCard = (id) => { setAllCards((p) => p.filter((c) => c.id !== id)); setQueue((q) => q.filter((c) => c.id !== id)); setLearnedIds((ids) => ids.filter((x) => x !== id)); };
 
-  // 1) LOGIN first
-  if (screen === "signin") return <SignIn onDone={(u) => { setUser(u); setScreen("onboarding"); }} />;
+  // 1) AUTH — register or sign in
+  if (screen === "register" || screen === "signin")
+    return <AuthScreen mode={screen} onSwitch={setScreen} onDone={(u) => { setUser(u); setScreen("onboarding"); }} />;
 
-  // 2) Then choose ONE language
+  // 2) Choose ONE language
   if (screen === "onboarding") {
-    const choose = (l) => setSelectedLangs([l]); // single select
-    const cont = async () => { await initData(selectedLangs); setTab("dashboard"); setScreen("app"); };
+    const choose = (l) => setSelectedLangs([l]);
     return (
       <Shell><StyleTag />
-        <div style={{ padding: "52px 24px 28px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: "52px 24px 28px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
           <div style={{ fontSize: 40 }}>👋</div>
           <h1 style={{ fontSize: 30, fontWeight: 800, color: C.ink, margin: "16px 0 6px", letterSpacing: -0.8, lineHeight: 1.15 }}>What do you<br />want to learn?</h1>
           <p style={{ color: C.sub, margin: 0, fontSize: 15.5 }}>Pick one language to start. You can switch anytime.</p>
@@ -271,7 +276,33 @@ function App() {
               </button>); })}
           </div>
           <div style={{ flex: 1, minHeight: 24 }} />
-          <PrimaryButton disabled={!selectedLangs.length} onClick={cont}>Continue</PrimaryButton>
+          <PrimaryButton disabled={!selectedLangs.length} onClick={() => setScreen("level")}>Continue</PrimaryButton>
+        </div>
+      </Shell>
+    );
+  }
+
+  // 3) Choose level
+  if (screen === "level") {
+    const cur = (user && user.level) || "";
+    const pick = (lv) => setUser((u) => ({ ...u, level: lv }));
+    const cont = async () => { await initData(selectedLangs); setTab("dashboard"); setScreen("app"); };
+    return (
+      <Shell><StyleTag />
+        <div style={{ padding: "48px 24px 24px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <div style={{ fontSize: 38 }}>📈</div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, margin: "14px 0 6px", letterSpacing: -0.7, lineHeight: 1.15 }}>Where are you<br />starting from?</h1>
+          <p style={{ color: C.sub, margin: 0, fontSize: 15 }}>Not sure of your level? Just pick the one that sounds most like you.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 22 }}>
+            {LEVELS.map((lv) => { const on = cur === lv.id; return (
+              <button key={lv.id} onClick={() => pick(lv.id)} className="press" style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 18, cursor: "pointer", textAlign: "left", background: C.surface, border: on ? "2px solid " + C.primary : "2px solid " + C.line, boxShadow: on ? "0 8px 20px " + C.primary + "26" : "0 2px 8px rgba(20,20,50,0.04)", transition: "all .18s", fontFamily: FONT }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: on ? C.primary : C.primarySoft, color: on ? "#fff" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{lv.id}</div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{lv.title}</div><div style={{ fontSize: 12.8, color: C.sub, fontWeight: 500, lineHeight: 1.3 }}>{lv.desc}</div></div>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", border: on ? "none" : "2px solid " + C.line, background: on ? C.primary : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Icon name="check" size={12} color="#fff" />}</div>
+              </button>); })}
+          </div>
+          <div style={{ flex: 1, minHeight: 18 }} />
+          <div style={{ paddingTop: 14 }}><PrimaryButton disabled={!cur} onClick={cont}>Start learning</PrimaryButton></div>
         </div>
       </Shell>
     );
@@ -285,7 +316,7 @@ function App() {
     const tint = exitDir === "right" ? { c: C.green, o: 0.92, t: "KNOW" } : exitDir === "left" ? { c: C.red, o: 0.92, t: "REVIEW" } : dragX > 0 ? { c: C.green, o: knowHint * 0.85, t: "KNOW" } : dragX < 0 ? { c: C.red, o: reviewHint * 0.85, t: "REVIEW" } : { c: C.green, o: 0, t: "" };
     return (
       <Shell><StyleTag />
-        <div style={{ padding: "18px 18px 4px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ padding: "18px 18px 4px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
           <button onClick={exitToApp} className="press" aria-label="Exit" style={{ background: C.surface, border: "1.5px solid " + C.line, borderRadius: 14, width: 44, height: 44, cursor: "pointer", color: C.ink }}><Icon name="xmark" size={18} color={C.ink} /></button>
           <div style={{ flex: 1 }}>
             <div style={{ height: 10, background: C.line, borderRadius: 8, overflow: "hidden" }}><div style={{ width: (totalChosen ? (learnedIds.length / totalChosen) * 100 : 0) + "%", height: "100%", background: C.primary, borderRadius: 8, transition: "width .4s cubic-bezier(.2,.8,.2,1)" }} /></div>
@@ -308,7 +339,7 @@ function App() {
             </div>
           )}
         </div>
-        {!sessionDone && (<div style={{ padding: "10px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", display: "flex", alignItems: "center", justifyContent: "center", gap: 28 }}><button onClick={() => triggerSwipe("left")} className="press" style={actionBtn(C.red)} aria-label="Review"><Icon name="xmark" size={26} color="#fff" /></button><button onClick={() => setFlipped((f) => !f)} className="press" style={{ background: "transparent", border: "none", color: C.sub, fontSize: 12.5, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}><Icon name="arrows-rotate" size={16} color={C.sub} />FLIP</button><button onClick={() => triggerSwipe("right")} className="press" style={actionBtn(C.green)} aria-label="I know this"><Icon name="check" size={26} color="#fff" /></button></div>)}
+        {!sessionDone && (<div style={{ padding: "10px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", display: "flex", alignItems: "center", justifyContent: "center", gap: 28, flexShrink: 0 }}><button onClick={() => triggerSwipe("left")} className="press" style={actionBtn(C.red)} aria-label="Review"><Icon name="xmark" size={26} color="#fff" /></button><button onClick={() => setFlipped((f) => !f)} className="press" style={{ background: "transparent", border: "none", color: C.sub, fontSize: 12.5, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}><Icon name="arrows-rotate" size={16} color={C.sub} />FLIP</button><button onClick={() => triggerSwipe("right")} className="press" style={actionBtn(C.green)} aria-label="I know this"><Icon name="check" size={26} color="#fff" /></button></div>)}
       </Shell>
     );
   }
@@ -326,11 +357,11 @@ function App() {
   );
 }
 
-/* ===================== TAB BAR ===================== */
+/* ===================== TAB BAR (pinned) ===================== */
 function TabBar({ tab, setTab }) {
   const items = [{ k: "dashboard", icon: "house", label: "Home" }, { k: "mywords", icon: "layer-group", label: "My Words" }, { k: "friends", icon: "user-group", label: "Friends" }, { k: "profile", icon: "user", label: "Profile" }];
   return (
-    <div style={{ display: "flex", borderTop: "1px solid " + C.line, background: C.surface, paddingTop: 8, paddingLeft: 6, paddingRight: 6, paddingBottom: "calc(14px + env(safe-area-inset-bottom))" }}>
+    <div style={{ flexShrink: 0, display: "flex", borderTop: "1px solid " + C.line, background: C.surface, paddingTop: 8, paddingLeft: 6, paddingRight: 6, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 16px rgba(28,26,46,0.04)" }}>
       {items.map((it) => { const on = tab === it.k; return (<button key={it.k} onClick={() => setTab(it.k)} className="press" style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "6px 0", fontFamily: FONT }}><Icon name={it.icon} size={19} color={on ? C.primary : "#B6B2CE"} /><span style={{ fontSize: 11, fontWeight: 800, color: on ? C.primary : C.sub }}>{it.label}</span></button>); })}
     </div>
   );
@@ -367,32 +398,58 @@ function CardBack({ card }) {
   );
 }
 
-/* ===================== SIGN IN ===================== */
-function SignIn({ onDone }) {
-  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [loading, setLoading] = useState(false);
-  const [avatar, setAvatar] = useState(AVATARS[Math.floor(Math.random() * AVATARS.length)]);
-  const goEmail = async () => { if (!email.includes("@") || loading) return; setLoading(true); const u = await dataService.signInWithEmail(email, name); onDone({ ...u, avatar }); };
-  const goGoogle = async () => { if (loading) return; setLoading(true); const u = await dataService.signInWithGoogle(name); onDone({ ...u, avatar }); };
+/* ===================== AUTH (register / sign in) ===================== */
+function AuthScreen({ mode, onDone, onSwitch }) {
+  const isReg = mode === "register";
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [avatar, setAvatar] = useState(() => randAvatar());
+  const valid = isReg ? (name.trim() && email.includes("@") && pass.length >= 1) : (email.includes("@") && pass.length >= 1);
+  const submit = async () => { if (!valid || loading) return; setLoading(true); const u = await dataService.signInWithEmail(email, name); onDone({ ...u, avatar }); };
+  const google = async () => { if (loading) return; setLoading(true); const u = await dataService.signInWithGoogle(name); onDone({ ...u, avatar: isReg ? avatar : randAvatar() }); };
   return (
     <Shell><StyleTag />
-      <div style={{ padding: "40px 24px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto" }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: C.ink, textAlign: "center", margin: "0 0 4px", letterSpacing: -0.6 }}>Let's get started</h1>
-        <p style={{ color: C.sub, textAlign: "center", margin: 0 }}>Pick a character and tell us your name.</p>
-        <div style={{ display: "flex", justifyContent: "center", margin: "18px 0 6px" }}><Avatar seed={avatar} size={92} ring={C.primary} /></div>
-        <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "10px 2px 4px" }}>{AVATARS.map((a) => (<button key={a} onClick={() => setAvatar(a)} className="press" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, borderRadius: "50%", flexShrink: 0 }}><Avatar seed={a} size={52} ring={avatar === a ? C.primary : null} /></button>))}</div>
-        <div style={{ background: C.surface, borderRadius: 24, padding: 22, marginTop: 18, border: "1px solid " + C.line, boxShadow: "0 8px 28px rgba(28,26,46,0.06)" }}>
-          <label style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Your name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Milad" disabled={loading} style={inputStyle} />
-          <label style={{ fontSize: 13, fontWeight: 700, color: C.sub, display: "block", marginTop: 14 }}>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" disabled={loading} onKeyDown={(e) => e.key === "Enter" && goEmail()} style={inputStyle} />
-          <div style={{ marginTop: 14 }}><PrimaryButton disabled={loading} onClick={goEmail}>{loading ? "Signing in…" : "Continue with Email"}</PrimaryButton></div>
+      <div style={{ padding: "40px 24px 28px", display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <h1 style={{ fontSize: 27, fontWeight: 800, color: C.ink, textAlign: "center", margin: "0 0 4px", letterSpacing: -0.6 }}>{isReg ? "Create your account" : "Welcome back"}</h1>
+        <p style={{ color: C.sub, textAlign: "center", margin: 0, fontSize: 14.5 }}>{isReg ? "Set up your profile to start learning." : "Sign in to keep your streak going."}</p>
+
+        {isReg && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, margin: "20px 0 4px" }}>
+            <button onClick={() => setPicker(true)} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative" }}>
+              <Avatar seed={avatar} size={96} ring={C.primary} />
+              <span style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: "50%", background: C.primary, border: "3px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="pen" size={11} color="#fff" /></span>
+            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setPicker(true)} className="press" style={{ padding: "9px 16px", borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, color: C.primary, fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: FONT }}>Choose character</button>
+              <button onClick={() => setAvatar(randAvatar())} className="press" aria-label="Shuffle" style={{ width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer" }}><Icon name="shuffle" size={14} color={C.ink} /></button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ background: C.surface, borderRadius: 24, padding: 22, marginTop: isReg ? 14 : 24, border: "1px solid " + C.line, boxShadow: "0 8px 28px rgba(28,26,46,0.06)" }}>
+          {isReg && (<><label style={lbl}>Your name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Milad" disabled={loading} style={inputStyle} /></>)}
+          <label style={{ ...lbl, marginTop: isReg ? 14 : 0 }}>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" disabled={loading} style={inputStyle} />
+          <label style={{ ...lbl, marginTop: 14 }}>Password</label>
+          <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" disabled={loading} onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+          <div style={{ marginTop: 16 }}><PrimaryButton disabled={loading || !valid} onClick={submit}>{loading ? "Please wait…" : isReg ? "Register" : "Sign in"}</PrimaryButton></div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}><div style={{ flex: 1, height: 1, background: C.line }} /><span style={{ fontSize: 12, color: C.sub, fontWeight: 700 }}>OR</span><div style={{ flex: 1, height: 1, background: C.line }} /></div>
-          <button onClick={goGoogle} disabled={loading} className="press" style={{ width: "100%", padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: FONT }}><i className="fa-brands fa-google" style={{ color: "#4285F4", fontSize: 16 }}></i> Continue with Google</button>
+          <button onClick={google} disabled={loading} className="press" style={{ width: "100%", padding: 13, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: FONT }}><i className="fa-brands fa-google" style={{ color: "#4285F4", fontSize: 16 }}></i> {isReg ? "Sign up with Google" : "Continue with Google"}</button>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 14, color: C.sub, fontWeight: 500 }}>
+          {isReg ? "Already have an account? " : "New here? "}
+          <span onClick={() => onSwitch(isReg ? "signin" : "register")} style={{ color: C.primary, fontWeight: 800, cursor: "pointer" }}>{isReg ? "Sign in" : "Create an account"}</span>
         </div>
       </div>
+      {picker && <AvatarPicker current={avatar} onPick={setAvatar} onClose={() => setPicker(false)} />}
     </Shell>
   );
 }
+const lbl = { fontSize: 13, fontWeight: 700, color: C.sub, display: "block" };
 const inputStyle = { width: "100%", marginTop: 6, padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" };
 
 /* ===================== AVATAR PICKER ===================== */
@@ -410,44 +467,50 @@ function AvatarPicker({ current, onPick, onClose }) {
 }
 
 /* ===================== DASHBOARD ===================== */
+function StatBox({ icon, value, label, color }) {
+  return (
+    <div style={{ background: color + "14", border: "1px solid " + color + "30", borderRadius: 16, padding: "9px 12px", textAlign: "center", minWidth: 62 }}>
+      <div style={{ fontSize: 19, fontWeight: 800, color: color, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}><Icon name={icon} size={13} color={color} />{value}</div>
+      <div style={{ fontSize: 10.5, color: C.sub, fontWeight: 700, marginTop: 1 }}>{label}</div>
+    </div>
+  );
+}
 function Dashboard({ user, allCards, learnedIds, remaining, dayStreak, history, totalPoints, onStart, onOpenProfile }) {
   const total = allCards.length;
   const done = allCards.filter((c) => learnedIds.includes(c.id)).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const cur = (user && user.level) || "A1";
+  const nxt = nextLevel(cur);
   const pts = useCountUp(totalPoints); const streak = useCountUp(dayStreak); const pctUp = useCountUp(pct);
   const [grow, setGrow] = useState(false);
   useEffect(() => { const t = setTimeout(() => setGrow(true), 80); return () => clearTimeout(t); }, []);
   return (
-    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18, minHeight: "100%", boxSizing: "border-box" }}>
-      {/* header: avatar + greeting (left) · points + streak (right, vertically centered) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={onOpenProfile} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}><Avatar seed={user && user.avatar} size={52} ring={C.primary} /></button>
-        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>Welcome back</div><h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(user && user.name) || "there"} 👋</h1></div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}><div style={{ fontSize: 20, fontWeight: 800, color: C.amber, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}><Icon name="star" size={14} color={C.amber} />{pts}</div><div style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>points</div></div>
-          <div style={{ textAlign: "center" }}><div style={{ fontSize: 20, fontWeight: 800, color: C.primary, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}><Icon name="fire" size={14} color={C.primary} />{streak}</div><div style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>streak</div></div>
+    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button onClick={onOpenProfile} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}><Avatar seed={user && user.avatar} size={50} ring={C.primary} /></button>
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>Welcome back</div><h1 style={{ fontSize: 21, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(user && user.name) || "there"} 👋</h1></div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <StatBox icon="star" value={pts} label="points" color={C.amber} />
+          <StatBox icon="fire" value={streak} label="streak" color={C.primary} />
         </div>
       </div>
 
-      {/* level progress */}
+      {/* level progress card — Continue learning lives inside, at the top */}
       <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line, boxShadow: "0 8px 24px rgba(28,26,46,0.05)" }}>
+        <div style={{ marginTop: 0, marginBottom: 16 }}><PrimaryButton onClick={onStart}>Continue learning</PrimaryButton></div>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>Level progress</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}% to B1</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{pctUp}% to {nxt}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.sub, width: 22 }}>A2</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: C.sub, width: 22 }}>{cur}</span>
           <div style={{ flex: 1, height: 14, background: C.line, borderRadius: 10, overflow: "hidden" }}><div style={{ width: (grow ? pct : 0) + "%", height: "100%", borderRadius: 10, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width 1s cubic-bezier(.2,.8,.2,1)" }} /></div>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.primary, width: 22 }}>B1</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: C.primary, width: 22 }}>{nxt}</span>
         </div>
         <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600, marginTop: 10 }}>{done} of {total} words learned</div>
       </div>
 
-      {/* points chart with week/month + navigation */}
       <PointsChart history={history} />
-
-      <div style={{ flex: 1, minHeight: 8 }} />
-      <PrimaryButton onClick={onStart}>Continue learning</PrimaryButton>
     </div>
   );
 }
@@ -464,7 +527,6 @@ function PointsChart({ history }) {
   const weeksAvail = Math.ceil(total / 7);
 
   let bars = [], rangeLabel = "", periodTotal = 0, canPrev = false, canNext = false;
-
   if (mode === "week") {
     const end = total + offset * 7, start = end - 7;
     for (let idx = start; idx < end; idx++) {
@@ -510,15 +572,16 @@ function Divider() { return <div style={{ width: 1, background: C.line }} />; }
 function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, onLangsChanged, onSignOut }) {
   const [picker, setPicker] = useState(false);
   const [name, setName] = useState((user && user.name) || "");
-  const [lang, setLang] = useState(selectedLangs[0] || "fa"); // single language
+  const [lang, setLang] = useState(selectedLangs[0] || "fa");
+  const [level, setLevel] = useState((user && user.level) || "A1");
   const [saved, setSaved] = useState(false);
   const langDirty = lang !== (selectedLangs[0] || "fa");
-  const dirty = name.trim() !== ((user && user.name) || "") || langDirty;
-  const save = async () => { if (!dirty) return; if (name.trim()) setUser((u) => ({ ...u, name: name.trim() })); if (langDirty) { setSelectedLangs([lang]); await onLangsChanged([lang]); } setSaved(true); setTimeout(() => setSaved(false), 1800); };
+  const levelDirty = level !== ((user && user.level) || "A1");
+  const dirty = name.trim() !== ((user && user.name) || "") || langDirty || levelDirty;
+  const save = async () => { if (!dirty) return; if (name.trim() || levelDirty) setUser((u) => ({ ...u, name: name.trim() || u.name, level })); if (langDirty) { setSelectedLangs([lang]); await onLangsChanged([lang]); } setSaved(true); setTimeout(() => setSaved(false), 1800); };
   return (
-    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18, minHeight: "100%", boxSizing: "border-box" }}>
+    <div style={{ padding: "24px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.6 }}>Profile</h1>
-      {/* avatar is NOT in a box; tap it to change */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginTop: 2 }}>
         <button onClick={() => setPicker(true)} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative" }}>
           <Avatar seed={user && user.avatar} size={108} ring={C.primary} />
@@ -528,14 +591,15 @@ function ProfilePage({ user, setUser, selectedLangs, setSelectedLangs, onLangsCh
         <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 600 }}>Tap your character to change it</div>
       </div>
       <div style={{ background: C.surface, borderRadius: 22, padding: 20, border: "1px solid " + C.line }}>
-        <label style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Name</label>
+        <label style={lbl}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
-        <label style={{ fontSize: 13, fontWeight: 700, color: C.sub, display: "block", marginTop: 16, marginBottom: 8 }}>Language</label>
+        <label style={{ ...lbl, marginTop: 16, marginBottom: 8 }}>Language</label>
         <div style={{ display: "flex", gap: 10 }}>{["fa", "de"].map((l) => { const m = langMeta[l]; const on = lang === l; return (<button key={l} onClick={() => setLang(l)} className="press" style={{ flex: 1, padding: "13px", borderRadius: 14, border: on ? "2px solid " + m.color : "2px solid " + C.line, background: on ? m.soft : C.surface, cursor: "pointer", fontFamily: FONT, fontWeight: 700, color: C.ink, fontSize: 14 }}>{m.flag} {m.label}{on ? " ✓" : ""}</button>); })}</div>
-        {langDirty && <div style={{ fontSize: 12, color: C.sub, marginTop: 8 }}>Changing the language resets your current word set.</div>}
+        <label style={{ ...lbl, marginTop: 16, marginBottom: 8 }}>Level</label>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{["A1", "A2", "B1", "B2", "C1"].map((lv) => { const on = level === lv; return (<button key={lv} onClick={() => setLevel(lv)} className="press" style={{ flex: "1 0 18%", padding: "10px 0", borderRadius: 12, border: on ? "2px solid " + C.primary : "1.5px solid " + C.line, background: on ? C.primarySoft : C.surface, cursor: "pointer", fontFamily: FONT, fontWeight: 800, color: on ? C.primary : C.sub, fontSize: 13.5 }}>{lv}</button>); })}</div>
+        {langDirty && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>Changing the language resets your current word set.</div>}
         <button onClick={save} disabled={!dirty} className="press" style={{ width: "100%", marginTop: 14, padding: 13, borderRadius: 14, border: "none", background: dirty ? C.primary : C.line, color: dirty ? "#fff" : C.sub, fontWeight: 800, cursor: dirty ? "pointer" : "default", fontFamily: FONT }}>{saved ? "Saved ✓" : "Save changes"}</button>
       </div>
-      <div style={{ flex: 1, minHeight: 20 }} />
       <button onClick={onSignOut} className="press" style={{ padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.red, fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT }}>Sign out</button>
       {picker && <AvatarPicker current={user && user.avatar} onPick={(a) => setUser((u) => ({ ...u, avatar: a }))} onClose={() => setPicker(false)} />}
     </div>
@@ -630,15 +694,8 @@ function AddWordModal({ selectedLangs, onClose, onAdd }) {
   const autofill = async () => {
     if (!f.word.trim() || auto === "loading") return;
     setAuto("loading");
-    try { // PRIMARY: full AI card with example (works inside the Claude artifact)
-      const c = await dataService.generateCard(f.word.trim(), lang);
-      setF({ word: c.word || f.word, translation: c.translation || "", pron: c.pron || "", example: c.example || "", exampleTranslation: c.exampleTranslation || "", farsi: c.farsi || "", farsiExample: c.farsiExample || "" });
-      setAuto("done"); return;
-    } catch (_) {}
-    try { // FALLBACK: at least the English meaning
-      const t = await dataService.translate(f.word.trim(), lang, "en");
-      setF((p) => ({ ...p, translation: t })); setAuto("partial"); return;
-    } catch (_) {}
+    try { const c = await dataService.generateCard(f.word.trim(), lang); setF({ word: c.word || f.word, translation: c.translation || "", pron: c.pron || "", example: c.example || "", exampleTranslation: c.exampleTranslation || "", farsi: c.farsi || "", farsiExample: c.farsiExample || "" }); setAuto("done"); return; } catch (_) {}
+    try { const t = await dataService.translate(f.word.trim(), lang, "en"); setF((p) => ({ ...p, translation: t })); setAuto("partial"); return; } catch (_) {}
     setAuto("error");
   };
   const canAdd = f.word.trim() && f.translation.trim();
@@ -699,12 +756,11 @@ function SessionComplete({ points, reviews, dayStreak, name, onDashboard }) {
 }
 
 /* ===================== PRIMITIVES ===================== */
-function Shell({ children }) { return (<div style={{ minHeight: "100vh", width: "100%", display: "flex", justifyContent: "center", background: C.bg, fontFamily: FONT }}><div className="frame" style={{ width: "100%", maxWidth: 440, position: "relative", display: "flex", flexDirection: "column" }}>{children}</div></div>); }
+function Shell({ children }) { return (<div style={{ height: "100vh", height: "100dvh", width: "100%", display: "flex", justifyContent: "center", background: C.bg, fontFamily: FONT, overflow: "hidden" }}><div className="frame" style={{ width: "100%", maxWidth: 440, height: "100%", position: "relative", display: "flex", flexDirection: "column", overflow: "hidden" }}>{children}</div></div>); }
 function PrimaryButton({ children, onClick, disabled }) { return (<button onClick={onClick} disabled={disabled} className="press" style={{ width: "100%", padding: 16, borderRadius: 18, border: "none", cursor: disabled ? "not-allowed" : "pointer", background: disabled ? C.line : C.primary, color: disabled ? C.sub : "#fff", fontSize: 16.5, fontWeight: 800, fontFamily: FONT, letterSpacing: -0.2, boxShadow: disabled ? "none" : "0 8px 22px " + C.primary + "44", transition: "all .15s" }}>{children}</button>); }
 function actionBtn(color) { return { width: 64, height: 64, borderRadius: "50%", border: "none", cursor: "pointer", background: color, color: "#fff", boxShadow: "0 8px 20px " + color + "55", display: "flex", alignItems: "center", justifyContent: "center" }; }
 function StyleTag() {
   return (<style>{`
-    .frame { height: 100vh; height: 100dvh; }
     @keyframes confetti { 0% { transform: translateY(-20px) rotate(0); opacity:1 } 85% { opacity:1 } 100% { transform: translateY(680px) rotate(560deg); opacity:0 } }
     @keyframes pop { 0% { transform: scale(0); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
     @keyframes sheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
