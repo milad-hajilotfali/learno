@@ -21,15 +21,14 @@
 <script type="text/babel" data-presets="react">
 const {useState,useRef,useEffect,useMemo}=React;
 
-/* ── LEVEL / CHAPTER META ── */
 const LEVEL_LABEL={A1:"Beginner",A2:"Elementary",B1:"Intermediate",B2:"Upper-Int.",C1:"Advanced"};
 const LEVELS_ORDER=["A1","A2","B1","B2","C1"];
 const LEVEL_COLOR={
-  A1:{bg:"#E8F5E9",text:"#2E7D32",bar:"#4CAF50",soft:"#C8E6C9"},
-  A2:{bg:"#E3F2FD",text:"#1565C0",bar:"#2196F3",soft:"#BBDEFB"},
-  B1:{bg:"#FFF3E0",text:"#E65100",bar:"#FF9800",soft:"#FFE0B2"},
-  B2:{bg:"#F3E5F5",text:"#6A1B9A",bar:"#9C27B0",soft:"#E1BEE7"},
-  C1:{bg:"#FCE4EC",text:"#880E4F",bar:"#E91E63",soft:"#F8BBD9"},
+  A1:{bg:"#E8F5E9",text:"#2E7D32",bar:"#4CAF50",deep:"#2E7D32"},
+  A2:{bg:"#E3F2FD",text:"#1565C0",bar:"#2196F3",deep:"#1565C0"},
+  B1:{bg:"#FFF3E0",text:"#E65100",bar:"#FF9800",deep:"#B34600"},
+  B2:{bg:"#F3E5F5",text:"#6A1B9A",bar:"#9C27B0",deep:"#6A1B9A"},
+  C1:{bg:"#FCE4EC",text:"#880E4F",bar:"#E91E63",deep:"#880E4F"},
 };
 const CHAPTER_ICONS={"A1-1":"hand-wave","A1-2":"utensils","A1-3":"face-smile","A2-1":"house","A2-2":"paw","A2-3":"calendar-days","B1-1":"magnifying-glass","B1-2":"clock","B1-3":"comments","B2-1":"briefcase","B2-2":"triangle-exclamation","B2-3":"scale-balanced","C1-1":"globe","C1-2":"chart-line","C1-3":"microscope"};
 const CHAPTERS={
@@ -47,14 +46,14 @@ const WORDS=[
   {id:"fa4",language:"fa",level:"A1",chapter:"A1-2",word:"nan",farsi:"نان",pron:"NÂN",translation:"bread",example:"Man nan doost daram.",farsiExample:"من نان دوست دارم.",exampleTranslation:"I like bread.",note:"noun"},
   {id:"fa15",language:"fa",level:"A1",chapter:"A1-3",word:"khoob",farsi:"خوب",pron:"KHOOB",translation:"good",example:"Hal-e man khoob ast.",farsiExample:"حال من خوب است.",exampleTranslation:"I'm good.",note:"adjective"},
   {id:"fa8",language:"fa",level:"A1",chapter:"A1-3",word:"dooset daram",farsi:"دوستت دارم",pron:"DOO-set DÂ-ram",translation:"I love you",example:"Man dooset daram.",farsiExample:"من دوستت دارم.",exampleTranslation:"I love you.",note:"phrase"},
-  {id:"fa5",language:"fa",level:"A2",chapter:"A2-1",word:"khoone",farsi:"خونه",pron:"KHOO-ne",translation:"house / home",example:"Khoone-ye man bozorg ast.",farsiExample:"خونه‌ی من بزرگ است.",exampleTranslation:"My house is big.",note:"noun · colloquial"},
+  {id:"fa5",language:"fa",level:"A2",chapter:"A2-1",word:"khoone",farsi:"خونه",pron:"KHOO-ne",translation:"house/home",example:"Khoone-ye man bozorg ast.",farsiExample:"خونه‌ی من بزرگ است.",exampleTranslation:"My house is big.",note:"noun·colloquial"},
   {id:"fa6",language:"fa",level:"A2",chapter:"A2-1",word:"doost",farsi:"دوست",pron:"DOOST",translation:"friend",example:"Oo doost-e man ast.",farsiExample:"او دوست من است.",exampleTranslation:"He/she is my friend.",note:"noun"},
   {id:"fa7",language:"fa",level:"A2",chapter:"A2-3",word:"ketab",farsi:"کتاب",pron:"ke-TÂB",translation:"book",example:"In ketab jaleb ast.",farsiExample:"این کتاب جالب است.",exampleTranslation:"This book is interesting.",note:"noun"},
   {id:"fa9",language:"fa",level:"A2",chapter:"A2-2",word:"gorbe",farsi:"گربه",pron:"GOR-be",translation:"cat",example:"Gorbe roo miz ast.",farsiExample:"گربه روی میز است.",exampleTranslation:"The cat is on the table.",note:"noun"},
   {id:"fa10",language:"fa",level:"A2",chapter:"A2-2",word:"sag",farsi:"سگ",pron:"SAG",translation:"dog",example:"Sag-e man kuchik ast.",farsiExample:"سگ من کوچک است.",exampleTranslation:"My dog is small.",note:"noun"},
   {id:"fa11",language:"fa",level:"B1",chapter:"B1-1",word:"bozorg",farsi:"بزرگ",pron:"bo-ZORG",translation:"big",example:"Yek khaneye bozorg.",farsiExample:"یک خانه‌ی بزرگ.",exampleTranslation:"A big house.",note:"adjective"},
   {id:"fa12",language:"fa",level:"B1",chapter:"B1-1",word:"kuchik",farsi:"کوچک",pron:"koo-CHIK",translation:"small",example:"Yek gorbeye kuchik.",farsiExample:"یک گربه‌ی کوچک.",exampleTranslation:"A small cat.",note:"adjective"},
-  {id:"fa13",language:"fa",level:"B1",chapter:"B1-2",word:"emrooz",farsi:"امروز",pron:"em-ROOZ",translation:"today",example:"Emrooz hava khoob ast.",farsiExample:"امروز هوا خوب است.",exampleTranslation:"The weather is good today.",note:"adverb"},
+  {id:"fa13",language:"fa",level:"B1",chapter:"B1-2",word:"emrooz",farsi:"امروز",pron:"em-ROOZ",translation:"today",example:"Emrooz hava khoob ast.",farsiExample:"امروز هوا خوب است.",exampleTranslation:"Good weather today.",note:"adverb"},
   {id:"fa14",language:"fa",level:"B1",chapter:"B1-2",word:"farda",farsi:"فردا",pron:"far-DÂ",translation:"tomorrow",example:"Farda mibinamet.",farsiExample:"فردا می‌بینمت.",exampleTranslation:"See you tomorrow.",note:"adverb"},
   {id:"fa16",language:"fa",level:"B2",chapter:"B2-1",word:"tajrobe",farsi:"تجربه",pron:"taj-RO-be",translation:"experience",example:"In yek tajrobe-ye khoob bood.",farsiExample:"این یک تجربه‌ی خوب بود.",exampleTranslation:"That was a good experience.",note:"noun"},
   {id:"fa17",language:"fa",level:"B2",chapter:"B2-2",word:"moshkel",farsi:"مشکل",pron:"mosh-KEL",translation:"problem",example:"Moshkeli nist.",farsiExample:"مشکلی نیست.",exampleTranslation:"No problem.",note:"noun"},
@@ -64,25 +63,25 @@ const WORDS=[
   {id:"fa21",language:"fa",level:"C1",chapter:"C1-3",word:"barresi",farsi:"بررسی",pron:"bar-ra-SI",translation:"analysis",example:"Barresi-ye daghigh lazem ast.",farsiExample:"بررسی دقیق لازم است.",exampleTranslation:"A careful analysis is needed.",note:"noun"},
   {id:"de1",language:"de",level:"A1",chapter:"A1-1",word:"hallo",pron:"HA-lo",translation:"hello",example:"Hallo, wie geht's?",exampleTranslation:"Hello, how are you?",note:"greeting"},
   {id:"de2",language:"de",level:"A1",chapter:"A1-1",word:"danke",pron:"DAN-ke",translation:"thank you",example:"Danke für deine Hilfe.",exampleTranslation:"Thanks for your help.",note:"interjection"},
-  {id:"de3",language:"de",level:"A1",chapter:"A1-2",word:"das Wasser",pron:"das VA-ser",translation:"water",example:"Ein Glas Wasser, bitte.",exampleTranslation:"A glass of water, please.",note:"noun · neuter"},
-  {id:"de4",language:"de",level:"A1",chapter:"A1-2",word:"das Brot",pron:"das BROHT",translation:"bread",example:"Ich mag Brot.",exampleTranslation:"I like bread.",note:"noun · neuter"},
+  {id:"de3",language:"de",level:"A1",chapter:"A1-2",word:"das Wasser",pron:"das VA-ser",translation:"water",example:"Ein Glas Wasser, bitte.",exampleTranslation:"A glass of water, please.",note:"noun·neuter"},
+  {id:"de4",language:"de",level:"A1",chapter:"A1-2",word:"das Brot",pron:"das BROHT",translation:"bread",example:"Ich mag Brot.",exampleTranslation:"I like bread.",note:"noun·neuter"},
   {id:"de10",language:"de",level:"A1",chapter:"A1-3",word:"gut",pron:"GOOT",translation:"good",example:"Mir geht es gut.",exampleTranslation:"I'm good.",note:"adjective"},
-  {id:"de5",language:"de",level:"A2",chapter:"A2-1",word:"das Haus",pron:"das HOWS",translation:"house",example:"Mein Haus ist groß.",exampleTranslation:"My house is big.",note:"noun · neuter"},
-  {id:"de6",language:"de",level:"A2",chapter:"A2-1",word:"der Freund",pron:"dair FROYNT",translation:"friend",example:"Er ist mein Freund.",exampleTranslation:"He is my friend.",note:"noun · masc."},
-  {id:"de7",language:"de",level:"A2",chapter:"A2-3",word:"das Buch",pron:"das BOOKH",translation:"book",example:"Das Buch ist interessant.",exampleTranslation:"The book is interesting.",note:"noun · neuter"},
-  {id:"de8",language:"de",level:"A2",chapter:"A2-2",word:"die Katze",pron:"dee KAT-se",translation:"cat",example:"Die Katze ist auf dem Tisch.",exampleTranslation:"The cat is on the table.",note:"noun · fem."},
-  {id:"de9",language:"de",level:"A2",chapter:"A2-2",word:"der Hund",pron:"dair HUNT",translation:"dog",example:"Mein Hund ist klein.",exampleTranslation:"My dog is small.",note:"noun · masc."},
+  {id:"de5",language:"de",level:"A2",chapter:"A2-1",word:"das Haus",pron:"das HOWS",translation:"house",example:"Mein Haus ist groß.",exampleTranslation:"My house is big.",note:"noun·neuter"},
+  {id:"de6",language:"de",level:"A2",chapter:"A2-1",word:"der Freund",pron:"dair FROYNT",translation:"friend",example:"Er ist mein Freund.",exampleTranslation:"He is my friend.",note:"noun·masc."},
+  {id:"de7",language:"de",level:"A2",chapter:"A2-3",word:"das Buch",pron:"das BOOKH",translation:"book",example:"Das Buch ist interessant.",exampleTranslation:"The book is interesting.",note:"noun·neuter"},
+  {id:"de8",language:"de",level:"A2",chapter:"A2-2",word:"die Katze",pron:"dee KAT-se",translation:"cat",example:"Die Katze ist auf dem Tisch.",exampleTranslation:"The cat is on the table.",note:"noun·fem."},
+  {id:"de9",language:"de",level:"A2",chapter:"A2-2",word:"der Hund",pron:"dair HUNT",translation:"dog",example:"Mein Hund ist klein.",exampleTranslation:"My dog is small.",note:"noun·masc."},
   {id:"de11",language:"de",level:"B1",chapter:"B1-1",word:"groß",pron:"GROHSS",translation:"big",example:"Ein großes Haus.",exampleTranslation:"A big house.",note:"adjective"},
   {id:"de12",language:"de",level:"B1",chapter:"B1-1",word:"klein",pron:"KLINE",translation:"small",example:"Eine kleine Katze.",exampleTranslation:"A small cat.",note:"adjective"},
-  {id:"de13",language:"de",level:"B1",chapter:"B1-2",word:"heute",pron:"HOY-te",translation:"today",example:"Heute ist das Wetter schön.",exampleTranslation:"Today the weather is nice.",note:"adverb"},
+  {id:"de13",language:"de",level:"B1",chapter:"B1-2",word:"heute",pron:"HOY-te",translation:"today",example:"Heute ist das Wetter schön.",exampleTranslation:"The weather is nice today.",note:"adverb"},
   {id:"de14",language:"de",level:"B1",chapter:"B1-2",word:"morgen",pron:"MOR-gen",translation:"tomorrow",example:"Bis morgen!",exampleTranslation:"See you tomorrow!",note:"adverb"},
   {id:"de15",language:"de",level:"B1",chapter:"B1-3",word:"schön",pron:"SHURN",translation:"beautiful",example:"Das ist sehr schön.",exampleTranslation:"That is very nice.",note:"adjective"},
-  {id:"de16",language:"de",level:"B2",chapter:"B2-1",word:"die Erfahrung",pron:"dee er-FA-rung",translation:"experience",example:"Das war eine gute Erfahrung.",exampleTranslation:"That was a good experience.",note:"noun · fem."},
-  {id:"de17",language:"de",level:"B2",chapter:"B2-2",word:"das Problem",pron:"das pro-BLAYM",translation:"problem",example:"Kein Problem.",exampleTranslation:"No problem.",note:"noun · neuter"},
-  {id:"de18",language:"de",level:"B2",chapter:"B2-3",word:"die Entscheidung",pron:"dee ent-SHY-dung",translation:"decision",example:"Ich habe eine Entscheidung getroffen.",exampleTranslation:"I made a decision.",note:"noun · fem."},
-  {id:"de19",language:"de",level:"C1",chapter:"C1-1",word:"die Kultur",pron:"dee kul-TOOR",translation:"culture",example:"Die deutsche Kultur ist vielfältig.",exampleTranslation:"German culture is diverse.",note:"noun · fem."},
-  {id:"de20",language:"de",level:"C1",chapter:"C1-2",word:"die Wirtschaft",pron:"dee VIRT-shaft",translation:"economy",example:"Die Wirtschaft wächst.",exampleTranslation:"The economy is growing.",note:"noun · fem."},
-  {id:"de21",language:"de",level:"C1",chapter:"C1-3",word:"die Analyse",pron:"dee a-na-LUE-ze",translation:"analysis",example:"Eine genaue Analyse ist nötig.",exampleTranslation:"A precise analysis is needed.",note:"noun · fem."},
+  {id:"de16",language:"de",level:"B2",chapter:"B2-1",word:"die Erfahrung",pron:"dee er-FA-rung",translation:"experience",example:"Das war eine gute Erfahrung.",exampleTranslation:"That was a good experience.",note:"noun·fem."},
+  {id:"de17",language:"de",level:"B2",chapter:"B2-2",word:"das Problem",pron:"das pro-BLAYM",translation:"problem",example:"Kein Problem.",exampleTranslation:"No problem.",note:"noun·neuter"},
+  {id:"de18",language:"de",level:"B2",chapter:"B2-3",word:"die Entscheidung",pron:"dee ent-SHY-dung",translation:"decision",example:"Ich habe eine Entscheidung getroffen.",exampleTranslation:"I made a decision.",note:"noun·fem."},
+  {id:"de19",language:"de",level:"C1",chapter:"C1-1",word:"die Kultur",pron:"dee kul-TOOR",translation:"culture",example:"Die deutsche Kultur ist vielfältig.",exampleTranslation:"German culture is diverse.",note:"noun·fem."},
+  {id:"de20",language:"de",level:"C1",chapter:"C1-2",word:"die Wirtschaft",pron:"dee VIRT-shaft",translation:"economy",example:"Die Wirtschaft wächst.",exampleTranslation:"The economy is growing.",note:"noun·fem."},
+  {id:"de21",language:"de",level:"C1",chapter:"C1-3",word:"die Analyse",pron:"dee a-na-LUE-ze",translation:"analysis",example:"Eine genaue Analyse ist nötig.",exampleTranslation:"A precise analysis is needed.",note:"noun·fem."},
 ];
 
 const BASE_USERS=[
@@ -96,7 +95,6 @@ const BASE_USERS=[
   {id:"u8",name:"Darya",avatar:"Darya",points:145,weekPts:77,streak:8,bestDay:20,activeDays:41},
 ];
 
-/* ── HELPERS ── */
 const cap=s=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const shuffle=arr=>{const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
@@ -104,7 +102,7 @@ const easeOut=t=>1-Math.pow(1-t,3);
 const randAvatar=()=>AVATARS[Math.floor(Math.random()*AVATARS.length)];
 
 const C={bg:"#F5F4FB",surface:"#FFFFFF",ink:"#1C1A2E",sub:"#807DA0",line:"#ECEAF6",primary:"#5A4FE3",primarySoft:"#ECEAFD",green:"#10B981",greenSoft:"#D6F5EA",red:"#F4515E",redSoft:"#FFE4E7",fa:"#FF6B4A",faSoft:"#FFE9E1",de:"#4C6EF5",deSoft:"#E4EAFF",amber:"#F59E0B"};
-const langMeta={fa:{label:"Persian",sub:"Finglish",flag:"🇮🇷",color:C.fa,soft:C.faSoft,ttsLang:"fa-IR"},de:{label:"German",sub:"Deutsch",flag:"🇩🇪",color:C.de,soft:C.deSoft,ttsLang:"de-DE"}};
+const langMeta={fa:{label:"Persian",sub:"Finglish",flag:"🇮🇷",color:C.fa,soft:C.faSoft,ttsLang:"fa-IR",ttsCode:"fa"},de:{label:"German",sub:"Deutsch",flag:"🇩🇪",color:C.de,soft:C.deSoft,ttsLang:"de-DE",ttsCode:"de"}};
 const FONT="'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
 const AVATARS=["Milad","Aneka","Bella","Leo","Zoe","Felix","Mia","Max","Luna","Kai","Nova","Remy","Sara","Jonas","Niloo","Lena","Reza","Mira","Tobias","Darya","Oliver","Emma","Liam","Sophia","Noah","Ava","Ethan","Isla","Aria","Jack","Maya","Theo","Ivy","Hugo","Nora","Finn","Ruby","Milo","Cleo","Atlas","Vivian","Caleb","Hazel","Owen","Stella","Jude","Willow","Asher","Iris","Ezra","Amir","Yasmin","Layla","Darius","Shirin","Keanu","Freya","Bjorn","Hana","Soren","Leila","Rafael","Chiara","Tariq","Anika","Sven","Nadia","Viktor","Celine","Hamid","Roxana","Florian","Ingrid","Cyrus","Zara","Matteo","Elena"];
 const avatarURL=seed=>"https://api.dicebear.com/9.x/open-peeps/svg?seed="+encodeURIComponent(seed||"Milad");
@@ -112,65 +110,109 @@ const REWARDS=[{at:50,name:"Spark badge",icon:"bolt"},{at:150,name:"Bronze medal
 const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-/* ── AUDIO ── */
-let _v=[];
-const lv=()=>{try{_v=window.speechSynthesis.getVoices()||[];}catch(_){}};
-if(typeof window!=="undefined"&&"speechSynthesis" in window){lv();try{window.speechSynthesis.onvoiceschanged=lv;}catch(_){}}
-const pv=p=>{if(!_v.length)lv();return _v.find(v=>v.lang&&v.lang.toLowerCase().replace("_","-").startsWith(p))||null;};
-let _pr=false;
-function prTTS(){try{if(_pr||!("speechSynthesis" in window))return;_pr=true;const u=new SpeechSynthesisUtterance(" ");u.volume=0;window.speechSynthesis.speak(u);}catch(_){}}
-if(typeof window!=="undefined")window.addEventListener("pointerdown",prTTS,{once:true});
-function spSynth(t,lc){try{if(!("speechSynthesis" in window))return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=lc;const v=pv(lc.slice(0,2).toLowerCase());if(v)u.voice=v;u.rate=0.85;window.speechSynthesis.speak(u);}catch(_){}}
+/* ── AUDIO: Web Speech API with proper language codes ── */
+let _voices=[];
+const loadVoices=()=>{try{_voices=window.speechSynthesis?.getVoices()||[];}catch(_){}};
+if(typeof window!=="undefined"&&"speechSynthesis" in window){loadVoices();try{window.speechSynthesis.onvoiceschanged=loadVoices;}catch(_){}}
+
+function pickBestVoice(langCode){
+  // langCode e.g. "fa-IR" or "de-DE"
+  if(!_voices.length)loadVoices();
+  const prefix=langCode.toLowerCase().replace("_","-");
+  const lang2=prefix.slice(0,2);
+  // prefer exact match, then language prefix match
+  return _voices.find(v=>v.lang.toLowerCase().replace("_","-")===prefix)
+      || _voices.find(v=>v.lang.toLowerCase().startsWith(lang2))
+      || null;
+}
+
+let _primed=false;
+function primeTTS(){try{if(_primed||!("speechSynthesis" in window))return;_primed=true;const u=new SpeechSynthesisUtterance(" ");u.volume=0;window.speechSynthesis.speak(u);}catch(_){}}
+if(typeof window!=="undefined")window.addEventListener("pointerdown",primeTTS,{once:true});
+
 let _au=null;
-function spNet(t,tl){return new Promise((res,rej)=>{try{if(_au)try{_au.pause();}catch(_){}const url="https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl="+tl+"&q="+encodeURIComponent(t);_au=new Audio(url);_au.onerror=()=>rej();const p=_au.play();if(p&&p.then)p.then(res).catch(rej);else res();}catch(_){rej();}});}
-function speak(text,lc){prTTS();const p=(lc||"").slice(0,2).toLowerCase();const tl=p==="fa"?"fa":"de";const go=()=>{const v=pv(p);if(v)spSynth(text,lc);else spNet(text,tl).catch(()=>spSynth(text,lc));};go();}
+function spNet(text,tl,speed=0.85){
+  return new Promise((res,rej)=>{
+    try{
+      if(_au){try{_au.pause();}catch(_){}}_au=null;
+      const url="https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl="+encodeURIComponent(tl)+"&q="+encodeURIComponent(text)+"&ttsspeed="+speed;
+      const a=new Audio(url);a.crossOrigin="anonymous";_au=a;
+      a.onerror=()=>rej(new Error("audio error"));
+      const p=a.play();
+      if(p&&p.then)p.then(res).catch(rej);else res();
+    }catch(e){rej(e);}
+  });
+}
+
+function spSynth(text,langCode){
+  try{
+    if(!("speechSynthesis" in window))return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang=langCode;
+    const v=pickBestVoice(langCode);
+    if(v){u.voice=v;}
+    u.rate=0.82;u.pitch=1.0;
+    window.speechSynthesis.speak(u);
+  }catch(_){}
+}
+
+// For Persian: speak the Farsi script via fa-IR; for German: speak German text
+function speak(text,langCode){
+  primeTTS();
+  const tl=langCode.startsWith("fa")?"fa":"de";
+  // Try Google TTS first (natural), fallback to Web Speech
+  spNet(text,tl).catch(()=>{
+    loadVoices();
+    spSynth(text,langCode);
+  });
+}
+
 const sayWordOf=c=>c.language==="fa"?(c.farsi||c.word):c.word;
 const sayExOf=c=>c.language==="fa"?(c.farsiExample||c.example):c.example;
-
-function playFinishChime(){/* removed — no sound on round finish */}
 
 async function shareImage(node,text,filename,bg){
   if(!node||!window.html2canvas)return"nolib";
   try{const canvas=await window.html2canvas(node,{backgroundColor:bg||"#FFF",scale:3,useCORS:true,logging:false,allowTaint:true,imageTimeout:8000});const blob=await new Promise(r=>canvas.toBlob(r,"image/png",1.0));if(!blob)return"error";const file=new File([blob],filename,{type:"image/png"});if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text});return"shared";}const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);return"downloaded";}catch(e){return"error";}
 }
 
-function buildHistory(){
-  const TOTAL=84;const now=new Date();const out=[];
-  for(let i=TOTAL-1;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);const seed=d.getFullYear()*372+(d.getMonth()+1)*31+d.getDate();const r=Math.abs(Math.sin(seed));let pts;if(i===0)pts=0;else if(i<=10)pts=Math.round(8+r*14);else pts=r>0.32?Math.round(5+r*16):0;out.push({date:d.toISOString().slice(0,10),label:DAY_NAMES[d.getDay()],dm:MONTHS[d.getMonth()]+" "+d.getDate(),points:pts});}
-  return out;
-}
+function buildHistory(){const TOTAL=84;const now=new Date();const out=[];for(let i=TOTAL-1;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);const seed=d.getFullYear()*372+(d.getMonth()+1)*31+d.getDate();const r=Math.abs(Math.sin(seed));let pts;if(i===0)pts=0;else if(i<=10)pts=Math.round(8+r*14);else pts=r>0.32?Math.round(5+r*16):0;out.push({date:d.toISOString().slice(0,10),label:DAY_NAMES[d.getDay()],dm:MONTHS[d.getMonth()]+" "+d.getDate(),points:pts});}return out;}
 function calcStreak(h){let i=h.length-1;if(h[i].points===0)i--;let s=0;for(;i>=0;i--){if(h[i].points>0)s++;else break;}return s;}
 
 /* ── UI PRIMITIVES ── */
 function Icon({name,size=18,color,style}){return <i className={"fa-solid fa-"+name} style={{fontSize:size,color,lineHeight:1,...style}} aria-hidden="true"></i>;}
-function useCountUp(target,dur=700){const[val,setVal]=useState(0);useEffect(()=>{let raf;const start=performance.now();const tick=now=>{const p=Math.min(1,(now-start)/dur);setVal(Math.round(target*easeOut(p)));if(p<1)raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);return()=>cancelAnimationFrame(raf);},[target,dur]);return val;}
-function Avatar({seed,size=44,ring}){const[err,setErr]=useState(false);return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:C.primarySoft,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:ring?("0 0 0 3px "+ring):"none"}}>{!err?<img src={avatarURL(seed)} crossOrigin="anonymous" onError={()=>setErr(true)} alt="" style={{width:"100%",height:"100%"}}/>:<Icon name="user" size={size*0.5} color={C.primary}/>}</div>);}
-function SpeakBtn({text,lang,color,size=38}){const s=e=>e.stopPropagation();return(<button onPointerDown={s} onClick={e=>{s(e);speak(text,lang);}} className="press" style={{width:size,height:size,borderRadius:"50%",border:"none",cursor:"pointer",background:color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={size*0.42} color={color}/></button>);}
+function useCountUp(t,dur=700){const[v,setV]=useState(0);useEffect(()=>{let r;const s=performance.now();const tick=n=>{const p=Math.min(1,(n-s)/dur);setV(Math.round(t*easeOut(p)));if(p<1)r=requestAnimationFrame(tick);};r=requestAnimationFrame(tick);return()=>cancelAnimationFrame(r);},[t,dur]);return v;}
+function Avatar({seed,size=44,ring}){const[e,setE]=useState(false);return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:C.primarySoft,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:ring?("0 0 0 3px "+ring):"none"}}>{!e?<img src={avatarURL(seed)} crossOrigin="anonymous" onError={()=>setE(true)} alt="" style={{width:"100%",height:"100%"}}/>:<Icon name="user" size={size*0.5} color={C.primary}/>}</div>);}
 function PrimaryButton({children,onClick,disabled}){return(<button onClick={onClick} disabled={disabled} className="press" style={{width:"100%",padding:16,borderRadius:18,border:"none",cursor:disabled?"not-allowed":"pointer",background:disabled?C.line:C.primary,color:disabled?C.sub:"#fff",fontSize:16.5,fontWeight:800,fontFamily:FONT,boxShadow:disabled?"none":"0 8px 22px "+C.primary+"44"}}>{children}</button>);}
 function Shell({children}){return(<div style={{height:"100vh",height:"100dvh",width:"100%",display:"flex",justifyContent:"center",background:C.bg,fontFamily:FONT,overflow:"hidden"}}><div style={{width:"100%",maxWidth:440,height:"100%",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden"}}>{children}</div></div>);}
 function actionBtn(color,size=60){return{width:size,height:size,borderRadius:"50%",border:"none",cursor:"pointer",background:color,color:"#fff",boxShadow:"0 8px 20px "+color+"55",display:"flex",alignItems:"center",justifyContent:"center"};}
 
-/* ── APP-STYLE DROPDOWN ── */
-function AppSelect({value,onChange,options,placeholder}){
+/* ── STEP DOTS — always pinned at bottom, consistent position ── */
+function StepDots({current}){
+  return(
+    <div style={{flexShrink:0,display:"flex",gap:7,justifyContent:"center",padding:"14px 0",paddingBottom:"calc(14px + env(safe-area-inset-bottom))"}}>
+      {[0,1,2].map(i=>(<div key={i} style={{width:i===current?22:8,height:8,borderRadius:4,background:i===current?C.primary:C.line,transition:"all .3s cubic-bezier(.2,.8,.2,1)"}}/>))}
+    </div>
+  );
+}
+
+/* ── APP-STYLE DROPDOWN — opens upward when near bottom ── */
+function AppSelect({value,onChange,options,placeholder,openUp=false}){
   const[open,setOpen]=useState(false);
   const ref=useRef(null);
-  const selected=options.find(o=>o.value===value);
-  useEffect(()=>{
-    const handler=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};
-    document.addEventListener("pointerdown",handler);
-    return()=>document.removeEventListener("pointerdown",handler);
-  },[]);
+  const sel=options.find(o=>o.value===value);
+  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener("pointerdown",h);return()=>document.removeEventListener("pointerdown",h);},[]);
   return(
     <div ref={ref} style={{position:"relative"}}>
       <button onClick={()=>setOpen(o=>!o)} className="press" style={{width:"100%",padding:"12px 14px",borderRadius:14,border:"1.5px solid "+(open?C.primary:C.line),background:C.surface,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-        <span style={{fontSize:15,color:selected?C.ink:C.sub,fontWeight:selected?600:400}}>{selected?selected.label:(placeholder||"Select…")}</span>
+        <span style={{fontSize:15,color:sel?C.ink:C.sub,fontWeight:sel?600:400,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:8}}>{sel?sel.label:(placeholder||"Select…")}</span>
         <Icon name={open?"chevron-up":"chevron-down"} size={14} color={C.sub}/>
       </button>
       {open&&(
-        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:C.surface,borderRadius:16,border:"1.5px solid "+C.line,boxShadow:"0 12px 32px rgba(28,26,46,0.12)",zIndex:200,overflow:"hidden",maxHeight:240,overflowY:"auto"}}>
+        <div style={{position:"absolute",[openUp?"bottom":"top"]:openUp?"calc(100% + 6px)":"calc(100% + 6px)",left:0,right:0,background:C.surface,borderRadius:16,border:"1.5px solid "+C.line,boxShadow:"0 12px 32px rgba(28,26,46,0.14)",zIndex:300,overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
           {options.map((o,i)=>(
-            <button key={o.value} onClick={()=>{onChange(o.value);setOpen(false);}} className="press" style={{width:"100%",padding:"12px 16px",border:"none",borderBottom:i<options.length-1?"1px solid "+C.line:"none",background:value===o.value?C.primarySoft:C.surface,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-              <span style={{fontSize:14.5,color:value===o.value?C.primary:C.ink,fontWeight:value===o.value?700:400}}>{o.label}</span>
+            <button key={o.value} onClick={()=>{onChange(o.value);setOpen(false);}} className="press" style={{width:"100%",padding:"11px 16px",border:"none",borderBottom:i<options.length-1?"1px solid "+C.line:"none",background:value===o.value?C.primarySoft:C.surface,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
+              <span style={{fontSize:14,color:value===o.value?C.primary:C.ink,fontWeight:value===o.value?700:400}}>{o.label}</span>
               {value===o.value&&<Icon name="check" size={14} color={C.primary}/>}
             </button>
           ))}
@@ -180,25 +222,18 @@ function AppSelect({value,onChange,options,placeholder}){
   );
 }
 
-/* ── STEP DOTS — fixed at bottom of screen ── */
-function StepDots({current}){
+/* ── SHEET — always above tab bar (zIndex 200) ── */
+function Sheet({children,onClose,title,noHeader}){
   return(
-    <div style={{display:"flex",gap:7,justifyContent:"center",padding:"16px 0 0"}}>
-      {[0,1,2].map(i=>(<div key={i} style={{width:i===current?22:8,height:8,borderRadius:4,background:i===current?C.primary:C.line,transition:"all .3s cubic-bezier(.2,.8,.2,1)"}}/>))}
-    </div>
-  );
-}
-
-/* ── SHEET ── */
-function Sheet({children,onClose,title}){
-  return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:100}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
       <div onClick={e=>e.stopPropagation()} className="sheet-in" style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"26px 26px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",fontFamily:FONT}}>
-        <div style={{flexShrink:0,padding:"14px 22px 12px",background:C.surface,borderRadius:"26px 26px 0 0",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative"}}>
-          <div style={{width:40,height:5,background:C.line,borderRadius:4,position:"absolute",top:10,left:"50%",transform:"translateX(-50%)"}}/>
-          {title?<h2 style={{fontSize:18,fontWeight:800,color:C.ink,margin:"6px 0 0",flex:1}}>{title}</h2>:<div style={{height:16}}/>}
-          <button onClick={onClose} className="press" style={{width:32,height:32,borderRadius:"50%",border:"none",background:C.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:4,flexShrink:0}}><Icon name="xmark" size={14} color={C.sub}/></button>
-        </div>
+        {!noHeader&&(
+          <div style={{flexShrink:0,padding:"14px 22px 12px",background:C.surface,borderRadius:"26px 26px 0 0",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative"}}>
+            <div style={{width:40,height:5,background:C.line,borderRadius:4,position:"absolute",top:10,left:"50%",transform:"translateX(-50%)"}}/>
+            {title?<h2 style={{fontSize:18,fontWeight:800,color:C.ink,margin:"6px 0 0",flex:1}}>{title}</h2>:<div style={{height:16}}/>}
+            <button onClick={onClose} className="press" style={{width:32,height:32,borderRadius:"50%",border:"none",background:C.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:4,flexShrink:0}}><Icon name="xmark" size={14} color={C.sub}/></button>
+          </div>
+        )}
         <div style={{flex:1,overflowY:"auto",padding:"16px 22px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>{children}</div>
       </div>
     </div>
@@ -207,9 +242,9 @@ function Sheet({children,onClose,title}){
 
 function Toggle({on,onChange,label,sub}){return(<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0",borderBottom:"1px solid "+C.line}}><div><div style={{fontSize:15,fontWeight:700,color:C.ink}}>{label}</div>{sub&&<div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{sub}</div>}</div><button onClick={()=>onChange(!on)} className="press" style={{width:50,height:28,borderRadius:14,border:"none",cursor:"pointer",background:on?C.primary:C.line,position:"relative",flexShrink:0,transition:"background .2s"}}><div style={{width:22,height:22,borderRadius:11,background:"#fff",position:"absolute",top:3,left:on?25:3,transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/></button></div>);}
 
-function Confetti(){const pieces=useMemo(()=>{const cols=[C.primary,C.green,C.fa,C.de,C.amber,"#A06BFF"];return Array.from({length:90},(_,i)=>({id:i,left:Math.random()*100,delay:Math.random()*0.6,dur:2.2+Math.random()*1.6,size:6+Math.random()*10,color:cols[i%cols.length],rot:Math.random()*360,round:Math.random()>0.5}));},[]);return(<div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:50}}>{pieces.map(p=>(<div key={p.id} style={{position:"absolute",top:"-20px",left:p.left+"%",width:p.size,height:p.size,background:p.color,borderRadius:p.round?"50%":"2px",transform:"rotate("+p.rot+"deg)",animation:"confetti "+p.dur+"s "+p.delay+"s linear forwards"}}/>))}</div>);}
+function Confetti(){const p=useMemo(()=>{const cols=[C.primary,C.green,C.fa,C.de,C.amber,"#A06BFF"];return Array.from({length:90},(_,i)=>({id:i,left:Math.random()*100,delay:Math.random()*0.6,dur:2.2+Math.random()*1.6,size:6+Math.random()*10,color:cols[i%cols.length],rot:Math.random()*360,round:Math.random()>0.5}));},[]);return(<div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:50}}>{p.map(x=>(<div key={x.id} style={{position:"absolute",top:"-20px",left:x.left+"%",width:x.size,height:x.size,background:x.color,borderRadius:x.round?"50%":"2px",transform:"rotate("+x.rot+"deg)",animation:"confetti "+x.dur+"s "+x.delay+"s linear forwards"}}/>))}</div>);}
 
-/* ══════════ APP ══════════ */
+/* ════════════ APP ════════════ */
 function App(){
   const[screen,setScreen]=useState("welcome");
   const[tab,setTab]=useState("dashboard");
@@ -228,6 +263,7 @@ function App(){
   const[allUsers]=useState(BASE_USERS);
   const[receivedHearts,setReceivedHearts]=useState([]);
   const[cardsSubScreen,setCardsSubScreen]=useState(null);
+
   const dayStreak=useMemo(()=>calcStreak(history),[history]);
   const totalPoints=useMemo(()=>history.reduce((a,d)=>a+d.points,0),[history]);
   const committed=useRef(false);const roundPointsRef=useRef(0);
@@ -236,41 +272,29 @@ function App(){
   const chapterCards=useMemo(()=>allCards.filter(c=>c.chapter===curChapter),[allCards,curChapter]);
   const chapterRemaining=useMemo(()=>chapterCards.filter(c=>!learnedIds.includes(c.id)),[chapterCards,learnedIds]);
 
-  useEffect(()=>{
-    if(chapterCards.length>0&&chapterRemaining.length===0){const lvC=CHAPTERS[curLevel];const idx=lvC.findIndex(c=>c.id===curChapter);if(idx>=0&&idx<lvC.length-1)setTimeout(()=>setCurChapter(lvC[idx+1].id),800);}
-  },[chapterCards.length,chapterRemaining.length,curChapter,curLevel]);
+  useEffect(()=>{if(chapterCards.length>0&&chapterRemaining.length===0){const lv=CHAPTERS[curLevel];const i=lv.findIndex(c=>c.id===curChapter);if(i>=0&&i<lv.length-1)setTimeout(()=>setCurChapter(lv[i+1].id),800);}},[chapterCards.length,chapterRemaining.length,curChapter,curLevel]);
 
-  const[flipped,setFlipped]=useState(false);
-  const[dragX,setDragX]=useState(0);
-  const[dragging,setDragging]=useState(false);
-  const[exitDir,setExitDir]=useState(null);
-  const[historyStack,setHistoryStack]=useState([]);
-  const[showDeckSettings,setShowDeckSettings]=useState(false);
+  const[flipped,setFlipped]=useState(false);const[dragX,setDragX]=useState(0);const[dragging,setDragging]=useState(false);const[exitDir,setExitDir]=useState(null);const[historyStack,setHistoryStack]=useState([]);const[showDeckSettings,setShowDeckSettings]=useState(false);
   const sX=useRef(0);const mv=useRef(false);const act=useRef(false);const locked=useRef(false);
 
   const startSession=pool=>{if(!pool||!pool.length)return;setQueue(shuffle([...pool]));roundPointsRef.current=0;committed.current=false;setFlipped(false);setDragX(0);setExitDir(null);setHistoryStack([]);setScreen("deck");};
-  const startChapterSession=()=>{const pool=deckSettings.onlyUnknown?chapterCards.filter(c=>reviewIds.includes(c.id)):chapterRemaining.length>0?chapterRemaining:chapterCards;startSession(pool);};
-  const startReviewSession=()=>startSession(allCards.filter(c=>reviewIds.includes(c.id)));
-  const startMarkedSession=()=>startSession(allCards.filter(c=>markedIds.includes(c.id)));
+  const startChapter=()=>{const pool=deckSettings.onlyUnknown?chapterCards.filter(c=>reviewIds.includes(c.id)):chapterRemaining.length>0?chapterRemaining:chapterCards;startSession(pool);};
+  const startReview=()=>startSession(allCards.filter(c=>reviewIds.includes(c.id)));
+  const startMarked=()=>startSession(allCards.filter(c=>markedIds.includes(c.id)));
   const commitRound=pts=>{if(pts<=0)return;setHistory(h=>{const c=[...h];c[c.length-1]={...c[c.length-1],points:c[c.length-1].points+pts};return c;});};
   const exitToApp=()=>{if(!committed.current&&roundPointsRef.current>0){committed.current=true;commitRound(roundPointsRef.current);}setTab("dashboard");setScreen("app");};
-  useEffect(()=>{if(screen==="deck"&&queue.length===0&&!committed.current&&allCards.length){committed.current=true;commitRound(roundPointsRef.current);};},[screen,queue.length,allCards.length]);
-  useEffect(()=>{if(screen==="deck"&&queue.length>0&&deckSettings.autoSpeak&&!flipped){const card=queue[0];speak(sayWordOf(card),langMeta[card.language].ttsLang);}},[screen,queue[0]?.id,deckSettings.autoSpeak,flipped]);
+  useEffect(()=>{if(screen==="deck"&&queue.length===0&&!committed.current&&allCards.length){committed.current=true;commitRound(roundPointsRef.current);}},[screen,queue.length,allCards.length]);
+  useEffect(()=>{if(screen==="deck"&&queue.length>0&&deckSettings.autoSpeak&&!flipped){const c=queue[0];speak(sayWordOf(c),langMeta[c.language].ttsLang);}},[screen,queue[0]?.id,deckSettings.autoSpeak,flipped]);
 
-  const commitSwipe=dir=>{
-    setQueue(q=>{if(!q.length)return q;const top=q[0],rest=q.slice(1);
-      if(dir==="right"){setLearnedIds(ids=>ids.includes(top.id)?ids:[...ids,top.id]);setReviewIds(ids=>ids.filter(x=>x!==top.id));roundPointsRef.current+=1;setHistoryStack(h=>[top,...h]);return rest;}
-      setReviewIds(ids=>ids.includes(top.id)?ids:[...ids,top.id]);setHistoryStack(h=>[top,...h]);return rest;
-    });setFlipped(false);setDragX(0);setExitDir(null);locked.current=false;
-  };
-  const goBack=()=>{if(historyStack.length===0||locked.current)return;const[prev,...rest]=historyStack;setHistoryStack(rest);setQueue(q=>[prev,...q]);setFlipped(false);setDragX(0);};
+  const commitSwipe=dir=>{setQueue(q=>{if(!q.length)return q;const top=q[0],rest=q.slice(1);if(dir==="right"){setLearnedIds(ids=>ids.includes(top.id)?ids:[...ids,top.id]);setReviewIds(ids=>ids.filter(x=>x!==top.id));roundPointsRef.current+=1;setHistoryStack(h=>[top,...h]);return rest;}setReviewIds(ids=>ids.includes(top.id)?ids:[...ids,top.id]);setHistoryStack(h=>[top,...h]);return rest;});setFlipped(false);setDragX(0);setExitDir(null);locked.current=false;};
+  const goBack=()=>{if(historyStack.length===0||locked.current)return;const[p,...r]=historyStack;setHistoryStack(r);setQueue(q=>[p,...q]);setFlipped(false);setDragX(0);};
   const triggerSwipe=dir=>{if(locked.current||queue.length===0)return;locked.current=true;setExitDir(dir);setDragging(false);setTimeout(()=>commitSwipe(dir),320);};
   const onPD=e=>{if(exitDir)return;act.current=true;mv.current=false;sX.current=e.clientX;setDragging(true);try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}};
   const onPM=e=>{if(!act.current||exitDir)return;const dx=e.clientX-sX.current;if(Math.abs(dx)>8)mv.current=true;setDragX(dx);};
   const onPU=()=>{if(!act.current)return;act.current=false;setDragging(false);if(!mv.current){setFlipped(f=>!f);setDragX(0);return;}if(dragX>110)triggerSwipe("right");else if(dragX<-110)triggerSwipe("left");else setDragX(0);};
 
   const toggleMark=id=>setMarkedIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
-  const addCard=card=>setAllCards(prev=>[...prev,card]);
+  const addCard=card=>setAllCards(p=>[...p,card]);
   const deleteCard=id=>{setAllCards(p=>p.filter(c=>c.id!==id));setQueue(q=>q.filter(c=>c.id!==id));setLearnedIds(ids=>ids.filter(x=>x!==id));};
   const signOut=()=>{setUser(null);setSelectedLangs([]);setAllCards([]);setLearnedIds([]);setMarkedIds([]);setReviewIds([]);setQueue([]);setHistory(buildHistory());setFriends([]);setTab("dashboard");setScreen("welcome");};
   const addFriend=id=>setFriends(f=>f.includes(id)?f:[...f,id]);
@@ -278,12 +302,21 @@ function App(){
   const sendHeart=toId=>{const from=cap(user?.name||"You");setReceivedHearts(h=>[{from,toId,time:new Date().toLocaleTimeString()},...h.slice(0,19)]);};
 
   /* ONBOARDING */
-  if(screen==="welcome")return <Welcome onStart={()=>setScreen("register")} onSignIn={()=>setScreen("signin")}/>;
-  if(screen==="register"||screen==="signin")return <AuthScreen mode={screen} onSwitch={setScreen} onDone={u=>{setUser(u);setScreen("language");}}/>;
+  if(screen==="welcome") return <Welcome onStart={()=>setScreen("register")} onSignIn={()=>setScreen("signin")}/>;
+
+  if(screen==="register"||screen==="signin") return(
+    <Shell><StyleTag/>
+      <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+        <AuthScreen mode={screen} onSwitch={setScreen} onDone={u=>{setUser(u);setScreen("language");}}/>
+        <StepDots current={0}/>
+      </div>
+    </Shell>
+  );
+
   if(screen==="language"){
     const choose=l=>{setSelectedLangs([l]);setScreen("level");};
     return(<Shell><StyleTag/>
-      <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+      <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
         <div style={{flex:1,overflowY:"auto",padding:"52px 24px 0"}}>
           <div style={{fontSize:38,marginBottom:12}}>🌍</div>
           <h1 style={{fontSize:30,fontWeight:800,color:C.ink,margin:"0 0 6px",letterSpacing:-0.8,lineHeight:1.15}}>What do you<br/>want to learn?</h1>
@@ -293,22 +326,24 @@ function App(){
           </div>
         </div>
         <StepDots current={1}/>
-        <div style={{height:"calc(16px + env(safe-area-inset-bottom))"}}/>
       </div>
     </Shell>);
   }
+
   if(screen==="level"){
-    const LEVELS=[{id:"A1",title:"Beginner",desc:"I'm just starting."},{id:"A2",title:"Elementary",desc:"I know some everyday phrases."},{id:"B1",title:"Intermediate",desc:"I handle everyday conversations."},{id:"B2",title:"Upper-Intermediate",desc:"I talk comfortably about most topics."},{id:"C1",title:"Advanced",desc:"I'm nearly fluent."}];
+    const LEVELS=[{id:"A1",title:"Beginner",desc:"I'm just starting."},{id:"A2",title:"Elementary",desc:"I know everyday phrases."},{id:"B1",title:"Intermediate",desc:"I handle most conversations."},{id:"B2",title:"Upper-Intermediate",desc:"I talk about most topics."},{id:"C1",title:"Advanced",desc:"I'm nearly fluent."}];
     const choose=async lv=>{setCurLevel(lv);setCurChapter(CHAPTERS[lv][0].id);await initData(selectedLangs);setTab("dashboard");setScreen("app");};
     return(<Shell><StyleTag/>
-      <div style={{padding:"20px 24px 0",paddingBottom:"calc(24px + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column",flex:1,overflowY:"auto",minHeight:0}}>
-        <button onClick={()=>setScreen("language")} className="press" style={{alignSelf:"flex-start",width:42,height:42,borderRadius:13,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="arrow-left" size={16} color={C.ink}/></button>
-        <StepDots current={2}/>
-        <h1 style={{fontSize:28,fontWeight:800,color:C.ink,margin:"0 0 6px",letterSpacing:-0.7,lineHeight:1.15}}>Where are you<br/>starting from?</h1>
-        <p style={{color:C.sub,margin:"0 0 20px",fontSize:15}}>Tap the level that sounds most like you.</p>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {LEVELS.map(lv=>{const lc=LEVEL_COLOR[lv.id];return(<button key={lv.id} onClick={()=>choose(lv.id)} className="press" style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:18,cursor:"pointer",textAlign:"left",background:C.surface,border:"2px solid "+C.line,fontFamily:FONT}}><div style={{width:46,height:46,borderRadius:13,background:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:15,color:lc.text,flexShrink:0}}>{lv.id}</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{lv.title}</div><div style={{fontSize:12.5,color:C.sub,fontWeight:500}}>{lv.desc}</div></div><Icon name="chevron-right" size={15} color={C.sub}/></button>);})}
+      <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+        <div style={{flex:1,overflowY:"auto",padding:"20px 24px 0"}}>
+          <button onClick={()=>setScreen("language")} className="press" style={{width:42,height:42,borderRadius:13,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="arrow-left" size={16} color={C.ink}/></button>
+          <h1 style={{fontSize:28,fontWeight:800,color:C.ink,margin:"0 0 6px",letterSpacing:-0.7,lineHeight:1.15}}>Where are you<br/>starting from?</h1>
+          <p style={{color:C.sub,margin:"0 0 20px",fontSize:15}}>Tap the level that sounds most like you.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {LEVELS.map(lv=>{const lc=LEVEL_COLOR[lv.id];return(<button key={lv.id} onClick={()=>choose(lv.id)} className="press" style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:18,cursor:"pointer",textAlign:"left",background:C.surface,border:"2px solid "+C.line,fontFamily:FONT}}><div style={{width:46,height:46,borderRadius:13,background:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:15,color:lc.text,flexShrink:0}}>{lv.id}</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{lv.title}</div><div style={{fontSize:12.5,color:C.sub,fontWeight:500}}>{lv.desc}</div></div><Icon name="chevron-right" size={15} color={C.sub}/></button>);})}
+          </div>
         </div>
+        <StepDots current={2}/>
       </div>
     </Shell>);
   }
@@ -322,57 +357,49 @@ function App(){
     const topTr=dragging?"none":"transform .34s cubic-bezier(.2,.8,.2,1)";
     const tint=exitDir==="right"?{c:C.green,o:0.92,t:"KNOW"}:exitDir==="left"?{c:C.red,o:0.92,t:"REVIEW"}:dragX>0?{c:C.green,o:kh*0.85,t:"KNOW"}:dragX<0?{c:C.red,o:rh*0.85,t:"REVIEW"}:{c:C.green,o:0,t:""};
     const chap=CHAPTERS[curLevel]?.find(c=>c.id===curChapter);
-    const cBase={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
+    const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
     return(<Shell><StyleTag/>
-      {!sessionDone&&(
-        <div style={{padding:"18px 18px 4px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-          <button onClick={exitToApp} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="xmark" size={18} color={C.ink}/></button>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{height:10,background:C.line,borderRadius:8,overflow:"hidden"}}><div style={{width:(chapterCards.length?(chDone/chapterCards.length)*100:0)+"%",height:"100%",background:C.primary,borderRadius:8,transition:"width .4s"}}/></div>
-            <div style={{fontSize:11,fontWeight:600,color:C.sub,marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{LEVEL_LABEL[curLevel]} · {chap?.title} · {queue.length} left</div>
-          </div>
-          <button onClick={()=>setShowDeckSettings(true)} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="gear" size={18} color={C.ink}/></button>
+      {!sessionDone&&(<div style={{padding:"18px 18px 4px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+        <button onClick={exitToApp} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="xmark" size={18} color={C.ink}/></button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{height:10,background:C.line,borderRadius:8,overflow:"hidden"}}><div style={{width:(chapterCards.length?(chDone/chapterCards.length)*100:0)+"%",height:"100%",background:C.primary,borderRadius:8,transition:"width .4s"}}/></div>
+          <div style={{fontSize:11,fontWeight:600,color:C.sub,marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{LEVEL_LABEL[curLevel]} · {chap?.title} · {queue.length} left</div>
         </div>
-      )}
+        <button onClick={()=>setShowDeckSettings(true)} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="gear" size={18} color={C.ink}/></button>
+      </div>)}
       <div style={{flex:1,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:sessionDone?"0":"8px 20px 0",minHeight:0}}>
         {sessionDone?(<SessionComplete points={roundPointsRef.current} dayStreak={dayStreak} name={user&&user.name} level={curLevel} chapterTitle={chap?.title} onContinue={exitToApp}/>):(
           <div style={{position:"relative",width:"100%",maxWidth:360,height:470,margin:"0 auto"}}>
-            {queue.slice(1,3).map((card,i)=>{const d=i+1;return(<div key={card.id} style={{position:"absolute",inset:0,transform:"translateY("+(d*13)+"px) scale("+(1-d*0.045)+")",zIndex:1}}><div style={{...cBase,border:"1px solid "+C.line}}/></div>);})}
-            {current&&(
-              <div key={current.id} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} style={{position:"absolute",inset:0,zIndex:5,transform:topTf,transition:topTr,touchAction:"none",cursor:"grab"}}>
-                <div style={{position:"relative",width:"100%",height:"100%"}}>
-                  <div style={{position:"absolute",inset:0,perspective:1300}}>
-                    <div style={{position:"relative",width:"100%",height:"100%",transformStyle:"preserve-3d",transform:"rotateY("+(flipped?180:0)+"deg)",transition:"transform .55s cubic-bezier(.4,.15,.2,1)"}}>
-                      <CardFront card={current} marked={markedIds.includes(current.id)} onMark={()=>toggleMark(current.id)} cardBase={cBase}/>
-                      <CardBack  card={current} marked={markedIds.includes(current.id)} onMark={()=>toggleMark(current.id)} cardBase={cBase}/>
-                    </div>
+            {queue.slice(1,3).map((card,i)=>{const d=i+1;return(<div key={card.id} style={{position:"absolute",inset:0,transform:"translateY("+(d*13)+"px) scale("+(1-d*0.045)+")",zIndex:1}}><div style={{...cB,border:"1px solid "+C.line}}/></div>);})}
+            {current&&(<div key={current.id} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} style={{position:"absolute",inset:0,zIndex:5,transform:topTf,transition:topTr,touchAction:"none",cursor:"grab"}}>
+              <div style={{position:"relative",width:"100%",height:"100%"}}>
+                <div style={{position:"absolute",inset:0,perspective:1300}}>
+                  <div style={{position:"relative",width:"100%",height:"100%",transformStyle:"preserve-3d",transform:"rotateY("+(flipped?180:0)+"deg)",transition:"transform .55s cubic-bezier(.4,.15,.2,1)"}}>
+                    <CardFront card={current} marked={markedIds.includes(current.id)} onMark={()=>toggleMark(current.id)} cB={cB}/>
+                    <CardBack  card={current} marked={markedIds.includes(current.id)} onMark={()=>toggleMark(current.id)} cB={cB}/>
                   </div>
-                  <div style={{position:"absolute",inset:0,borderRadius:28,background:tint.c,opacity:tint.o,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",transition:dragging?"none":"opacity .22s ease",zIndex:6}}>{tint.t&&<span style={{color:"#fff",fontWeight:900,fontSize:38,letterSpacing:3,textShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>{tint.t}</span>}</div>
                 </div>
+                <div style={{position:"absolute",inset:0,borderRadius:28,background:tint.c,opacity:tint.o,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",transition:dragging?"none":"opacity .22s ease",zIndex:6}}>{tint.t&&<span style={{color:"#fff",fontWeight:900,fontSize:38,letterSpacing:3,textShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>{tint.t}</span>}</div>
               </div>
-            )}
+            </div>)}
           </div>
         )}
       </div>
-      {!sessionDone&&(
-        <div style={{padding:"10px 24px",paddingBottom:"calc(20px + env(safe-area-inset-bottom))",display:"flex",alignItems:"center",justifyContent:"center",gap:24,flexShrink:0}}>
-          <button onClick={goBack} disabled={historyStack.length===0} className="press" style={{background:"transparent",border:"none",cursor:historyStack.length===0?"default":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,opacity:historyStack.length===0?0.3:1}}>
-            <Icon name="arrow-left" size={16} color={C.sub}/><span style={{fontSize:10.5,fontWeight:700,color:C.sub,letterSpacing:0.5}}>BACK</span>
-          </button>
-          <button onClick={()=>triggerSwipe("left")} className="press" style={actionBtn(C.red,60)}><Icon name="xmark" size={26} color="#fff"/></button>
-          <button onClick={()=>setFlipped(f=>!f)} className="press" style={{background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-            <Icon name="arrows-rotate" size={16} color={C.sub}/><span style={{fontSize:10.5,fontWeight:700,color:C.sub,letterSpacing:0.5}}>FLIP</span>
-          </button>
-          <button onClick={()=>triggerSwipe("right")} className="press" style={actionBtn(C.green,60)}><Icon name="check" size={26} color="#fff"/></button>
-          <div style={{width:32}}/>
-        </div>
-      )}
-      {showDeckSettings&&(
-        <Sheet onClose={()=>setShowDeckSettings(false)} title="Session settings">
-          <Toggle on={deckSettings.autoSpeak} onChange={v=>setDeckSettings(s=>({...s,autoSpeak:v}))} label="Auto-speak card" sub="Read each card aloud automatically"/>
-          <Toggle on={deckSettings.onlyUnknown} onChange={v=>setDeckSettings(s=>({...s,onlyUnknown:v}))} label="Only unknown cards" sub="Show only cards you've swiped left"/>
-        </Sheet>
-      )}
+      {!sessionDone&&(<div style={{padding:"10px 24px",paddingBottom:"calc(20px + env(safe-area-inset-bottom))",display:"flex",alignItems:"center",justifyContent:"center",gap:24,flexShrink:0}}>
+        <button onClick={goBack} disabled={historyStack.length===0} className="press" style={{background:"transparent",border:"none",cursor:historyStack.length===0?"default":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,opacity:historyStack.length===0?0.3:1}}>
+          <Icon name="arrow-left" size={16} color={C.sub}/><span style={{fontSize:10.5,fontWeight:700,color:C.sub,letterSpacing:0.5}}>BACK</span>
+        </button>
+        <button onClick={()=>triggerSwipe("left")} className="press" style={actionBtn(C.red,60)}><Icon name="xmark" size={26} color="#fff"/></button>
+        <button onClick={()=>setFlipped(f=>!f)} className="press" style={{background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+          <Icon name="arrows-rotate" size={16} color={C.sub}/><span style={{fontSize:10.5,fontWeight:700,color:C.sub,letterSpacing:0.5}}>FLIP</span>
+        </button>
+        <button onClick={()=>triggerSwipe("right")} className="press" style={actionBtn(C.green,60)}><Icon name="check" size={26} color="#fff"/></button>
+        <div style={{width:32}}/>
+      </div>)}
+      {showDeckSettings&&(<Sheet onClose={()=>setShowDeckSettings(false)} title="Session settings">
+        <Toggle on={deckSettings.autoSpeak} onChange={v=>setDeckSettings(s=>({...s,autoSpeak:v}))} label="Auto-speak card" sub="Read each card aloud automatically"/>
+        <Toggle on={deckSettings.onlyUnknown} onChange={v=>setDeckSettings(s=>({...s,onlyUnknown:v}))} label="Only unknown cards" sub="Show only cards you've swiped left"/>
+      </Sheet>)}
     </Shell>);
   }
 
@@ -386,7 +413,7 @@ function App(){
 
   return(<Shell><StyleTag/>
     <div style={{flex:1,overflowY:tab==="profile"?"hidden":"auto",WebkitOverflowScrolling:"touch",minHeight:0}}>
-      {tab==="dashboard"&&<Dashboard user={user} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} curLevel={curLevel} curChapter={curChapter} onLevelChapterSelect={(lv,ch)=>{setCurLevel(lv);setCurChapter(ch);}} onStart={startChapterSession} onStartReview={startReviewSession} onStartMarked={startMarkedSession} onOpenProfile={()=>setTab("profile")}/>}
+      {tab==="dashboard"&&<Dashboard user={user} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} curLevel={curLevel} curChapter={curChapter} onLevelChapterSelect={(lv,ch)=>{setCurLevel(lv);setCurChapter(ch);}} onStart={startChapter} onStartReview={startReview} onStartMarked={startMarked} onOpenProfile={()=>setTab("profile")}/>}
       {tab==="stats"&&<StatsPage history={history} totalPoints={totalPoints} dayStreak={dayStreak} allCards={allCards} learnedIds={learnedIds}/>}
       {tab==="mywords"&&<MyFlashcardsPage allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} curLevel={curLevel} curChapter={curChapter} onResult={(id,known)=>setLearnedIds(ids=>known?(ids.includes(id)?ids:[...ids,id]):ids.filter(x=>x!==id))} onMark={toggleMark} onAdd={addCard} onDelete={deleteCard} selectedLangs={selectedLangs} onOpenChapter={ch=>setCardsSubScreen(ch)}/>}
       {tab==="friends"&&<FriendsPage currentUser={user} allUsers={allUsers} friends={friends} onAdd={addFriend} onRemove={removeFriend} onSendHeart={sendHeart} receivedHearts={receivedHearts}/>}
@@ -417,7 +444,7 @@ function Welcome({onStart,onSignIn}){
   </Shell>);
 }
 
-/* ── AUTH ── */
+/* ── AUTH (no Shell — Shell provided by App) ── */
 function AuthScreen({mode,onDone,onSwitch}){
   const isReg=mode==="register";
   const[name,setName]=useState("");const[email,setEmail]=useState("");const[pass,setPass]=useState("");const[loading,setLoading]=useState(false);
@@ -426,72 +453,67 @@ function AuthScreen({mode,onDone,onSwitch}){
   const google=async()=>{if(loading)return;setLoading(true);onDone({id:"mg",email:"learner@gmail.com",name:cap(name.trim()||"Friend"),avatar:randAvatar()});};
   const lbl={fontSize:13,fontWeight:700,color:C.sub,display:"block"};
   const inp={width:"100%",marginTop:6,padding:"13px 15px",fontSize:15,borderRadius:14,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"};
-  return(<Shell><StyleTag/>
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      <div style={{flex:1,overflowY:"auto",padding:"40px 24px 0"}}>
-        <h1 style={{fontSize:27,fontWeight:800,color:C.ink,textAlign:"center",margin:"0 0 4px",letterSpacing:-0.6}}>{isReg?"Create your account":"Welcome back"}</h1>
-        <p style={{color:C.sub,textAlign:"center",margin:"0 0 24px",fontSize:14.5}}>{isReg?"Set up your profile to start.":"Sign in to keep your streak going."}</p>
-        <div style={{background:C.surface,borderRadius:24,padding:22,border:"1px solid "+C.line,boxShadow:"0 8px 28px rgba(28,26,46,0.06)"}}>
-          {isReg&&(<><label style={lbl}>Your name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Milad" disabled={loading} style={inp}/></>)}
-          <label style={{...lbl,marginTop:isReg?14:0}}>Email</label>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" disabled={loading} style={inp}/>
-          <label style={{...lbl,marginTop:14}}>Password</label>
-          <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" disabled={loading} onKeyDown={e=>e.key==="Enter"&&submit()} style={inp}/>
-          <div style={{marginTop:16}}><PrimaryButton disabled={loading||!valid} onClick={submit}>{loading?"Please wait…":isReg?"Register":"Sign in"}</PrimaryButton></div>
-          <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}><div style={{flex:1,height:1,background:C.line}}/><span style={{fontSize:12,color:C.sub,fontWeight:700}}>OR</span><div style={{flex:1,height:1,background:C.line}}/></div>
-          <button onClick={google} disabled={loading} className="press" style={{width:"100%",padding:13,borderRadius:14,border:"1.5px solid "+C.line,background:C.surface,color:C.ink,fontWeight:700,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FONT}}><i className="fa-brands fa-google" style={{color:"#4285F4",fontSize:16}}></i> {isReg?"Sign up with Google":"Continue with Google"}</button>
-        </div>
-        <div style={{textAlign:"center",marginTop:18,marginBottom:8,fontSize:14,color:C.sub,fontWeight:500}}>{isReg?"Already have an account? ":"New here? "}<span onClick={()=>onSwitch(isReg?"signin":"register")} style={{color:C.primary,fontWeight:800,cursor:"pointer"}}>{isReg?"Sign in":"Create an account"}</span></div>
+  return(
+    <div style={{flex:1,overflowY:"auto",padding:"40px 24px 0"}}>
+      <h1 style={{fontSize:27,fontWeight:800,color:C.ink,textAlign:"center",margin:"0 0 4px",letterSpacing:-0.6}}>{isReg?"Create your account":"Welcome back"}</h1>
+      <p style={{color:C.sub,textAlign:"center",margin:"0 0 24px",fontSize:14.5}}>{isReg?"Set up your profile to start.":"Sign in to keep your streak going."}</p>
+      <div style={{background:C.surface,borderRadius:24,padding:22,border:"1px solid "+C.line,boxShadow:"0 8px 28px rgba(28,26,46,0.06)"}}>
+        {isReg&&(<><label style={lbl}>Your name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Milad" disabled={loading} style={inp}/></>)}
+        <label style={{...lbl,marginTop:isReg?14:0}}>Email</label>
+        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" disabled={loading} style={inp}/>
+        <label style={{...lbl,marginTop:14}}>Password</label>
+        <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" disabled={loading} onKeyDown={e=>e.key==="Enter"&&submit()} style={inp}/>
+        <div style={{marginTop:16}}><PrimaryButton disabled={loading||!valid} onClick={submit}>{loading?"Please wait…":isReg?"Register":"Sign in"}</PrimaryButton></div>
+        <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0"}}><div style={{flex:1,height:1,background:C.line}}/><span style={{fontSize:12,color:C.sub,fontWeight:700}}>OR</span><div style={{flex:1,height:1,background:C.line}}/></div>
+        <button onClick={google} disabled={loading} className="press" style={{width:"100%",padding:13,borderRadius:14,border:"1.5px solid "+C.line,background:C.surface,color:C.ink,fontWeight:700,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FONT}}><i className="fa-brands fa-google" style={{color:"#4285F4",fontSize:16}}></i> {isReg?"Sign up with Google":"Continue with Google"}</button>
       </div>
-      <StepDots current={0}/>
-      <div style={{height:"calc(16px + env(safe-area-inset-bottom))"}}/>
+      <div style={{textAlign:"center",marginTop:18,marginBottom:12,fontSize:14,color:C.sub,fontWeight:500}}>{isReg?"Already have an account? ":"New here? "}<span onClick={()=>onSwitch(isReg?"signin":"register")} style={{color:C.primary,fontWeight:800,cursor:"pointer"}}>{isReg?"Sign in":"Create an account"}</span></div>
     </div>
-  </Shell>);
+  );
 }
 
 /* ── TAB BAR ── */
 function TabBar({tab,setTab}){
   const items=[{k:"dashboard",icon:"house",label:"Home"},{k:"stats",icon:"chart-column",label:"Stats"},{k:"mywords",icon:"layer-group",label:"Cards"},{k:"friends",icon:"users",label:"Friends"},{k:"profile",icon:"circle-user",label:"Profile"}];
-  return(<div style={{flexShrink:0,display:"flex",borderTop:"1px solid "+C.line,background:C.surface,paddingTop:8,paddingBottom:"calc(10px + env(safe-area-inset-bottom))"}}>{items.map(it=>{const on=tab===it.k;return(<button key={it.k} onClick={()=>setTab(it.k)} className="press" style={{flex:1,background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"6px 0",fontFamily:FONT}}><Icon name={it.icon} size={18} color={on?C.primary:"#B6B2CE"}/><span style={{fontSize:10.5,fontWeight:800,color:on?C.primary:C.sub}}>{it.label}</span></button>);})}</div>);
+  return(<div style={{flexShrink:0,display:"flex",borderTop:"1px solid "+C.line,background:C.surface,paddingTop:8,paddingBottom:"calc(10px + env(safe-area-inset-bottom))",zIndex:10,position:"relative"}}>{items.map(it=>{const on=tab===it.k;return(<button key={it.k} onClick={()=>setTab(it.k)} className="press" style={{flex:1,background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"6px 0",fontFamily:FONT}}><Icon name={it.icon} size={18} color={on?C.primary:"#B6B2CE"}/><span style={{fontSize:10.5,fontWeight:800,color:on?C.primary:C.sub}}>{it.label}</span></button>);})}</div>);
 }
 
 /* ── CARD FACES ── */
 function BookmarkBtn({marked,onMark,stop}){
   return(<button onPointerDown={stop} onClick={e=>{stop(e);onMark();}} className="press" style={{width:38,height:38,borderRadius:12,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={marked?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:15,color:marked?C.primary:C.sub}}/></button>);
 }
-/* icon-only speak button used inside cards/back face */
-function SpeakIconBtn({text,lang,color,size=32}){
-  const s=e=>e.stopPropagation();
-  return(<button onPointerDown={s} onClick={e=>{s(e);speak(text,lang);}} className="press" aria-label="Play" style={{width:size,height:size,borderRadius:"50%",border:"none",cursor:"pointer",background:color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={size*0.42} color={color}/></button>);
-}
-
-function CardFront({card,marked,onMark,cardBase}){
+function CardFront({card,marked,onMark,cB}){
   const m=langMeta[card.language];const stop=e=>e.stopPropagation();
-  return(<div style={{...cardBase,display:"flex",flexDirection:"column",padding:22}}>
+  return(<div style={{...cB,display:"flex",flexDirection:"column",padding:22}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",marginBottom:4}}>
       <BookmarkBtn marked={marked} onMark={onMark} stop={stop}/>
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14}}>
       <div style={{fontSize:card.word.length>10?34:46,fontWeight:800,color:C.ink,textAlign:"center",lineHeight:1.08,letterSpacing:-1}}>{card.word}</div>
       {card.pron&&<div style={{fontSize:15,color:C.sub,fontWeight:600,letterSpacing:0.4,fontFamily:"'SFMono-Regular',ui-monospace,monospace"}}>/ {card.pron} /</div>}
-      <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();speak(sayWordOf(card),m.ttsLang);}} className="press" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px 10px 14px",borderRadius:30,border:"none",cursor:"pointer",background:m.color+"1A"}}>
+      {/* Full pill button — entire area is clickable */}
+      <button onPointerDown={stop} onClick={e=>{stop(e);speak(sayWordOf(card),m.ttsLang);}} className="press"
+        style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px 10px 14px",borderRadius:30,border:"none",cursor:"pointer",background:m.soft}}>
         <Icon name="volume-high" size={18} color={m.color}/>
-        <span style={{fontSize:14,fontWeight:700,color:m.color}}>Hear it</span>
+        <span style={{fontSize:14,fontWeight:700,color:m.color,userSelect:"none"}}>Hear it</span>
       </button>
     </div>
     <div style={{textAlign:"center",fontSize:12.5,color:C.sub,fontWeight:600}}>tap to flip</div>
   </div>);
 }
-function CardBack({card,marked,onMark,cardBase}){
+function CardBack({card,marked,onMark,cB}){
   const m=langMeta[card.language];const stop=e=>e.stopPropagation();
-  return(<div style={{...cardBase,transform:"rotateY(180deg)",display:"flex",flexDirection:"column",padding:22,background:"#FBFAFF"}}>
+  const iconSpeak=(text)=>(
+    <button onPointerDown={stop} onClick={e=>{stop(e);speak(text,m.ttsLang);}} className="press" style={{width:30,height:30,borderRadius:"50%",border:"none",cursor:"pointer",background:m.color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={13} color={m.color}/></button>
+  );
+  return(<div style={{...cB,transform:"rotateY(180deg)",display:"flex",flexDirection:"column",padding:22,background:"#FBFAFF"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{fontSize:16,fontWeight:800,color:C.ink}}>{card.word}</div><SpeakIconBtn text={sayWordOf(card)} lang={m.ttsLang} color={m.color}/></div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{fontSize:16,fontWeight:800,color:C.ink}}>{card.word}</div>{iconSpeak(sayWordOf(card))}</div>
       <BookmarkBtn marked={marked} onMark={onMark} stop={stop}/>
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,textAlign:"center"}}>
       <div><div style={{fontSize:11,color:m.color,fontWeight:800,textTransform:"uppercase",letterSpacing:0.6}}>Meaning</div><div style={{fontSize:32,fontWeight:800,color:C.ink,letterSpacing:-0.5,lineHeight:1.1,marginTop:4}}>{card.translation}</div></div>
-      {card.example&&(<div style={{background:C.surface,borderRadius:16,padding:"12px 16px",border:"1px solid "+C.line,display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:280,width:"100%"}}><div style={{fontSize:14,fontWeight:700,color:C.ink,lineHeight:1.35}}>{card.example}</div>{card.exampleTranslation&&<div style={{fontSize:12.5,color:C.sub,fontWeight:500}}>{card.exampleTranslation}</div>}<SpeakIconBtn text={sayExOf(card)} lang={m.ttsLang} color={m.color}/></div>)}
+      {card.example&&(<div style={{background:C.surface,borderRadius:16,padding:"12px 16px",border:"1px solid "+C.line,display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:280,width:"100%"}}><div style={{fontSize:14,fontWeight:700,color:C.ink,lineHeight:1.35}}>{card.example}</div>{card.exampleTranslation&&<div style={{fontSize:12.5,color:C.sub,fontWeight:500}}>{card.exampleTranslation}</div>}{iconSpeak(sayExOf(card))}</div>)}
       {card.note&&<div style={{fontSize:12,color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><Icon name="circle-info" size={12} color={C.sub}/>{card.note}</div>}
     </div>
   </div>);
@@ -501,7 +523,7 @@ function CardBack({card,marked,onMark,cardBase}){
 function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
   const[flipped,setFlipped]=useState(false);const[dragX,setDragX]=useState(0);const[dragging,setDragging]=useState(false);const[exitDir,setExitDir]=useState(null);
   const sx=useRef(0);const mv=useRef(false);const act=useRef(false);const lk=useRef(false);
-  const cBase={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
+  const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
   const fin=dir=>{if(lk.current)return;lk.current=true;setExitDir(dir);setTimeout(()=>{onResult(card.id,dir==="right");onClose();},300);};
   const down=e=>{if(exitDir)return;act.current=true;mv.current=false;sx.current=e.clientX;setDragging(true);try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}};
   const move=e=>{if(!act.current||exitDir)return;const dx=e.clientX-sx.current;if(Math.abs(dx)>8)mv.current=true;setDragX(dx);};
@@ -509,12 +531,12 @@ function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
   const kh=Math.max(0,Math.min(1,dragX/100));const rh=Math.max(0,Math.min(1,-dragX/100));
   const tint=exitDir==="right"?{c:C.green,o:0.9,t:"DONE"}:exitDir==="left"?{c:C.red,o:0.9,t:"LATER"}:dragX>0?{c:C.green,o:kh*0.85,t:"DONE"}:dragX<0?{c:C.red,o:rh*0.85,t:"LATER"}:{c:C.green,o:0,t:""};
   const tf=exitDir?("translateX("+(exitDir==="right"?560:-560)+"px) rotate("+(exitDir==="right"?24:-24)+"deg)"):("translateX("+dragX+"px) rotate("+(dragX/24)+"deg)");
-  return(<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.55)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:110,padding:22}}>
+  return(<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.55)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:210,padding:22}}>
     <button onClick={onClose} className="press" style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.92)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="xmark" size={17} color={C.ink}/></button>
     <div onClick={e=>e.stopPropagation()} className="card-pop" style={{width:"100%",maxWidth:330}}>
       <div style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",fontWeight:700,textAlign:"center",marginBottom:10}}>{learned?"Marked done — swipe to update":"Swipe right when you know it"}</div>
       <div onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{position:"relative",width:"100%",height:450,transform:tf,transition:dragging?"none":"transform .3s cubic-bezier(.2,.8,.2,1)",touchAction:"none",cursor:"grab"}}>
-        <div style={{position:"absolute",inset:0,perspective:1300}}><div style={{position:"relative",width:"100%",height:"100%",transformStyle:"preserve-3d",transform:"rotateY("+(flipped?180:0)+"deg)",transition:"transform .55s cubic-bezier(.4,.15,.2,1)"}}><CardFront card={card} marked={marked} onMark={onMark} cardBase={cBase}/><CardBack card={card} marked={marked} onMark={onMark} cardBase={cBase}/></div></div>
+        <div style={{position:"absolute",inset:0,perspective:1300}}><div style={{position:"relative",width:"100%",height:"100%",transformStyle:"preserve-3d",transform:"rotateY("+(flipped?180:0)+"deg)",transition:"transform .55s cubic-bezier(.4,.15,.2,1)"}}><CardFront card={card} marked={marked} onMark={onMark} cB={cB}/><CardBack card={card} marked={marked} onMark={onMark} cB={cB}/></div></div>
         <div style={{position:"absolute",inset:0,borderRadius:28,background:tint.c,opacity:tint.o,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:6}}>{tint.t&&<span style={{color:"#fff",fontWeight:900,fontSize:34,letterSpacing:2}}>{tint.t}</span>}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:24,marginTop:18}}>
@@ -528,11 +550,8 @@ function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
 
 /* ── DIALOGS ── */
 function StreakDialog({history,streak,onClose}){
-  const now=new Date();const year=now.getFullYear(),month=now.getMonth();
-  const map={};history.forEach(d=>{map[d.date]=d.points;});
-  const sw=new Date(year,month,1).getDay();const dim=new Date(year,month+1,0).getDate();
-  const cells=[];for(let i=0;i<sw;i++)cells.push(null);
-  for(let d=1;d<=dim;d++){const ds=new Date(year,month,d).toISOString().slice(0,10);cells.push({d,active:(map[ds]||0)>0,today:d===now.getDate()});}
+  const now=new Date();const year=now.getFullYear(),month=now.getMonth();const map={};history.forEach(d=>{map[d.date]=d.points;});
+  const sw=new Date(year,month,1).getDay();const dim=new Date(year,month+1,0).getDate();const cells=[];for(let i=0;i<sw;i++)cells.push(null);for(let d=1;d<=dim;d++){const ds=new Date(year,month,d).toISOString().slice(0,10);cells.push({d,active:(map[ds]||0)>0,today:d===now.getDate()});}
   return(<Sheet onClose={onClose} title="Your streak">
     <div style={{display:"flex",alignItems:"center",gap:10,background:C.amber+"14",border:"1px solid "+C.amber+"30",borderRadius:16,padding:"12px 16px",marginBottom:16}}><Icon name="fire" size={22} color={C.amber}/><div><div style={{fontSize:20,fontWeight:800,color:C.amber}}>{streak}-day streak</div><div style={{fontSize:12.5,color:C.sub,fontWeight:600}}>Keep practising daily!</div></div></div>
     <div style={{fontSize:14,fontWeight:800,color:C.ink,marginBottom:10}}>{MONTHS[month]} {year}</div>
@@ -543,29 +562,17 @@ function StreakDialog({history,streak,onClose}){
 function PointsDialog({points,onClose}){
   const idx=REWARDS.findIndex(r=>r.at>points);const next=idx>=0?REWARDS[idx]:null;const prevAt=idx>0?REWARDS[idx-1].at:0;const pct=next?Math.min(100,Math.round(((points-prevAt)/(next.at-prevAt))*100)):100;
   return(<Sheet onClose={onClose} title="Points & rewards">
-    <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:44,fontWeight:800,color:C.amber,letterSpacing:-1.5,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="star" size={32} color={C.amber}/>{points}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>total points earned</div></div>
+    <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:44,fontWeight:800,color:C.amber,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="star" size={32} color={C.amber}/>{points}</div><div style={{fontSize:13,color:C.sub,fontWeight:600}}>total points earned</div></div>
     {next?(<div style={{background:C.primarySoft,border:"1px solid "+C.primary+"33",borderRadius:18,padding:16,marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:44,height:44,borderRadius:13,background:C.surface,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name={next.icon} size={20} color={C.primary}/></div><div style={{flex:1}}><div style={{fontSize:12,color:C.primary,fontWeight:800,textTransform:"uppercase",letterSpacing:0.5}}>Next reward</div><div style={{fontSize:16,fontWeight:800,color:C.ink}}>{next.name}</div></div><div style={{fontSize:13,fontWeight:800,color:C.primary}}>{next.at-points} pts</div></div><div style={{height:12,background:C.surface,borderRadius:8,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",borderRadius:8,background:"linear-gradient(90deg,#6A5BFF,#A06BFF)"}}/></div></div>):<div style={{textAlign:"center",color:C.green,fontWeight:800,marginBottom:16}}>You've unlocked every reward!</div>}
     <div style={{display:"flex",flexDirection:"column",gap:8}}>{REWARDS.map(r=>{const got=points>=r.at;return(<div key={r.at} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:14,border:"1px solid "+C.line,background:got?C.greenSoft:"#FBFAFF"}}><div style={{width:36,height:36,borderRadius:10,background:got?C.green:C.line,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name={got?"check":r.icon} size={15} color={got?"#fff":C.sub}/></div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:C.ink}}>{r.name}</div><div style={{fontSize:12,color:C.sub,fontWeight:600}}>{r.at} points</div></div>{got&&<span style={{fontSize:12,fontWeight:800,color:C.green}}>Unlocked</span>}</div>);})}</div>
   </Sheet>);
 }
-
-/* ── LEVEL/CHAPTER PICKER ── */
 function LevelChapterPicker({curLevel,curChapter,onSelect,onClose}){
-  const[selLevel,setSelLevel]=useState(curLevel);
+  const[sl,setSl]=useState(curLevel);
   return(<Sheet onClose={onClose} title="Choose your level">
-    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:18}}>
-      {LEVELS_ORDER.map(lv=>{const lc=LEVEL_COLOR[lv];const on=selLevel===lv;return(<button key={lv} onClick={()=>setSelLevel(lv)} className="press" style={{padding:"8px 14px",borderRadius:12,border:"1.5px solid "+(on?lc.bar:C.line),background:on?lc.bar:C.surface,color:on?"#fff":C.sub,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:FONT}}>{LEVEL_LABEL[lv]}</button>);})}
-    </div>
-    <div style={{fontSize:12,color:C.sub,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Chapters in {LEVEL_LABEL[selLevel]}</div>
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {CHAPTERS[selLevel].map((ch,i)=>{const sel=curChapter===ch.id&&curLevel===selLevel;const lc=LEVEL_COLOR[selLevel];const icon=CHAPTER_ICONS[ch.id]||"book";
-        return(<button key={ch.id} onClick={()=>onSelect(selLevel,ch.id)} className="press" style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:16,border:"2px solid "+(sel?lc.bar:C.line),background:sel?lc.bg:C.surface,cursor:"pointer",textAlign:"left",fontFamily:FONT}}>
-          <div style={{width:38,height:38,borderRadius:11,background:sel?lc.bar:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={16} color={sel?"#fff":lc.text}/></div>
-          <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:12,color:C.sub}}>Chapter {i+1}</div></div>
-          {sel&&<Icon name="check-circle" size={18} color={lc.bar}/>}
-        </button>);
-      })}
-    </div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:18}}>{LEVELS_ORDER.map(lv=>{const lc=LEVEL_COLOR[lv];const on=sl===lv;return(<button key={lv} onClick={()=>setSl(lv)} className="press" style={{padding:"8px 14px",borderRadius:12,border:"1.5px solid "+(on?lc.bar:C.line),background:on?lc.bar:C.surface,color:on?"#fff":C.sub,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:FONT}}>{LEVEL_LABEL[lv]}</button>);})}</div>
+    <div style={{fontSize:12,color:C.sub,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Chapters in {LEVEL_LABEL[sl]}</div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>{CHAPTERS[sl].map((ch,i)=>{const sel=curChapter===ch.id&&curLevel===sl;const lc=LEVEL_COLOR[sl];const icon=CHAPTER_ICONS[ch.id]||"book";return(<button key={ch.id} onClick={()=>onSelect(sl,ch.id)} className="press" style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:16,border:"2px solid "+(sel?lc.bar:C.line),background:sel?lc.bg:C.surface,cursor:"pointer",textAlign:"left",fontFamily:FONT}}><div style={{width:38,height:38,borderRadius:11,background:sel?lc.bar:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={16} color={sel?"#fff":lc.text}/></div><div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:12,color:C.sub}}>Chapter {i+1}</div></div>{sel&&<Icon name="check-circle" size={18} color={lc.bar}/>}</button>);})}</div>
   </Sheet>);
 }
 
@@ -576,11 +583,10 @@ function Dashboard({user,allCards,learnedIds,markedIds,reviewIds,dayStreak,histo
   const done=chapCards.filter(c=>learnedIds.includes(c.id)).length;
   const pct=chapCards.length?Math.round((done/chapCards.length)*100):0;
   const pts=useCountUp(totalPoints);const streak=useCountUp(dayStreak);
-  const[dlg,setDlg]=useState(null);const[showPicker,setShowPicker]=useState(false);
+  const[dlg,setDlg]=useState(null);
   const reviewCount=allCards.filter(c=>reviewIds.includes(c.id)).length;
   const markedCount=allCards.filter(c=>markedIds.includes(c.id)).length;
-  const lc=LEVEL_COLOR[curLevel];const chapIcon=CHAPTER_ICONS[curChapter]||"book";
-  const levelProgress=LEVELS_ORDER.map(lv=>{const lvCards=allCards.filter(c=>c.level===lv);const lvDone=lvCards.filter(c=>learnedIds.includes(c.id)).length;return{lv,pct:lvCards.length?Math.round((lvDone/lvCards.length)*100):0};});
+  const lc=LEVEL_COLOR[curLevel];
 
   return(<div style={{padding:"20px 20px 28px",display:"flex",flexDirection:"column",gap:14}}>
     {/* header */}
@@ -593,89 +599,65 @@ function Dashboard({user,allCards,learnedIds,markedIds,reviewIds,dayStreak,histo
       </div>
     </div>
 
-    {/* LEVEL + PROGRESS + CONTINUE — all in one card */}
+    {/* LEVEL CARD — single white card; level-colored chapter tiles + continue */}
     <div style={{background:C.surface,borderRadius:22,border:"1px solid "+C.line,overflow:"hidden",boxShadow:"0 4px 20px rgba(28,26,46,0.06)"}}>
-      {/* colored top strip — clickable for picker, taller */}
-      <button onClick={()=>setShowPicker(true)} className="press" style={{width:"100%",background:lc.bg,padding:"20px 20px 18px",border:"none",cursor:"pointer",textAlign:"left",fontFamily:FONT}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+      <div style={{padding:"18px 16px 16px"}}>
+        {/* level title */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
-            <div style={{fontSize:11,color:lc.text,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,opacity:0.75,marginBottom:4}}>Current level</div>
-            <div style={{fontSize:26,fontWeight:900,color:lc.text}}>{LEVEL_LABEL[curLevel]}</div>
+            <div style={{fontSize:11,color:lc.deep,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,opacity:0.7,marginBottom:3}}>Your level</div>
+            <div style={{fontSize:24,fontWeight:900,color:lc.deep,letterSpacing:-0.4}}>{LEVEL_LABEL[curLevel]}</div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.55)",borderRadius:10,padding:"6px 12px"}}>
-            <Icon name="sliders" size={13} color={lc.text}/><span style={{fontSize:12,fontWeight:700,color:lc.text}}>Change</span>
+          <div style={{width:44,height:44,borderRadius:13,background:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <span style={{fontSize:15,fontWeight:900,color:lc.deep}}>{curLevel}</span>
           </div>
         </div>
-        {/* chapter segments — shows progress across all chapters in this level */}
-        {(() => {
-          const lvChaps=CHAPTERS[curLevel];
-          return(
-            <div>
-              <div style={{fontSize:11,color:lc.text,fontWeight:700,opacity:0.75,marginBottom:10}}>Chapters</div>
-              <div style={{display:"flex",gap:6}}>
-                {lvChaps.map((ch,i)=>{
-                  const chCards=allCards.filter(c=>c.chapter===ch.id);
-                  const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;
-                  const chPct=chCards.length?chDone/chCards.length:0;
-                  const isActive=ch.id===curChapter;
-                  const icon=CHAPTER_ICONS[ch.id]||"book";
-                  return(
-                    <div key={ch.id} style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-                      <div style={{height:8,background:"rgba(255,255,255,0.3)",borderRadius:4,overflow:"hidden"}}>
-                        <div style={{width:(chPct*100)+"%",height:"100%",background:isActive?"#fff":"rgba(255,255,255,0.7)",borderRadius:4,transition:"width .8s cubic-bezier(.2,.8,.2,1)"}}/>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:4}}>
-                        <Icon name={icon} size={10} color={lc.text} style={{opacity:isActive?1:0.6}}/>
-                        <span style={{fontSize:9.5,fontWeight:isActive?800:600,color:lc.text,opacity:isActive?1:0.65,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i+1}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-      </button>
-      {/* chapter progress */}
-      <div style={{padding:"14px 18px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-          <div style={{width:36,height:36,borderRadius:10,background:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={chapIcon} size={16} color={lc.text}/></div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:4}}>{chap?.title}</div>
-            <div style={{height:8,background:C.line,borderRadius:6,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",borderRadius:6,background:lc.bar,transition:"width 1s cubic-bezier(.2,.8,.2,1)"}}/></div>
-          </div>
-          <span style={{fontSize:14,fontWeight:800,color:lc.text,flexShrink:0}}>{pct}%</span>
+        {/* Chapters — selectable inline */}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {CHAPTERS[curLevel].map((ch,i)=>{
+            const isCur=ch.id===curChapter;
+            const chCards=allCards.filter(c=>c.chapter===ch.id);
+            const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;
+            const chPct=chCards.length?Math.round((chDone/chCards.length)*100):0;
+            const icon=CHAPTER_ICONS[ch.id]||"book";
+            return(
+              <button key={ch.id} onClick={()=>onLevelChapterSelect(curLevel,ch.id)} className="press"
+                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 12px",borderRadius:14,border:"none",background:isCur?lc.deep:lc.bg,boxShadow:isCur?"0 5px 16px "+lc.bar+"4D":"none",cursor:"pointer",textAlign:"left",fontFamily:FONT,transition:"all .2s"}}>
+                <div style={{width:32,height:32,borderRadius:9,background:isCur?"rgba(255,255,255,0.22)":"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Icon name={icon} size={15} color={isCur?"#fff":lc.deep}/>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:isCur?800:700,color:isCur?"#fff":lc.deep,marginBottom:5}}>{ch.title}</div>
+                  <div style={{height:5,background:isCur?"rgba(255,255,255,0.28)":lc.bar+"33",borderRadius:3,overflow:"hidden"}}>
+                    <div style={{width:chPct+"%",height:"100%",borderRadius:3,background:isCur?"#fff":lc.bar,transition:"width .8s cubic-bezier(.2,.8,.2,1)"}}/>
+                  </div>
+                </div>
+                <span style={{fontSize:11.5,fontWeight:800,color:isCur?"#fff":lc.deep,flexShrink:0}}>{chPct}%</span>
+              </button>
+            );
+          })}
         </div>
-        <div style={{fontSize:12,color:C.sub,fontWeight:600,marginBottom:14}}>{done} of {chapCards.length} cards learned</div>
-        <PrimaryButton onClick={onStart}>Continue</PrimaryButton>
+        {/* continue */}
+        <div style={{marginTop:16}}>
+          <PrimaryButton onClick={onStart}>Continue</PrimaryButton>
+        </div>
       </div>
     </div>
 
-    {/* REVIEW CARDS — card style, side by side */}
+    {/* review cards */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      {/* Review unknown */}
       <button onClick={reviewCount>0?onStartReview:undefined} className="press" style={{background:reviewCount>0?C.redSoft:C.bg,border:"1.5px solid "+(reviewCount>0?C.red+"44":C.line),borderRadius:18,padding:"16px 14px",cursor:reviewCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10,opacity:reviewCount===0?0.6:1}}>
         <div style={{width:40,height:40,borderRadius:12,background:reviewCount>0?C.red+"20":C.line,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="rotate-left" size={18} color={reviewCount>0?C.red:C.sub}/></div>
-        <div>
-          <div style={{fontSize:22,fontWeight:900,color:reviewCount>0?C.red:C.sub,letterSpacing:-0.5,lineHeight:1}}>{reviewCount}</div>
-          <div style={{fontSize:12.5,fontWeight:700,color:reviewCount>0?C.ink:C.sub,marginTop:2}}>Unknown</div>
-          <div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div>
-        </div>
+        <div><div style={{fontSize:22,fontWeight:900,color:reviewCount>0?C.red:C.sub,letterSpacing:-0.5,lineHeight:1}}>{reviewCount}</div><div style={{fontSize:12.5,fontWeight:700,color:reviewCount>0?C.ink:C.sub,marginTop:2}}>Unknown</div><div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div></div>
       </button>
-      {/* Review marked */}
       <button onClick={markedCount>0?onStartMarked:undefined} className="press" style={{background:markedCount>0?C.primarySoft:C.bg,border:"1.5px solid "+(markedCount>0?C.primary+"44":C.line),borderRadius:18,padding:"16px 14px",cursor:markedCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10,opacity:markedCount===0?0.6:1}}>
         <div style={{width:40,height:40,borderRadius:12,background:markedCount>0?C.primary+"20":C.line,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="bookmark" size={18} color={markedCount>0?C.primary:C.sub}/></div>
-        <div>
-          <div style={{fontSize:22,fontWeight:900,color:markedCount>0?C.primary:C.sub,letterSpacing:-0.5,lineHeight:1}}>{markedCount}</div>
-          <div style={{fontSize:12.5,fontWeight:700,color:markedCount>0?C.ink:C.sub,marginTop:2}}>Marked</div>
-          <div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div>
-        </div>
+        <div><div style={{fontSize:22,fontWeight:900,color:markedCount>0?C.primary:C.sub,letterSpacing:-0.5,lineHeight:1}}>{markedCount}</div><div style={{fontSize:12.5,fontWeight:700,color:markedCount>0?C.ink:C.sub,marginTop:2}}>Marked</div><div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div></div>
       </button>
     </div>
 
     {dlg==="streak"&&<StreakDialog history={history} streak={dayStreak} onClose={()=>setDlg(null)}/>}
     {dlg==="points"&&<PointsDialog points={totalPoints} onClose={()=>setDlg(null)}/>}
-    {showPicker&&<LevelChapterPicker curLevel={curLevel} curChapter={curChapter} onSelect={(lv,ch)=>{onLevelChapterSelect(lv,ch);setShowPicker(false);}} onClose={()=>setShowPicker(false)}/>}
   </div>);
 }
 
@@ -689,8 +671,8 @@ function StatsPage({history,totalPoints,dayStreak,allCards,learnedIds}){
     <h1 style={{fontSize:24,fontWeight:800,color:C.ink,margin:0,letterSpacing:-0.6}}>Your stats</h1>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{background:"linear-gradient(135deg,#6A5BFF,#A06BFF)",borderRadius:20,padding:"20px 16px",display:"flex",flexDirection:"column",justifyContent:"space-between",gridRow:"1/3",minHeight:160}}><Icon name="star" size={22} color="rgba(255,255,255,0.8)"/><div><div style={{fontSize:38,fontWeight:800,color:"#fff",letterSpacing:-1,lineHeight:1}}>{totalPoints}</div><div style={{fontSize:13,color:"rgba(255,255,255,0.75)",fontWeight:600,marginTop:4}}>Total points</div></div></div>
-      <div style={{background:C.amber+"18",border:"1px solid "+C.amber+"30",borderRadius:18,padding:"14px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}><Icon name="fire" size={18} color={C.amber}/><div><div style={{fontSize:28,fontWeight:800,color:C.ink,letterSpacing:-1}}>{dayStreak}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Day streak</div></div></div>
-      <div style={{background:C.greenSoft,border:"1px solid "+C.green+"30",borderRadius:18,padding:"14px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}><Icon name="circle-check" size={18} color={C.green}/><div><div style={{fontSize:22,fontWeight:800,color:C.ink,letterSpacing:-0.5}}>{learned}<span style={{fontSize:14,color:C.sub}}>/{total}</span></div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Learned</div></div></div>
+      <div style={{background:C.amber+"18",border:"1px solid "+C.amber+"30",borderRadius:18,padding:14,display:"flex",flexDirection:"column",justifyContent:"space-between"}}><Icon name="fire" size={18} color={C.amber}/><div><div style={{fontSize:28,fontWeight:800,color:C.ink,letterSpacing:-1}}>{dayStreak}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Day streak</div></div></div>
+      <div style={{background:C.greenSoft,border:"1px solid "+C.green+"30",borderRadius:18,padding:14,display:"flex",flexDirection:"column",justifyContent:"space-between"}}><Icon name="circle-check" size={18} color={C.green}/><div><div style={{fontSize:22,fontWeight:800,color:C.ink,letterSpacing:-0.5}}>{learned}<span style={{fontSize:14,color:C.sub}}>/{total}</span></div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Learned</div></div></div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
       <div style={{background:C.faSoft,borderRadius:16,padding:"14px 10px",textAlign:"center",border:"1px solid "+C.fa+"20"}}><div style={{fontSize:24,fontWeight:800,color:C.fa,letterSpacing:-1}}>{best}</div><div style={{fontSize:10.5,color:C.sub,fontWeight:700,marginTop:2}}>Best day</div><Icon name="trophy" size={12} color={C.fa} style={{marginTop:4}}/></div>
@@ -710,14 +692,11 @@ function PointsChart({history}){
   const total=history.length;const todayIdx=total-1;const weeksAvail=Math.ceil(total/7);
   let bars=[],rangeLabel="",periodTotal=0,canPrev=false,canNext=false;
   if(mode==="week"){const end=total+offset*7,start=end-7;for(let idx=start;idx<end;idx++){if(idx<0||idx>=total){bars.push({label:"",points:0,ghost:true});continue;}const d=history[idx];bars.push({label:d.label,points:d.points,today:idx===todayIdx});periodTotal+=d.points;}rangeLabel=offset===0?"This week":history[Math.max(0,start)].dm+" - "+history[Math.min(total-1,end-1)].dm;canNext=offset<0;canPrev=-offset<weeksAvail-1;}
-  else{const buckets=[];for(let e=total;e>0;e-=7){const s=Math.max(0,e-7);const slice=history.slice(s,e);buckets.push({dm:history[s].dm,points:slice.reduce((a,x)=>a+x.points,0),current:e===total});}const pages=Math.ceil(buckets.length/4);const ps=(-offset)*4;const page=buckets.slice(ps,ps+4).reverse();page.forEach(b=>{bars.push({label:b.dm,points:b.points,today:b.current});periodTotal+=b.points;});rangeLabel=offset===0?"Last 4 weeks":(page.length?page[0].dm+" - "+page[page.length-1].dm:"");canNext=offset<0;canPrev=-offset<pages-1;}
+  else{const buckets=[];for(let e=total;e>0;e-=7){const s=Math.max(0,e-7);const sl=history.slice(s,e);buckets.push({dm:history[s].dm,points:sl.reduce((a,x)=>a+x.points,0),current:e===total});}const pages=Math.ceil(buckets.length/4);const ps=(-offset)*4;const page=buckets.slice(ps,ps+4).reverse();page.forEach(b=>{bars.push({label:b.dm,points:b.points,today:b.current});periodTotal+=b.points;});rangeLabel=offset===0?"Last 4 weeks":(page.length?page[0].dm+" - "+page[page.length-1].dm:"");canNext=offset<0;canPrev=-offset<pages-1;}
   const max=Math.max(10,...bars.map(b=>b.points));
   const nb=(dir,en,onClick)=>(<button onClick={en?onClick:undefined} disabled={!en} className="press" style={{width:32,height:32,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:en?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name={dir==="prev"?"chevron-left":"chevron-right"} size={12} color={en?C.ink:"#D8D5E8"}/></button>);
   return(<div style={{background:C.surface,borderRadius:22,padding:"18px 18px 14px",border:"1px solid "+C.line}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-      <div style={{display:"flex",background:C.bg,borderRadius:12,padding:3}}>{["week","month"].map(k=>{const on=mode===k;return(<button key={k} onClick={()=>setMode(k)} className="press" style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",background:on?C.surface:"transparent",color:on?C.primary:C.sub,fontWeight:800,fontSize:13,fontFamily:FONT,textTransform:"capitalize"}}>{k}</button>);})}</div>
-      <span style={{fontSize:14,fontWeight:800,color:C.amber,display:"flex",alignItems:"center",gap:5}}><Icon name="star" size={13} color={C.amber}/>{periodTotal} pts</span>
-    </div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",background:C.bg,borderRadius:12,padding:3}}>{["week","month"].map(k=>{const on=mode===k;return(<button key={k} onClick={()=>setMode(k)} className="press" style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",background:on?C.surface:"transparent",color:on?C.primary:C.sub,fontWeight:800,fontSize:13,fontFamily:FONT,textTransform:"capitalize"}}>{k}</button>);})}</div><span style={{fontSize:14,fontWeight:800,color:C.amber,display:"flex",alignItems:"center",gap:5}}><Icon name="star" size={13} color={C.amber}/>{periodTotal} pts</span></div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>{nb("prev",canPrev,()=>setOffset(o=>o-1))}<span style={{fontSize:13,fontWeight:800,color:C.ink}}>{rangeLabel}</span>{nb("next",canNext,()=>setOffset(o=>o+1))}</div>
     <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:8,height:100}}>{bars.map((d,i)=>{const h=grow?Math.max(d.points>0?8:3,(d.points/max)*80):3;return(<div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5,height:"100%",justifyContent:"flex-end"}}><span style={{fontSize:9.5,fontWeight:700,color:d.points?C.ink:"transparent"}}>{d.points||0}</span><div style={{width:"100%",maxWidth:26,height:h,borderRadius:6,background:d.ghost?C.line:(d.today?"linear-gradient(180deg,#6A5BFF,#A06BFF)":C.primarySoft),transition:"height .8s cubic-bezier(.2,.8,.2,1)",opacity:d.ghost?0.5:1}}/><span style={{fontSize:mode==="month"?8.5:10,fontWeight:700,color:d.today?C.primary:C.sub,whiteSpace:"nowrap"}}>{d.label}</span></div>);})}</div>
   </div>);
@@ -730,7 +709,7 @@ function MyFlashcardsPage({allCards,learnedIds,markedIds,reviewIds,curLevel,curC
   const langsPresent=["fa","de"].filter(l=>allCards.some(c=>c.language===l));const s=q.trim().toLowerCase();
   const CardRow=({c})=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const mkd=markedIds.includes(c.id);return(
     <div onClick={()=>setOpen(c)} style={{display:"flex",alignItems:"center",gap:10,background:"#FBFAFF",border:"1px solid "+C.line,borderRadius:14,padding:"11px 12px",cursor:"pointer"}}>
-      <SpeakBtn text={sayWordOf(c)} lang={m.ttsLang} color={m.color} size={30}/>
+      <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();speak(sayWordOf(c),m.ttsLang);}} className="press" style={{width:30,height:30,borderRadius:"50%",border:"none",cursor:"pointer",background:m.color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={13} color={m.color}/></button>
       <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.word}</div><div style={{fontSize:12,color:C.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.translation}</div></div>
       <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?C.primary:C.sub}}/></button>
       <span style={{fontSize:11,fontWeight:700,color:dn?C.green:C.sub,background:dn?C.greenSoft:C.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{dn?"Done":"Later"}</span>
@@ -741,41 +720,30 @@ function MyFlashcardsPage({allCards,learnedIds,markedIds,reviewIds,curLevel,curC
   return(<div style={{padding:"24px 20px 28px",display:"flex",flexDirection:"column",gap:14}}>
     <h1 style={{fontSize:24,fontWeight:800,color:C.ink,margin:0,letterSpacing:-0.6}}>My Flashcards</h1>
     <button onClick={()=>setAdding(true)} className="press" style={{padding:14,borderRadius:16,border:"2px dashed "+C.primary+"55",background:C.primarySoft,color:C.primary,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="plus" size={14} color={C.primary}/> Add a flashcard</button>
-    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:2}}>
-      {groupTabs.map(gt=>{const on=group===gt.k;return(<button key={gt.k} onClick={()=>setGroup(gt.k)} className="press" style={{flexShrink:0,padding:"8px 12px",borderRadius:13,border:"1.5px solid "+(on?C.primary:C.line),background:on?C.primary:C.surface,color:on?"#fff":C.sub,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",gap:6}}>{gt.label}{gt.count!=null&&<span style={{background:on?"rgba(255,255,255,0.2)":C.line,borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:700,color:on?"#fff":C.sub}}>{gt.count}</span>}</button>);})}
-    </div>
+    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:2}}>{groupTabs.map(gt=>{const on=group===gt.k;return(<button key={gt.k} onClick={()=>setGroup(gt.k)} className="press" style={{flexShrink:0,padding:"8px 12px",borderRadius:13,border:"1.5px solid "+(on?C.primary:C.line),background:on?C.primary:C.surface,color:on?"#fff":C.sub,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",gap:6}}>{gt.label}{gt.count!=null&&<span style={{background:on?"rgba(255,255,255,0.2)":C.line,borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:700,color:on?"#fff":C.sub}}>{gt.count}</span>}</button>);})}</div>
     <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={14} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search flashcards…" style={{width:"100%",padding:"11px 14px 11px 38px",fontSize:14.5,borderRadius:13,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
-    {group==="level"&&(<div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {LEVELS_ORDER.map(lv=>{
-        const expanded=expandedLevel===lv;const lci=LEVEL_COLOR[lv];
-        const lvCards=allCards.filter(c=>!c.custom&&c.level===lv);const lvDone=lvCards.filter(c=>learnedIds.includes(c.id)).length;
-        return(<div key={lv} style={{background:C.surface,borderRadius:18,border:"1px solid "+C.line,overflow:"hidden"}}>
-          <button onClick={()=>setExpandedLevel(expanded?null:lv)} className="press" style={{width:"100%",padding:"13px 16px",border:"none",background:"transparent",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-            <div style={{width:36,height:36,borderRadius:10,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:lci.text,flexShrink:0}}>{lv}</div>
-            <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{LEVEL_LABEL[lv]}</div><div style={{fontSize:12,color:C.sub}}>{lvDone}/{lvCards.length} done</div></div>
-            <Icon name={expanded?"chevron-up":"chevron-down"} size={14} color={C.sub}/>
-          </button>
-          {expanded&&(<div style={{borderTop:"1px solid "+C.line}}>
-            {CHAPTERS[lv].map((ch,ci)=>{const chCards=allCards.filter(c=>!c.custom&&c.chapter===ch.id);const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;const icon=CHAPTER_ICONS[ch.id]||"book";
-              return(<button key={ch.id} onClick={()=>onOpenChapter({level:lv,chapterId:ch.id,title:ch.title})} className="press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 16px",background:C.surface,border:"none",borderBottom:ci<CHAPTERS[lv].length-1?"1px solid "+C.line:"none",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-                <div style={{width:30,height:30,borderRadius:9,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={14} color={lci.text}/></div>
-                <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:11.5,color:C.sub}}>{chDone}/{chCards.length} done</div></div>
-                <Icon name="chevron-right" size={13} color={C.sub}/>
-              </button>);
-            })}
-          </div>)}
-        </div>);
-      })}
+    {group==="level"&&(<div style={{display:"flex",flexDirection:"column",gap:10}}>{LEVELS_ORDER.map(lv=>{const expanded=expandedLevel===lv;const lci=LEVEL_COLOR[lv];const lvCards=allCards.filter(c=>!c.custom&&c.level===lv);const lvDone=lvCards.filter(c=>learnedIds.includes(c.id)).length;return(<div key={lv} style={{background:C.surface,borderRadius:18,border:"1px solid "+C.line,overflow:"hidden"}}>
+      <button onClick={()=>setExpandedLevel(expanded?null:lv)} className="press" style={{width:"100%",padding:"13px 16px",border:"none",background:"transparent",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
+        <div style={{width:36,height:36,borderRadius:10,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:lci.text,flexShrink:0}}>{lv}</div>
+        <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{LEVEL_LABEL[lv]}</div><div style={{fontSize:12,color:C.sub}}>{lvDone}/{lvCards.length} done</div></div>
+        <Icon name={expanded?"chevron-up":"chevron-down"} size={14} color={C.sub}/>
+      </button>
+      {expanded&&(<div style={{borderTop:"1px solid "+C.line}}>{CHAPTERS[lv].map((ch,ci)=>{const chCards=allCards.filter(c=>!c.custom&&c.chapter===ch.id);const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;const icon=CHAPTER_ICONS[ch.id]||"book";return(<button key={ch.id} onClick={()=>onOpenChapter({level:lv,chapterId:ch.id,title:ch.title})} className="press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 16px",background:C.surface,border:"none",borderBottom:ci<CHAPTERS[lv].length-1?"1px solid "+C.line:"none",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
+        <div style={{width:30,height:30,borderRadius:9,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={14} color={lci.text}/></div>
+        <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:11.5,color:C.sub}}>{chDone}/{chCards.length} done</div></div>
+        <Icon name="chevron-right" size={13} color={C.sub}/>
+      </button>);})}</div>)}
+    </div>);})}
     </div>)}
     {group==="marked"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(markedCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>Bookmark cards during sessions to find them here.</div>:fc(markedCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
     {group==="review"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(reviewCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>Cards you swipe left will appear here.</div>:fc(reviewCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
     {group==="mine"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(customCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>No custom cards yet.</div>:fc(customCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
-    {adding&&<AddWordModal selectedLangs={langsPresent} curLevel={curLevel} curChapter={curChapter} onClose={()=>setAdding(false)} onAdd={onAdd}/>}
+    {adding&&<AddWordModal selectedLangs={langsPresent} curLevel={curLevel} curChapter={curChapter} onClose={()=>setAdding(false)} onAdd={addCard}/>}
     {open&&<FlashcardModal card={open} learned={learnedIds.includes(open.id)} marked={markedIds.includes(open.id)} onResult={onResult} onMark={()=>onMark(open.id)} onClose={()=>setOpen(null)}/>}
   </div>);
 }
 
-/* ── CHAPTER DETAIL SCREEN ── */
+/* ── CHAPTER DETAIL ── */
 function ChapterDetailScreen({chapter,allCards,learnedIds,markedIds,onMark,onResult,onBack,onDelete}){
   const[q,setQ]=useState("");const[open,setOpen]=useState(null);
   const chCards=allCards.filter(c=>c.chapter===chapter.chapterId);const s=q.trim().toLowerCase();
@@ -790,15 +758,14 @@ function ChapterDetailScreen({chapter,allCards,learnedIds,markedIds,onMark,onRes
       </div>
       <div style={{fontSize:13,color:C.sub,fontWeight:600}}>{done}/{chCards.length} cards done</div>
       <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={14} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…" style={{width:"100%",padding:"11px 14px 11px 38px",fontSize:14.5,borderRadius:13,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
-      <div style={{display:"flex",flexDirection:"column",gap:9}}>
-        {filtered.length===0?<div style={{color:C.sub,fontSize:13,textAlign:"center",padding:"18px 0"}}>No matches.</div>:filtered.map(c=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const mkd=markedIds.includes(c.id);return(
-          <div key={c.id} onClick={()=>setOpen(c)} style={{display:"flex",alignItems:"center",gap:10,background:"#FBFAFF",border:"1px solid "+C.line,borderRadius:14,padding:"11px 12px",cursor:"pointer"}}>
-            <SpeakBtn text={sayWordOf(c)} lang={m.ttsLang} color={m.color} size={30}/>
-            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.word}</div><div style={{fontSize:12,color:C.sub}}>{c.translation}</div></div>
-            <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?C.primary:C.sub}}/></button>
-            <span style={{fontSize:11,fontWeight:700,color:dn?C.green:C.sub,background:dn?C.greenSoft:C.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{dn?"Done":"Later"}</span>
-            {c.custom&&<button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(c.id);}} className="press" style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><Icon name="xmark" size={13} color={C.sub}/></button>}
-          </div>);})}
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>{filtered.length===0?<div style={{color:C.sub,fontSize:13,textAlign:"center",padding:"18px 0"}}>No matches.</div>:filtered.map(c=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const mkd=markedIds.includes(c.id);return(
+        <div key={c.id} onClick={()=>setOpen(c)} style={{display:"flex",alignItems:"center",gap:10,background:"#FBFAFF",border:"1px solid "+C.line,borderRadius:14,padding:"11px 12px",cursor:"pointer"}}>
+          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();speak(sayWordOf(c),m.ttsLang);}} className="press" style={{width:30,height:30,borderRadius:"50%",border:"none",cursor:"pointer",background:m.color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={13} color={m.color}/></button>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.word}</div><div style={{fontSize:12,color:C.sub}}>{c.translation}</div></div>
+          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?C.primary:C.sub}}/></button>
+          <span style={{fontSize:11,fontWeight:700,color:dn?C.green:C.sub,background:dn?C.greenSoft:C.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{dn?"Done":"Later"}</span>
+          {c.custom&&<button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(c.id);}} className="press" style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><Icon name="xmark" size={13} color={C.sub}/></button>}
+        </div>);})}
       </div>
     </div>
     {open&&<FlashcardModal card={open} learned={learnedIds.includes(open.id)} marked={markedIds.includes(open.id)} onResult={onResult} onMark={()=>onMark(open.id)} onClose={()=>setOpen(null)}/>}
@@ -813,30 +780,46 @@ function AddWordModal({selectedLangs,curLevel,curChapter,onClose,onAdd}){
   const set=k=>v=>setF(p=>({...p,[k]:v}));const[auto,setAuto]=useState("idle");
   const autofill=async()=>{
     if(!f.word.trim()||auto==="loading")return;setAuto("loading");
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:"Respond ONLY with a single minified JSON object.",messages:[{role:"user",content:'Build a flashcard for "'+f.word.trim()+'" in '+(lang==="fa"?"Persian Finglish":"German")+'. JSON: {"word","pron","translation","example","exampleTranslation","note"'+(lang==="fa"?',"farsi","farsiExample"':'')+'}'}]})});const data=await res.json();let text=(data.content||[]).map(b=>b.text||"").join("").replace(/```json|```/g,"").trim();let obj;try{obj=JSON.parse(text);}catch(_){const m2=text.match(/\{[\s\S]*\}/);if(!m2)throw new Error();obj=JSON.parse(m2[0]);}setF({word:obj.word||f.word,translation:obj.translation||"",pron:obj.pron||"",example:obj.example||"",exampleTranslation:obj.exampleTranslation||"",farsi:obj.farsi||"",farsiExample:obj.farsiExample||""});setAuto("done");}catch(_){setAuto("error");}
+    try{
+      const sys="You are a language flashcard assistant. Respond ONLY with a valid JSON object, no markdown, no backticks, no explanation.";
+      const prompt='Create a flashcard for the word "'+f.word.trim()+'" in '+(lang==="fa"?"Persian (respond with Finglish=Latin transliteration, AND farsi=actual Persian script)":"German")+'. Return ONLY this JSON structure: {"word":"the word in '+(lang==="fa"?"Finglish":"German with article if noun")+' ","pron":"pronunciation guide","translation":"English meaning","example":"one example sentence in '+(lang==="fa"?"Finglish":"German")+'","exampleTranslation":"English translation of example","note":"part of speech"'+(lang==="fa"?',"farsi":"word in Persian script","farsiExample":"example in Persian script"':'')+'}';
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system:sys,messages:[{role:"user",content:prompt}]})});
+      if(!res.ok)throw new Error("api error "+res.status);
+      const data=await res.json();
+      const rawText=(data.content||[]).map(b=>b.type==="text"?b.text:"").join("").trim();
+      // Strip any markdown fences
+      const jsonText=rawText.replace(/^```[a-z]*\n?/,"").replace(/\n?```$/,"").trim();
+      let obj;
+      try{obj=JSON.parse(jsonText);}catch(_){const m=jsonText.match(/\{[\s\S]*\}/);if(!m)throw new Error("parse");obj=JSON.parse(m[0]);}
+      setF(prev=>({...prev,word:obj.word||prev.word,translation:obj.translation||"",pron:obj.pron||"",example:obj.example||"",exampleTranslation:obj.exampleTranslation||"",farsi:obj.farsi||"",farsiExample:obj.farsiExample||""}));
+      setAuto("done");
+    }catch(e){console.error("autofill error",e);setAuto("error");}
   };
   const canAdd=f.word.trim()&&f.translation.trim();
   const add=()=>{if(!canAdd)return;onAdd({id:"u"+Date.now(),language:lang,level:tg==="mine"?"custom":tl,chapter:tg==="mine"?"custom":tc,word:f.word.trim(),translation:f.translation.trim(),pron:f.pron.trim(),example:f.example.trim(),exampleTranslation:f.exampleTranslation.trim(),note:"added by you",farsi:f.farsi.trim(),farsiExample:f.farsiExample.trim(),custom:tg==="mine"});onClose();};
   const inp={width:"100%",marginTop:5,padding:"11px 13px",fontSize:14.5,borderRadius:12,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"};
-  const lbl2={fontSize:12.5,fontWeight:700,color:C.sub,display:"block",marginTop:12};
+  const lbl={fontSize:12.5,fontWeight:700,color:C.sub,display:"block",marginTop:12};
   const groupOpts=[{value:"mine",label:"My Cards"},...LEVELS_ORDER.flatMap(lv=>CHAPTERS[lv].map(ch=>({value:lv+"|"+ch.id,label:LEVEL_LABEL[lv]+" › "+ch.title})))];
   const langOpts=[{value:"fa",label:"🇮🇷 Persian (Finglish)"},{value:"de",label:"🇩🇪 German (Deutsch)"}];
   return(<Sheet onClose={onClose} title="Add a flashcard">
     <p style={{color:C.sub,fontSize:13.5,margin:"0 0 12px"}}>Enter the word, then tap auto-fill.</p>
-    {selectedLangs.length>1&&(<div style={{marginBottom:12}}><label style={lbl2}>Language</label><div style={{marginTop:5}}><AppSelect value={lang} onChange={setLang} options={langOpts}/></div></div>)}
-    <label style={lbl2}>Word ({langMeta[lang].label}{lang==="fa"?", Finglish":""})</label>
+    {selectedLangs.length>1&&(<><label style={lbl}>Language</label><div style={{marginTop:5}}><AppSelect value={lang} onChange={setLang} options={langOpts}/></div></>)}
+    <label style={lbl}>Word ({langMeta[lang].label}{lang==="fa"?", Finglish":""})</label>
     <input value={f.word} onChange={e=>set("word")(e.target.value)} placeholder={lang==="fa"?"e.g. mehraboon":"e.g. der Apfel"} style={inp}/>
-    <button onClick={autofill} disabled={!f.word.trim()||auto==="loading"} className="press" style={{width:"100%",marginTop:10,padding:11,borderRadius:12,border:"1.5px solid "+C.primary+"55",background:C.primarySoft,color:C.primary,fontWeight:800,fontSize:14,cursor:f.word.trim()?"pointer":"default",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>{auto==="loading"?<><span className="spinner"/> Auto-filling…</>:<><Icon name="wand-magic-sparkles" size={14} color={C.primary}/> Auto-fill</>}</button>
+    <button onClick={autofill} disabled={!f.word.trim()||auto==="loading"} className="press" style={{width:"100%",marginTop:10,padding:11,borderRadius:12,border:"1.5px solid "+C.primary+"55",background:C.primarySoft,color:C.primary,fontWeight:800,fontSize:14,cursor:f.word.trim()?"pointer":"default",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+      {auto==="loading"?<><span className="spinner"/> Auto-filling…</>:<><Icon name="wand-magic-sparkles" size={14} color={C.primary}/> Auto-fill</>}
+    </button>
     {auto==="done"&&<div style={{fontSize:12,color:C.green,marginTop:6,fontWeight:600}}>Filled in — edit if needed.</div>}
-    {auto==="error"&&<div style={{fontSize:12,color:C.sub,marginTop:6}}>Couldn't auto-fill — fill below.</div>}
-    <label style={lbl2}>Translation (English)</label><input value={f.translation} onChange={e=>set("translation")(e.target.value)} placeholder="e.g. the apple" style={inp}/>
-    <label style={lbl2}>Pronunciation (optional)</label><input value={f.pron} onChange={e=>set("pron")(e.target.value)} placeholder="e.g. dair AP-fel" style={inp}/>
-    <label style={lbl2}>Example sentence (optional)</label><input value={f.example} onChange={e=>set("example")(e.target.value)} placeholder="a short sentence" style={inp}/>
-    <label style={lbl2}>Example translation (optional)</label><input value={f.exampleTranslation} onChange={e=>set("exampleTranslation")(e.target.value)} placeholder="its translation" style={inp}/>
-    {lang==="fa"&&<><label style={lbl2}>Farsi script (optional)</label><input value={f.farsi} onChange={e=>set("farsi")(e.target.value)} placeholder="e.g. مهربون" dir="rtl" style={inp}/></>}
-    <label style={lbl2}>Save to group</label>
+    {auto==="error"&&<div style={{fontSize:12,color:C.red,marginTop:6,fontWeight:600}}>Auto-fill failed. Please fill in manually below.</div>}
+    <label style={lbl}>Translation (English)</label><input value={f.translation} onChange={e=>set("translation")(e.target.value)} placeholder="e.g. the apple" style={inp}/>
+    <label style={lbl}>Pronunciation (optional)</label><input value={f.pron} onChange={e=>set("pron")(e.target.value)} placeholder="e.g. dair AP-fel" style={inp}/>
+    <label style={lbl}>Example sentence (optional)</label><input value={f.example} onChange={e=>set("example")(e.target.value)} placeholder="a short sentence" style={inp}/>
+    <label style={lbl}>Example translation (optional)</label><input value={f.exampleTranslation} onChange={e=>set("exampleTranslation")(e.target.value)} placeholder="its translation" style={inp}/>
+    {lang==="fa"&&<><label style={lbl}>Farsi script (optional)</label><input value={f.farsi} onChange={e=>set("farsi")(e.target.value)} placeholder="e.g. مهربون" dir="rtl" style={inp}/></>}
+    <label style={lbl}>Save to group</label>
+    {/* openUp=true so dropdown opens upward, not clipped by sheet bottom */}
     <div style={{marginTop:5}}>
-      <AppSelect value={tg==="mine"?"mine":(tl+"|"+tc)} onChange={v=>{if(v==="mine"){setTg("mine");}else{const[lv,ch]=v.split("|");setTg("level");setTl(lv);setTc(ch);}}} options={groupOpts}/>
+      <AppSelect value={tg==="mine"?"mine":(tl+"|"+tc)} onChange={v=>{if(v==="mine"){setTg("mine");}else{const[lv,ch]=v.split("|");setTg("level");setTl(lv);setTc(ch);}}} options={groupOpts} openUp={true}/>
     </div>
     <div style={{marginTop:16}}><PrimaryButton onClick={add} disabled={!canAdd}>Add to my flashcards</PrimaryButton></div>
   </Sheet>);
@@ -858,77 +841,82 @@ function FriendsPage({currentUser,allUsers,friends,onAdd,onRemove,onSendHeart,re
         {receivedHearts.length>0&&<div style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:"#fff"}}>{receivedHearts.length>9?"9+":receivedHearts.length}</div>}
       </button>
     </div>
-    <div style={{display:"flex",background:C.bg,borderRadius:14,padding:3}}>
-      {[{k:"discover",label:"Discover"},{k:"leaderboard",label:"Leaderboard"}].map(t=>{const on=friendTab===t.k;return(<button key={t.k} onClick={()=>setFriendTab(t.k)} className="press" style={{flex:1,padding:"10px",borderRadius:11,border:on?"none":"1.5px solid "+C.line,cursor:"pointer",background:on?C.primary:C.surface,color:on?"#fff":C.sub,fontWeight:800,fontSize:14,fontFamily:FONT,boxShadow:on?"0 2px 8px rgba(28,26,46,0.15)":"none"}}>{t.label}</button>);})}
+    {/* tabs — styled clearly */}
+    <div style={{display:"flex",gap:8}}>
+      {[{k:"discover",label:"Discover"},{k:"leaderboard",label:"Leaderboard"}].map(t=>{const on=friendTab===t.k;return(<button key={t.k} onClick={()=>setFriendTab(t.k)} className="press" style={{flex:1,padding:"11px",borderRadius:13,border:"1.5px solid "+(on?C.primary:C.line),cursor:"pointer",background:on?C.primary:C.surface,color:on?"#fff":C.ink,fontWeight:700,fontSize:14,fontFamily:FONT}}>{t.label}</button>);})}
     </div>
+
     {friendTab==="discover"&&(<>
-      <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={15} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search learners…" style={{width:"100%",padding:"12px 15px 12px 40px",fontSize:15,borderRadius:14,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
+      <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={15} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search learners…" style={{width:"100%",padding:"11px 15px 11px 40px",fontSize:15,borderRadius:14,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
       {filteredFriends.length>0&&(<><div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:0.5}}>My Friends</div>{filteredFriends.map(u=><UserRow key={u.id} u={u} isFriend={true} onAdd={onAdd} onRemove={onRemove} onTap={()=>setSel(u)}/>)}</>)}
-      <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:0.5}}>{q?"Search results":"Discover"}</div>
+      <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:0.5}}>{q?"Results":"Discover"}</div>
       {discover.map(u=><UserRow key={u.id} u={u} isFriend={false} onAdd={onAdd} onRemove={onRemove} onTap={()=>setSel(u)}/>)}
     </>)}
+
     {friendTab==="leaderboard"&&(
       <div style={{background:C.surface,borderRadius:20,border:"1px solid "+C.line,overflow:"hidden"}}>
         <div style={{padding:"12px 16px 10px",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontSize:14,fontWeight:800,color:C.ink}}>This week</div>
           <div style={{fontSize:11,color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><Icon name="calendar-week" size={11} color={C.sub}/>Weekly points</div>
         </div>
-        {leaderboard.map((u,i)=>{const medal=i<3?MEDAL[i]:null;const isMe=currentUser&&u.name===cap(currentUser.name||"");
-          return(<div key={u.id} onClick={()=>setSel(u)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:i<leaderboard.length-1?"1px solid "+C.line:"none",background:isMe?C.primarySoft:"transparent",cursor:"pointer"}}>
+        {leaderboard.map((u,i)=>{const medal=i<3?MEDAL[i]:null;const isMe=currentUser&&u.name===cap(currentUser.name||"");return(
+          <div key={u.id} onClick={()=>setSel(u)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:i<leaderboard.length-1?"1px solid "+C.line:"none",background:isMe?C.primarySoft:"transparent",cursor:"pointer"}}>
             <div style={{width:26,height:26,borderRadius:"50%",background:medal||C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,color:medal?"#fff":C.sub,flexShrink:0,border:medal?"none":"1.5px solid "+C.line}}>{i<3?<Icon name="trophy" size={11} color="#fff"/>:i+1}</div>
-            <Avatar seed={u.avatar} size={34}/>
+            <Avatar seed={u.avatar} size={36}/>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:13.5,fontWeight:800,color:C.ink}}>{u.name}{isMe&&<span style={{fontSize:11,color:C.primary,fontWeight:700,marginLeft:5}}>· You</span>}</div><div style={{fontSize:11,color:C.sub}}>{u.streak}d streak</div></div>
             <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:medal?medal:C.ink}}>{u.weekPts}</div><div style={{fontSize:10,color:C.sub}}>pts</div></div>
-          </div>);
-        })}
+          </div>);})}
       </div>
     )}
+
     {sel&&<FriendDetailDialog user={sel} isFriend={friends.includes(sel.id)} onAdd={onAdd} onRemove={onRemove} onSendHeart={()=>onSendHeart(sel.id)} onClose={()=>setSel(null)}/>}
     {showHearts&&<HeartsDialog hearts={receivedHearts} onSendBack={id=>onSendHeart(id)} onClose={()=>setShowHearts(false)} allUsers={allUsers}/>}
   </div>);
 }
 
 function UserRow({u,isFriend,onAdd,onRemove,onTap}){
-  return(<div style={{display:"flex",alignItems:"center",gap:10,background:C.surface,border:"1px solid "+C.line,borderRadius:14,padding:"8px 12px"}}>
-    <div onClick={onTap} style={{display:"flex",alignItems:"center",gap:10,flex:1,cursor:"pointer",minWidth:0}}>
-      <Avatar seed={u.avatar} size={38}/>
-      <div style={{minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14}}>{u.name}</div><div style={{fontSize:11,color:C.sub,display:"flex",alignItems:"center",gap:4}}><Icon name="fire" size={10} color={C.amber}/>{u.streak} · <Icon name="star" size={10} color={C.amber}/>{u.points}</div></div>
+  return(<div style={{display:"flex",alignItems:"center",gap:12,background:C.surface,border:"1px solid "+C.line,borderRadius:14,padding:"12px 14px"}}>
+    <div onClick={onTap} style={{display:"flex",alignItems:"center",gap:12,flex:1,cursor:"pointer",minWidth:0}}>
+      <Avatar seed={u.avatar} size={44}/>
+      <div style={{minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:15}}>{u.name}</div><div style={{fontSize:12,color:C.sub,display:"flex",alignItems:"center",gap:5}}><Icon name="fire" size={11} color={C.amber}/>{u.streak} · <Icon name="star" size={11} color={C.amber}/>{u.points}</div></div>
     </div>
-    <button onClick={()=>isFriend?onRemove(u.id):onAdd(u.id)} className="press" style={{padding:"6px 12px",borderRadius:11,border:"1.5px solid "+(isFriend?C.line:C.primary),background:isFriend?C.surface:C.primary,color:isFriend?C.sub:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:FONT,flexShrink:0}}>{isFriend?"Unfollow":"Follow"}</button>
+    <button onClick={()=>isFriend?onRemove(u.id):onAdd(u.id)} className="press" style={{padding:"8px 14px",borderRadius:12,border:"1.5px solid "+(isFriend?C.line:C.primary),background:isFriend?C.surface:C.primary,color:isFriend?C.sub:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:FONT,flexShrink:0}}>{isFriend?"Unfollow":"Follow"}</button>
   </div>);
 }
 
 function FriendDetailDialog({user,isFriend,onAdd,onRemove,onSendHeart,onClose}){
   const[heartSent,setHeartSent]=useState(false);const avg=user.activeDays?Math.round(user.points/user.activeDays):0;
   const stats=[{label:"Points",value:user.points,icon:"star",color:C.amber,bg:C.amber+"18"},{label:"Day streak",value:user.streak+"d",icon:"fire",color:C.red,bg:C.redSoft},{label:"Best day",value:user.bestDay,icon:"trophy",color:C.fa,bg:C.faSoft},{label:"Active days",value:user.activeDays,icon:"calendar-check",color:C.de,bg:C.deSoft}];
-  return(<Sheet onClose={onClose}>
-    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}><Avatar seed={user.avatar} size={60} ring={C.primary}/><div><div style={{fontSize:21,fontWeight:800,color:C.ink}}>{user.name}</div><div style={{fontSize:13,color:C.sub,marginTop:2}}>{isFriend?"Following":"Not following"}</div></div></div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>{stats.map(s=>(<div key={s.label} style={{background:s.bg,borderRadius:16,padding:"14px 12px",display:"flex",flexDirection:"column",gap:6}}><Icon name={s.icon} size={16} color={s.color}/><div style={{fontSize:22,fontWeight:800,color:C.ink,letterSpacing:-0.5}}>{s.value}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>{s.label}</div></div>))}</div>
-    <div style={{background:"#F3F0FF",borderRadius:16,padding:"14px 12px",marginBottom:16}}><Icon name="gauge-high" size={16} color="#7C3AED"/><div style={{fontSize:22,fontWeight:800,color:C.ink,marginTop:4}}>{avg}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Avg points/day</div></div>
-    <div style={{display:"flex",gap:10}}>
-      <button onClick={()=>isFriend?onRemove(user.id):onAdd(user.id)} className="press" style={{flex:1,padding:14,borderRadius:16,border:"1.5px solid "+(isFriend?C.line:C.primary),background:isFriend?C.surface:C.primary,color:isFriend?C.ink:"#fff",fontWeight:800,cursor:"pointer",fontFamily:FONT,fontSize:14}}>{isFriend?"Unfollow":"Follow"}</button>
-      <button onClick={()=>{if(!heartSent){onSendHeart();setHeartSent(true);}}} className="press" style={{flex:1,padding:14,borderRadius:16,border:"none",background:heartSent?C.greenSoft:C.redSoft,color:heartSent?C.green:C.red,fontWeight:800,cursor:"pointer",fontFamily:FONT,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="heart" size={15} color={heartSent?C.green:C.red}/>{heartSent?"Sent!":"Send heart"}</button>
-    </div>
-  </Sheet>);
+  return(
+    <Sheet onClose={onClose} noHeader={true}>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+        <Avatar seed={user.avatar} size={60} ring={C.primary}/>
+        <div style={{flex:1}}><div style={{fontSize:21,fontWeight:800,color:C.ink}}>{user.name}</div><div style={{fontSize:13,color:C.sub,marginTop:2}}>{isFriend?"Following":"Not following"}</div></div>
+        <button onClick={onClose} className="press" style={{width:34,height:34,borderRadius:"50%",border:"none",background:C.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="xmark" size={15} color={C.sub}/></button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>{stats.map(s=>(<div key={s.label} style={{background:s.bg,borderRadius:16,padding:"14px 12px",display:"flex",flexDirection:"column",gap:6}}><Icon name={s.icon} size={16} color={s.color}/><div style={{fontSize:22,fontWeight:800,color:C.ink,letterSpacing:-0.5}}>{s.value}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>{s.label}</div></div>))}</div>
+      <div style={{background:"#F3F0FF",borderRadius:16,padding:"14px 12px",marginBottom:16}}><Icon name="gauge-high" size={16} color="#7C3AED"/><div style={{fontSize:22,fontWeight:800,color:C.ink,marginTop:4}}>{avg}</div><div style={{fontSize:11,color:C.sub,fontWeight:600}}>Avg points/day</div></div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={()=>isFriend?onRemove(user.id):onAdd(user.id)} className="press" style={{flex:1,padding:14,borderRadius:16,border:"1.5px solid "+(isFriend?C.line:C.primary),background:isFriend?C.surface:C.primary,color:isFriend?C.ink:"#fff",fontWeight:800,cursor:"pointer",fontFamily:FONT,fontSize:14}}>{isFriend?"Unfollow":"Follow"}</button>
+        <button onClick={()=>{if(!heartSent){onSendHeart();setHeartSent(true);}}} className="press" style={{flex:1,padding:14,borderRadius:16,border:"none",background:heartSent?C.greenSoft:C.redSoft,color:heartSent?C.green:C.red,fontWeight:800,cursor:"pointer",fontFamily:FONT,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="heart" size={15} color={heartSent?C.green:C.red}/>{heartSent?"Sent!":"Send heart"}</button>
+      </div>
+    </Sheet>
+  );
 }
 
 function HeartsDialog({hearts,onSendBack,onClose,allUsers}){
   const[sent,setSent]=useState({});
   const doSendBack=from=>{if(sent[from])return;setSent(s=>({...s,[from]:true}));const u=allUsers.find(u=>u.name===from);if(u)onSendBack(u.id);};
   return(<Sheet onClose={onClose} title="Hearts received">
-    {hearts.length===0
-      ?<div style={{color:C.sub,textAlign:"center",padding:"20px 0",fontSize:14}}>No hearts yet! Follow friends to receive hearts.</div>
-      :hearts.map((h,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid "+C.line}}>
-          <div style={{width:36,height:36,borderRadius:"50%",background:C.redSoft,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="heart" size={16} color={C.red}/></div>
-          <div style={{flex:1}}><div style={{fontWeight:700,color:C.ink,fontSize:14}}>{h.from}</div><div style={{fontSize:12,color:C.sub}}>sent you a heart · {h.time}</div></div>
-          <button onClick={()=>doSendBack(h.from)} className="press" style={{display:"flex",alignItems:"center",gap:5,padding:"6px 10px",borderRadius:11,border:"1.5px solid "+(sent[h.from]?C.green+"44":C.red+"44"),background:sent[h.from]?C.greenSoft:C.redSoft,cursor:"pointer",fontFamily:FONT,flexShrink:0}}>
-            <Icon name="heart" size={12} color={sent[h.from]?C.green:C.red}/>
-            <span style={{fontSize:11.5,fontWeight:700,color:sent[h.from]?C.green:C.red}}>{sent[h.from]?"Sent!":"Heart back"}</span>
-          </button>
-        </div>
-      ))
-    }
+    {hearts.length===0?<div style={{color:C.sub,textAlign:"center",padding:"20px 0",fontSize:14}}>No hearts yet! Follow friends to receive hearts.</div>
+    :hearts.map((h,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid "+C.line}}>
+      <div style={{width:36,height:36,borderRadius:"50%",background:C.redSoft,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="heart" size={16} color={C.red}/></div>
+      <div style={{flex:1}}><div style={{fontWeight:700,color:C.ink,fontSize:14}}>{h.from}</div><div style={{fontSize:12,color:C.sub}}>sent you a heart · {h.time}</div></div>
+      <button onClick={()=>doSendBack(h.from)} className="press" style={{display:"flex",alignItems:"center",gap:5,padding:"6px 10px",borderRadius:11,border:"1.5px solid "+(sent[h.from]?C.green+"44":C.red+"44"),background:sent[h.from]?C.greenSoft:C.redSoft,cursor:"pointer",fontFamily:FONT,flexShrink:0}}>
+        <Icon name="heart" size={12} color={sent[h.from]?C.green:C.red}/>
+        <span style={{fontSize:11.5,fontWeight:700,color:sent[h.from]?C.green:C.red}}>{sent[h.from]?"Sent!":"Heart back"}</span>
+      </button>
+    </div>))}
   </Sheet>);
 }
 
@@ -938,7 +926,8 @@ function ProfilePage({user,setUser,selectedLangs,setSelectedLangs,dayStreak,tota
   const cardRef=useRef(null);const langDirty=lang!==(selectedLangs[0]||"fa");const dirty=name.trim()!==((user&&user.name)||"")||langDirty;const lvl=(user&&user.level)||"A1";
   const save=async()=>{if(!dirty)return;if(name.trim())setUser(u=>({...u,name:cap(name.trim())}));if(langDirty){setSelectedLangs([lang]);await onLangsChanged([lang]);}setSaved(true);setTimeout(()=>setSaved(false),1800);};
   const share=async()=>{setShareMsg("Preparing…");const text="I'm learning languages with Memzy!\n⭐ "+totalPoints+" points · 🔥 "+dayStreak+"-day streak\nJoin me at memzy.app!";const r=await shareImage(cardRef.current,text,"memzy-profile.png",C.surface);setShareMsg(r==="shared"?"":r==="downloaded"?"Saved!":"Couldn't share");setTimeout(()=>setShareMsg(""),2200);};
-  const lbl={fontSize:13,fontWeight:700,color:C.sub,display:"block"};const inp={width:"100%",marginTop:6,padding:"12px 13px",fontSize:15,borderRadius:12,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"};
+  const inp={width:"100%",marginTop:6,padding:"12px 13px",fontSize:15,borderRadius:12,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"};
+  const lbl={fontSize:13,fontWeight:700,color:C.sub,display:"block"};
   const langOpts=[{value:"fa",label:"🇮🇷 Persian (Finglish)"},{value:"de",label:"🇩🇪 German (Deutsch)"}];
   return(<div style={{padding:"18px 20px 0",paddingBottom:"calc(24px + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column",gap:14,height:"100%",boxSizing:"border-box",overflowY:"auto"}}>
     <h1 style={{fontSize:23,fontWeight:800,color:C.ink,margin:0}}>Profile</h1>
@@ -978,7 +967,6 @@ const CHEERS=[(n)=>"You smashed it, "+n+"! 💥",(n)=>"On fire, "+n+"! 🔥",(n)
 function SessionComplete({points,dayStreak,name,level,chapterTitle,onContinue}){
   const pts=useCountUp(points);const line=useMemo(()=>CHEERS[Math.floor(Math.random()*CHEERS.length)](cap(name||"friend")),[name]);
   const[shareMsg,setShareMsg]=useState("");const capRef=useRef(null);
-  useEffect(()=>{playFinishChime();},[]);
   const doShare=async()=>{setShareMsg("Preparing…");const text="Just finished a round in Memzy!\n⭐ "+points+" points · 🔥 "+dayStreak+"-day streak\n"+LEVEL_LABEL[level]+(chapterTitle?" · "+chapterTitle:"")+"\nJoin me at memzy.app!";const r=await shareImage(capRef.current,text,"memzy-result.png",C.bg);setShareMsg(r==="shared"?"":r==="downloaded"?"Image saved!":"Couldn't share");setTimeout(()=>setShareMsg(""),2200);};
   return(<div style={{position:"relative",width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",background:C.bg,padding:"20px 24px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>
     <Confetti/>
@@ -1000,7 +988,6 @@ function SessionComplete({points,dayStreak,name,level,chapterTitle,onContinue}){
   </div>);
 }
 
-/* ── STYLE ── */
 function StyleTag(){return(<style>{`
   @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}
   @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
