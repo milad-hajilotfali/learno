@@ -24,11 +24,11 @@ const {useState,useRef,useEffect,useMemo}=React;
 const LEVEL_LABEL={A1:"Beginner",A2:"Elementary",B1:"Intermediate",B2:"Upper-Int.",C1:"Advanced"};
 const LEVELS_ORDER=["A1","A2","B1","B2","C1"];
 const LEVEL_COLOR={
-  A1:{bg:"#E8F5E9",text:"#2E7D32",bar:"#4CAF50",deep:"#2E7D32"},
-  A2:{bg:"#E3F2FD",text:"#1565C0",bar:"#2196F3",deep:"#1565C0"},
-  B1:{bg:"#FFF3E0",text:"#E65100",bar:"#FF9800",deep:"#B34600"},
-  B2:{bg:"#F3E5F5",text:"#6A1B9A",bar:"#9C27B0",deep:"#6A1B9A"},
-  C1:{bg:"#FCE4EC",text:"#880E4F",bar:"#E91E63",deep:"#880E4F"},
+  A1:{bg:"#EEEEFF",text:"#5A4FE3",bar:"#7C75F0",deep:"#4840C7",accent:"#7C75F0"},
+  A2:{bg:"#EAF4FF",text:"#2272C3",bar:"#4C9FE8",deep:"#1A5FA0",accent:"#4C9FE8"},
+  B1:{bg:"#FFF8EE",text:"#B86E00",bar:"#E8A030",deep:"#9A5800",accent:"#E8A030"},
+  B2:{bg:"#F2EEFF",text:"#6C52D9",bar:"#8B73F0",deep:"#5540B8",accent:"#8B73F0"},
+  C1:{bg:"#EDFAF5",text:"#1A8A52",bar:"#2DBF72",deep:"#147040",accent:"#2DBF72"},
 };
 const CHAPTER_ICONS={"A1-1":"hand-wave","A1-2":"utensils","A1-3":"face-smile","A2-1":"house","A2-2":"paw","A2-3":"calendar-days","B1-1":"magnifying-glass","B1-2":"clock","B1-3":"comments","B2-1":"briefcase","B2-2":"triangle-exclamation","B2-3":"scale-balanced","C1-1":"globe","C1-2":"chart-line","C1-3":"microscope"};
 const CHAPTERS={
@@ -171,9 +171,35 @@ function speak(text,langCode){
 const sayWordOf=c=>c.language==="fa"?(c.farsi||c.word):c.word;
 const sayExOf=c=>c.language==="fa"?(c.farsiExample||c.example):c.example;
 
+async function imgToDataUrl(src){
+  return new Promise(res=>{
+    const img=new Image();img.crossOrigin="anonymous";
+    img.onload=()=>{
+      try{const c=document.createElement("canvas");c.width=img.naturalWidth||200;c.height=img.naturalHeight||200;c.getContext("2d").drawImage(img,0,0);res(c.toDataURL("image/png"));}
+      catch(e){res(null);}
+    };
+    img.onerror=()=>res(null);
+    img.src=src+"&t="+Date.now();
+  });
+}
 async function shareImage(node,text,filename,bg){
   if(!node||!window.html2canvas)return"nolib";
-  try{const canvas=await window.html2canvas(node,{backgroundColor:bg||"#FFF",scale:3,useCORS:true,logging:false,allowTaint:true,imageTimeout:8000});const blob=await new Promise(r=>canvas.toBlob(r,"image/png",1.0));if(!blob)return"error";const file=new File([blob],filename,{type:"image/png"});if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text});return"shared";}const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);return"downloaded";}catch(e){return"error";}
+  try{
+    // Bake all external images to data URLs first
+    const imgs=Array.from(node.querySelectorAll("img"));
+    await Promise.all(imgs.map(async img=>{
+      if(!img.src||img.src.startsWith("data:"))return;
+      const du=await imgToDataUrl(img.src);
+      if(du){img.src=du;}
+    }));
+    await new Promise(r=>setTimeout(r,120));
+    const canvas=await window.html2canvas(node,{backgroundColor:bg||"#FFF",scale:3,useCORS:true,logging:false,allowTaint:true,imageTimeout:15000});
+    const blob=await new Promise(r=>canvas.toBlob(r,"image/png",1.0));
+    if(!blob)return"error";
+    const file=new File([blob],filename,{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text});return"shared";}
+    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);return"downloaded";
+  }catch(e){return"error";}
 }
 
 function buildHistory(){const TOTAL=84;const now=new Date();const out=[];for(let i=TOTAL-1;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);const seed=d.getFullYear()*372+(d.getMonth()+1)*31+d.getDate();const r=Math.abs(Math.sin(seed));let pts;if(i===0)pts=0;else if(i<=10)pts=Math.round(8+r*14);else pts=r>0.32?Math.round(5+r*16):0;out.push({date:d.toISOString().slice(0,10),label:DAY_NAMES[d.getDay()],dm:MONTHS[d.getMonth()]+" "+d.getDate(),points:pts});}return out;}
@@ -181,7 +207,7 @@ function calcStreak(h){let i=h.length-1;if(h[i].points===0)i--;let s=0;for(;i>=0
 
 /* ── UI PRIMITIVES ── */
 function Icon({name,size=18,color,style}){return <i className={"fa-solid fa-"+name} style={{fontSize:size,color,lineHeight:1,...style}} aria-hidden="true"></i>;}
-function useCountUp(t,dur=700){const[v,setV]=useState(0);useEffect(()=>{let r;const s=performance.now();const tick=n=>{const p=Math.min(1,(n-s)/dur);setV(Math.round(t*easeOut(p)));if(p<1)r=requestAnimationFrame(tick);};r=requestAnimationFrame(tick);return()=>cancelAnimationFrame(r);},[t,dur]);return v;}
+const _cuDone={};function useCountUp(t,key,dur=700){const[v,setV]=useState(t);useEffect(()=>{if(_cuDone[key]){setV(t);return;}_cuDone[key]=true;let r;const s=performance.now();setV(0);const tick=n=>{const p=Math.min(1,(n-s)/dur);setV(Math.round(t*easeOut(p)));if(p<1)r=requestAnimationFrame(tick);};r=requestAnimationFrame(tick);return()=>cancelAnimationFrame(r);},[t]);return v;}
 function Avatar({seed,size=44,ring}){const[e,setE]=useState(false);return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:C.primarySoft,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:ring?("0 0 0 3px "+ring):"none"}}>{!e?<img src={avatarURL(seed)} crossOrigin="anonymous" onError={()=>setE(true)} alt="" style={{width:"100%",height:"100%"}}/>:<Icon name="user" size={size*0.5} color={C.primary}/>}</div>);}
 function PrimaryButton({children,onClick,disabled}){return(<button onClick={onClick} disabled={disabled} className="press" style={{width:"100%",padding:16,borderRadius:18,border:"none",cursor:disabled?"not-allowed":"pointer",background:disabled?C.line:C.primary,color:disabled?C.sub:"#fff",fontSize:16.5,fontWeight:800,fontFamily:FONT,boxShadow:disabled?"none":"0 8px 22px "+C.primary+"44"}}>{children}</button>);}
 function Shell({children}){return(<div style={{height:"100vh",height:"100dvh",width:"100%",display:"flex",justifyContent:"center",background:C.bg,fontFamily:FONT,overflow:"hidden"}}><div style={{width:"100%",maxWidth:440,height:"100%",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden"}}>{children}</div></div>);}
@@ -222,21 +248,37 @@ function AppSelect({value,onChange,options,placeholder,openUp=false}){
   );
 }
 
-/* ── SHEET — always above tab bar (zIndex 200) ── */
+/* ── PORTAL — renders children into document.body, always above everything ── */
+/* CRITICAL: All modals/sheets MUST use this portal. Never remove this pattern. */
+/* Without portal, modals render inside the tab-bar stacking context and go behind it. */
+function Portal({children}){
+  const el=useRef(document.createElement("div"));
+  useEffect(()=>{
+    const node=el.current;
+    document.body.appendChild(node);
+    return()=>{document.body.removeChild(node);};
+  },[]);
+  return ReactDOM.createPortal(children,el.current);
+}
+
+/* ── SHEET — always above tab bar; rendered via Portal so z-index is global ── */
+/* z-index scale: tab-bar=100, sheet-backdrop=300, sheet=400, flashcard-modal=410 */
 function Sheet({children,onClose,title,noHeader}){
   return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
-      <div onClick={e=>e.stopPropagation()} className="sheet-in" style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"26px 26px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",fontFamily:FONT}}>
-        {!noHeader&&(
-          <div style={{flexShrink:0,padding:"14px 22px 12px",background:C.surface,borderRadius:"26px 26px 0 0",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative"}}>
-            <div style={{width:40,height:5,background:C.line,borderRadius:4,position:"absolute",top:10,left:"50%",transform:"translateX(-50%)"}}/>
-            {title?<h2 style={{fontSize:18,fontWeight:800,color:C.ink,margin:"6px 0 0",flex:1}}>{title}</h2>:<div style={{height:16}}/>}
-            <button onClick={onClose} className="press" style={{width:32,height:32,borderRadius:"50%",border:"none",background:C.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:4,flexShrink:0}}><Icon name="xmark" size={14} color={C.sub}/></button>
-          </div>
-        )}
-        <div style={{flex:1,overflowY:"auto",padding:"16px 22px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>{children}</div>
+    <Portal>
+      <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:300}}>
+        <div onClick={e=>e.stopPropagation()} className="sheet-in" style={{width:"100%",maxWidth:440,background:C.surface,borderRadius:"26px 26px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",fontFamily:FONT,zIndex:400}}>
+          {!noHeader&&(
+            <div style={{flexShrink:0,padding:"14px 22px 12px",background:C.surface,borderRadius:"26px 26px 0 0",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative"}}>
+              <div style={{width:40,height:5,background:C.line,borderRadius:4,position:"absolute",top:10,left:"50%",transform:"translateX(-50%)"}}/>
+              {title?<h2 style={{fontSize:18,fontWeight:800,color:C.ink,margin:"6px 0 0",flex:1}}>{title}</h2>:<div style={{height:16}}/>}
+              <button onClick={onClose} className="press" style={{width:32,height:32,borderRadius:"50%",border:"none",background:C.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:4,flexShrink:0}}><Icon name="xmark" size={14} color={C.sub}/></button>
+            </div>
+          )}
+          <div style={{flex:1,overflowY:"auto",padding:"16px 22px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>{children}</div>
+        </div>
       </div>
-    </div>
+    </Portal>
   );
 }
 
@@ -266,13 +308,13 @@ function App(){
 
   const dayStreak=useMemo(()=>calcStreak(history),[history]);
   const totalPoints=useMemo(()=>history.reduce((a,d)=>a+d.points,0),[history]);
-  const committed=useRef(false);const roundPointsRef=useRef(0);
+  const committed=useRef(false);const roundPointsRef=useRef(0);const scrollRef=useRef(null);
 
   const initData=async langs=>{await delay(100);setAllCards(WORDS.filter(w=>langs.includes(w.language)));setLearnedIds([]);setMarkedIds([]);setReviewIds([]);setQueue([]);};
   const chapterCards=useMemo(()=>allCards.filter(c=>c.chapter===curChapter),[allCards,curChapter]);
   const chapterRemaining=useMemo(()=>chapterCards.filter(c=>!learnedIds.includes(c.id)),[chapterCards,learnedIds]);
 
-  useEffect(()=>{if(chapterCards.length>0&&chapterRemaining.length===0){const lv=CHAPTERS[curLevel];const i=lv.findIndex(c=>c.id===curChapter);if(i>=0&&i<lv.length-1)setTimeout(()=>setCurChapter(lv[i+1].id),800);}},[chapterCards.length,chapterRemaining.length,curChapter,curLevel]);
+  useEffect(()=>{if(chapterCards.length>0&&chapterRemaining.length===0){const lv=CHAPTERS[curLevel];const ci=lv.findIndex(ch=>ch.id===curChapter);if(ci>=0&&ci<lv.length-1){setTimeout(()=>setCurChapter(lv[ci+1].id),800);}else if(ci===lv.length-1){const li=LEVELS_ORDER.indexOf(curLevel);if(li>=0&&li<LEVELS_ORDER.length-1){const nxt=LEVELS_ORDER[li+1];setTimeout(()=>{setCurLevel(nxt);setCurChapter(CHAPTERS[nxt][0].id);},1000);}}}},[chapterCards.length,chapterRemaining.length,curChapter,curLevel]);
 
   const[flipped,setFlipped]=useState(false);const[dragX,setDragX]=useState(0);const[dragging,setDragging]=useState(false);const[exitDir,setExitDir]=useState(null);const[historyStack,setHistoryStack]=useState([]);const[showDeckSettings,setShowDeckSettings]=useState(false);
   const sX=useRef(0);const mv=useRef(false);const act=useRef(false);const locked=useRef(false);
@@ -357,7 +399,7 @@ function App(){
     const topTr=dragging?"none":"transform .34s cubic-bezier(.2,.8,.2,1)";
     const tint=exitDir==="right"?{c:C.green,o:0.92,t:"KNOW"}:exitDir==="left"?{c:C.red,o:0.92,t:"REVIEW"}:dragX>0?{c:C.green,o:kh*0.85,t:"KNOW"}:dragX<0?{c:C.red,o:rh*0.85,t:"REVIEW"}:{c:C.green,o:0,t:""};
     const chap=CHAPTERS[curLevel]?.find(c=>c.id===curChapter);
-    const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
+    const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden",fontFamily:FONT};
     return(<Shell><StyleTag/>
       {!sessionDone&&(<div style={{padding:"18px 18px 4px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
         <button onClick={exitToApp} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="xmark" size={18} color={C.ink}/></button>
@@ -368,7 +410,7 @@ function App(){
         <button onClick={()=>setShowDeckSettings(true)} className="press" style={{background:C.surface,border:"1.5px solid "+C.line,borderRadius:14,width:44,height:44,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="gear" size={18} color={C.ink}/></button>
       </div>)}
       <div style={{flex:1,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",padding:sessionDone?"0":"8px 20px 0",minHeight:0}}>
-        {sessionDone?(<SessionComplete points={roundPointsRef.current} dayStreak={dayStreak} name={user&&user.name} level={curLevel} chapterTitle={chap?.title} onContinue={exitToApp}/>):(
+        {sessionDone?(<SessionComplete points={roundPointsRef.current} dayStreak={dayStreak} name={user&&user.name} level={curLevel} chapterTitle={chap?.title} onContinue={exitToApp} userAvatar={user&&user.avatar}/>):(
           <div style={{position:"relative",width:"100%",maxWidth:360,height:470,margin:"0 auto"}}>
             {queue.slice(1,3).map((card,i)=>{const d=i+1;return(<div key={card.id} style={{position:"absolute",inset:0,transform:"translateY("+(d*13)+"px) scale("+(1-d*0.045)+")",zIndex:1}}><div style={{...cB,border:"1px solid "+C.line}}/></div>);})}
             {current&&(<div key={current.id} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} style={{position:"absolute",inset:0,zIndex:5,transform:topTf,transition:topTr,touchAction:"none",cursor:"grab"}}>
@@ -406,16 +448,16 @@ function App(){
   /* MAIN APP */
   if(screen==="app"&&tab==="mywords"&&cardsSubScreen){
     return(<Shell><StyleTag/>
-      <ChapterDetailScreen chapter={cardsSubScreen} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} onMark={toggleMark} onResult={(id,known)=>setLearnedIds(ids=>known?(ids.includes(id)?ids:[...ids,id]):ids.filter(x=>x!==id))} onBack={()=>setCardsSubScreen(null)} onDelete={deleteCard}/>
+      <ChapterDetailScreen chapter={cardsSubScreen} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} onMark={toggleMark} onResult={(id,known)=>{setLearnedIds(ids=>known?(ids.includes(id)?ids:[...ids,id]):ids.filter(x=>x!==id));setReviewIds(ids=>known?ids.filter(x=>x!==id):(ids.includes(id)?ids:[...ids,id]));}} onBack={()=>setCardsSubScreen(null)} onDelete={deleteCard}/>
       <TabBar tab={tab} setTab={t=>{setTab(t);setCardsSubScreen(null);}}/>
     </Shell>);
   }
 
   return(<Shell><StyleTag/>
-    <div style={{flex:1,overflowY:tab==="profile"?"hidden":"auto",WebkitOverflowScrolling:"touch",minHeight:0}}>
-      {tab==="dashboard"&&<Dashboard user={user} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} curLevel={curLevel} curChapter={curChapter} onLevelChapterSelect={(lv,ch)=>{setCurLevel(lv);setCurChapter(ch);}} onStart={startChapter} onStartReview={startReview} onStartMarked={startMarked} onOpenProfile={()=>setTab("profile")}/>}
+    <div ref={scrollRef} style={{flex:1,overflowY:tab==="profile"?"hidden":"auto",WebkitOverflowScrolling:"touch",minHeight:0}}>
+      {tab==="dashboard"&&<Dashboard user={user} allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} dayStreak={dayStreak} history={history} totalPoints={totalPoints} curLevel={curLevel} curChapter={curChapter} onLevelChapterSelect={(lv,ch)=>{setCurLevel(lv);setCurChapter(ch);}} onStart={startChapter} onStartReview={startReview} onStartMarked={startMarked} onOpenProfile={()=>setTab("profile")} scrollRef={scrollRef}/>}
       {tab==="stats"&&<StatsPage history={history} totalPoints={totalPoints} dayStreak={dayStreak} allCards={allCards} learnedIds={learnedIds}/>}
-      {tab==="mywords"&&<MyFlashcardsPage allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} curLevel={curLevel} curChapter={curChapter} onResult={(id,known)=>setLearnedIds(ids=>known?(ids.includes(id)?ids:[...ids,id]):ids.filter(x=>x!==id))} onMark={toggleMark} onAdd={addCard} onDelete={deleteCard} selectedLangs={selectedLangs} onOpenChapter={ch=>setCardsSubScreen(ch)}/>}
+      {tab==="mywords"&&<MyFlashcardsPage allCards={allCards} learnedIds={learnedIds} markedIds={markedIds} reviewIds={reviewIds} curLevel={curLevel} curChapter={curChapter} onResult={(id,known)=>{setLearnedIds(ids=>known?(ids.includes(id)?ids:[...ids,id]):ids.filter(x=>x!==id));setReviewIds(ids=>known?ids.filter(x=>x!==id):(ids.includes(id)?ids:[...ids,id]));}} onMark={toggleMark} onAdd={addCard} onDelete={deleteCard} selectedLangs={selectedLangs} onOpenChapter={ch=>setCardsSubScreen(ch)}/>}
       {tab==="friends"&&<FriendsPage currentUser={user} allUsers={allUsers} friends={friends} onAdd={addFriend} onRemove={removeFriend} onSendHeart={sendHeart} receivedHearts={receivedHearts}/>}
       {tab==="profile"&&<ProfilePage user={user} setUser={setUser} selectedLangs={selectedLangs} setSelectedLangs={setSelectedLangs} dayStreak={dayStreak} totalPoints={totalPoints} onLangsChanged={async langs=>{await initData(langs);}} onSignOut={signOut}/>}
     </div>
@@ -480,7 +522,7 @@ function TabBar({tab,setTab}){
 
 /* ── CARD FACES ── */
 function BookmarkBtn({marked,onMark,stop}){
-  return(<button onPointerDown={stop} onClick={e=>{stop(e);onMark();}} className="press" style={{width:38,height:38,borderRadius:12,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={marked?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:15,color:marked?C.primary:C.sub}}/></button>);
+  return(<button onPointerDown={stop} onClick={e=>{stop(e);onMark();}} className="press" style={{width:38,height:38,borderRadius:12,border:"1.5px solid "+(marked?C.primary:C.line),background:marked?C.primary:C.surface,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .15s ease"}}><i className={marked?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:15,color:marked?"#fff":C.sub}}/></button>);
 }
 function CardFront({card,marked,onMark,cB}){
   const m=langMeta[card.language];const stop=e=>e.stopPropagation();
@@ -523,7 +565,7 @@ function CardBack({card,marked,onMark,cB}){
 function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
   const[flipped,setFlipped]=useState(false);const[dragX,setDragX]=useState(0);const[dragging,setDragging]=useState(false);const[exitDir,setExitDir]=useState(null);
   const sx=useRef(0);const mv=useRef(false);const act=useRef(false);const lk=useRef(false);
-  const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden"};
+  const cB={width:"100%",height:"100%",borderRadius:28,background:C.surface,boxShadow:"0 16px 40px rgba(28,26,46,0.14)",position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",overflow:"hidden",fontFamily:FONT};
   const fin=dir=>{if(lk.current)return;lk.current=true;setExitDir(dir);setTimeout(()=>{onResult(card.id,dir==="right");onClose();},300);};
   const down=e=>{if(exitDir)return;act.current=true;mv.current=false;sx.current=e.clientX;setDragging(true);try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}};
   const move=e=>{if(!act.current||exitDir)return;const dx=e.clientX-sx.current;if(Math.abs(dx)>8)mv.current=true;setDragX(dx);};
@@ -531,7 +573,7 @@ function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
   const kh=Math.max(0,Math.min(1,dragX/100));const rh=Math.max(0,Math.min(1,-dragX/100));
   const tint=exitDir==="right"?{c:C.green,o:0.9,t:"DONE"}:exitDir==="left"?{c:C.red,o:0.9,t:"LATER"}:dragX>0?{c:C.green,o:kh*0.85,t:"DONE"}:dragX<0?{c:C.red,o:rh*0.85,t:"LATER"}:{c:C.green,o:0,t:""};
   const tf=exitDir?("translateX("+(exitDir==="right"?560:-560)+"px) rotate("+(exitDir==="right"?24:-24)+"deg)"):("translateX("+dragX+"px) rotate("+(dragX/24)+"deg)");
-  return(<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.55)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:210,padding:22}}>
+  return(<Portal><div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,18,40,0.55)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:410,padding:22}}>
     <button onClick={onClose} className="press" style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.92)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="xmark" size={17} color={C.ink}/></button>
     <div onClick={e=>e.stopPropagation()} className="card-pop" style={{width:"100%",maxWidth:330}}>
       <div style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",fontWeight:700,textAlign:"center",marginBottom:10}}>{learned?"Marked done — swipe to update":"Swipe right when you know it"}</div>
@@ -545,16 +587,28 @@ function FlashcardModal({card,learned,marked,onResult,onMark,onClose}){
         <button onClick={()=>fin("right")} className="press" style={actionBtn(C.green,56)}><Icon name="check" size={22} color="#fff"/></button>
       </div>
     </div>
-  </div>);
+  </div></Portal>);
 }
 
 /* ── DIALOGS ── */
 function StreakDialog({history,streak,onClose}){
-  const now=new Date();const year=now.getFullYear(),month=now.getMonth();const map={};history.forEach(d=>{map[d.date]=d.points;});
-  const sw=new Date(year,month,1).getDay();const dim=new Date(year,month+1,0).getDate();const cells=[];for(let i=0;i<sw;i++)cells.push(null);for(let d=1;d<=dim;d++){const ds=new Date(year,month,d).toISOString().slice(0,10);cells.push({d,active:(map[ds]||0)>0,today:d===now.getDate()});}
+  const now=new Date();
+  const[viewYear,setViewYear]=useState(now.getFullYear());
+  const[viewMonth,setViewMonth]=useState(now.getMonth());
+  const map={};history.forEach(d=>{map[d.date]=d.points;});
+  const sw=new Date(viewYear,viewMonth,1).getDay();const dim=new Date(viewYear,viewMonth+1,0).getDate();const cells=[];
+  for(let i=0;i<sw;i++)cells.push(null);
+  for(let d=1;d<=dim;d++){const ds=new Date(viewYear,viewMonth,d).toISOString().slice(0,10);cells.push({d,active:(map[ds]||0)>0,today:d===now.getDate()&&viewMonth===now.getMonth()&&viewYear===now.getFullYear()});}
+  const isCurrentMonth=viewYear===now.getFullYear()&&viewMonth===now.getMonth();
+  const goPrev=()=>{if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1);};
+  const goNext=()=>{if(!isCurrentMonth){if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1);}};
   return(<Sheet onClose={onClose} title="Your streak">
     <div style={{display:"flex",alignItems:"center",gap:10,background:C.amber+"14",border:"1px solid "+C.amber+"30",borderRadius:16,padding:"12px 16px",marginBottom:16}}><Icon name="fire" size={22} color={C.amber}/><div><div style={{fontSize:20,fontWeight:800,color:C.amber}}>{streak}-day streak</div><div style={{fontSize:12.5,color:C.sub,fontWeight:600}}>Keep practising daily!</div></div></div>
-    <div style={{fontSize:14,fontWeight:800,color:C.ink,marginBottom:10}}>{MONTHS[month]} {year}</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+      <button onClick={goPrev} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="chevron-left" size={13} color={C.ink}/></button>
+      <div style={{fontSize:15,fontWeight:800,color:C.ink}}>{MONTHS[viewMonth]} {viewYear}</div>
+      <button onClick={goNext} disabled={isCurrentMonth} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:isCurrentMonth?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:isCurrentMonth?0.3:1}}><Icon name="chevron-right" size={13} color={C.ink}/></button>
+    </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>{["S","M","T","W","T","F","S"].map((w,i)=><div key={i} style={{textAlign:"center",fontSize:11,fontWeight:800,color:C.sub}}>{w}</div>)}</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>{cells.map((c,i)=>(<div key={i} style={{aspectRatio:"1",display:"flex",alignItems:"center",justifyContent:"center"}}>{c&&<div style={{width:"84%",height:"84%",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12.5,fontWeight:700,background:c.active?C.amber:C.bg,color:c.active?"#fff":C.sub,boxShadow:c.today?"0 0 0 2.5px "+C.primary:"none"}}>{c.d}</div>}</div>))}</div>
   </Sheet>);
@@ -577,20 +631,44 @@ function LevelChapterPicker({curLevel,curChapter,onSelect,onClose}){
 }
 
 /* ── DASHBOARD ── */
-function Dashboard({user,allCards,learnedIds,markedIds,reviewIds,dayStreak,history,totalPoints,curLevel,curChapter,onLevelChapterSelect,onStart,onStartReview,onStartMarked,onOpenProfile}){
+function Dashboard({user,allCards,learnedIds,markedIds,reviewIds,dayStreak,history,totalPoints,curLevel,curChapter,onLevelChapterSelect,onStart,onStartReview,onStartMarked,onOpenProfile,scrollRef}){
   const chap=CHAPTERS[curLevel]?.find(c=>c.id===curChapter)||CHAPTERS[curLevel]?.[0];
   const chapCards=allCards.filter(c=>c.chapter===curChapter);
   const done=chapCards.filter(c=>learnedIds.includes(c.id)).length;
   const pct=chapCards.length?Math.round((done/chapCards.length)*100):0;
-  const pts=useCountUp(totalPoints);const streak=useCountUp(dayStreak);
+  const pts=useCountUp(totalPoints,"pts");const streak=useCountUp(dayStreak,"streak");
   const[dlg,setDlg]=useState(null);
   const reviewCount=allCards.filter(c=>reviewIds.includes(c.id)).length;
   const markedCount=allCards.filter(c=>markedIds.includes(c.id)).length;
   const lc=LEVEL_COLOR[curLevel];
 
+  /* scroll-driven scale: header grows as user scrolls down */
+  const headerRef=useRef(null);
+  useEffect(()=>{
+    const scroller=scrollRef?.current;
+    if(!scroller||!headerRef.current)return;
+    let raf=null;
+    const onScroll=()=>{
+      if(raf)return;
+      raf=requestAnimationFrame(()=>{
+        raf=null;
+        if(!headerRef.current)return;
+        const sy=scroller.scrollTop;
+        /* scale from 1.0 at top to 1.14 at 80px scrolled; clamp both ends */
+        const t=Math.min(1,sy/80);
+        const scale=1+t*0.14;
+        const opacity=1;
+        headerRef.current.style.transform="scale("+scale+")";
+        headerRef.current.style.transformOrigin="left center";
+      });
+    };
+    scroller.addEventListener("scroll",onScroll,{passive:true});
+    return()=>{scroller.removeEventListener("scroll",onScroll);if(raf)cancelAnimationFrame(raf);};
+  },[scrollRef]);
+
   return(<div style={{padding:"20px 20px 28px",display:"flex",flexDirection:"column",gap:14}}>
     {/* header */}
-    <div style={{display:"flex",alignItems:"center",gap:12}}>
+    <div ref={headerRef} style={{display:"flex",alignItems:"center",gap:12,transition:"transform .15s ease-out",willChange:"transform"}}>
       <button onClick={onOpenProfile} className="press" style={{border:"none",background:"transparent",padding:0,cursor:"pointer",flexShrink:0}}><Avatar seed={user&&user.avatar} size={46} ring={C.primary}/></button>
       <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,color:C.sub,fontWeight:600}}>Welcome back</div><h1 style={{fontSize:20,fontWeight:800,color:C.ink,margin:0,letterSpacing:-0.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cap((user&&user.name)||"there")} 👋</h1></div>
       <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -599,64 +677,87 @@ function Dashboard({user,allCards,learnedIds,markedIds,reviewIds,dayStreak,histo
       </div>
     </div>
 
-    {/* LEVEL CARD — single white card; level-colored chapter tiles + continue */}
-    <div style={{background:C.surface,borderRadius:22,border:"1px solid "+C.line,overflow:"hidden",boxShadow:"0 4px 20px rgba(28,26,46,0.06)"}}>
-      <div style={{padding:"18px 16px 16px"}}>
-        {/* level title */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-          <div>
-            <div style={{fontSize:11,color:lc.deep,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,opacity:0.7,marginBottom:3}}>Your level</div>
-            <div style={{fontSize:24,fontWeight:900,color:lc.deep,letterSpacing:-0.4}}>{LEVEL_LABEL[curLevel]}</div>
+    {/* LEVEL CARD */}
+    {(()=>{
+      const lvc2=allCards.filter(c=>c.level===curLevel);
+      const lvD=lvc2.filter(c=>learnedIds.includes(c.id)).length;
+      const lvP=lvc2.length?Math.round((lvD/lvc2.length)*100):0;
+      const li=LEVELS_ORDER.indexOf(curLevel);
+      const canPrev=li>0;const canNext=li<LEVELS_ORDER.length-1;
+      return(
+        <div style={{background:C.surface,borderRadius:24,border:"1px solid "+C.line,overflow:"hidden",boxShadow:"0 4px 24px rgba(28,26,46,0.07)"}}>
+          <div style={{padding:"22px 20px 20px"}}>
+            {/* Level nav */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <button onClick={canPrev?()=>onLevelChapterSelect(LEVELS_ORDER[li-1],CHAPTERS[LEVELS_ORDER[li-1]][0].id):undefined} disabled={!canPrev} className="press" style={{width:38,height:38,borderRadius:12,border:"1.5px solid "+C.line,background:C.surface,cursor:canPrev?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",opacity:canPrev?1:0.25,flexShrink:0}}><Icon name="chevron-left" size={15} color={C.ink}/></button>
+              <div style={{flex:1,textAlign:"center",padding:"0 12px"}}>
+                <div style={{fontSize:36,fontWeight:900,color:C.primary,letterSpacing:-2,lineHeight:1}}>{LEVEL_LABEL[curLevel]}</div>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginTop:4,letterSpacing:0.5}}>{lvD} of {lvc2.length} cards done</div>
+              </div>
+              <button onClick={canNext?()=>onLevelChapterSelect(LEVELS_ORDER[li+1],CHAPTERS[LEVELS_ORDER[li+1]][0].id):undefined} disabled={!canNext} className="press" style={{width:38,height:38,borderRadius:12,border:"1.5px solid "+C.line,background:C.surface,cursor:canNext?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",opacity:canNext?1:0.25,flexShrink:0}}><Icon name="chevron-right" size={15} color={C.ink}/></button>
+            </div>
+            {/* Level progress bar — thick, prominent */}
+            <div style={{marginBottom:22}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:12,fontWeight:700,color:C.sub}}>Level progress</span>
+                <span style={{fontSize:13,fontWeight:800,color:C.primary}}>{lvP}%</span>
+              </div>
+              <div style={{height:12,background:C.line,borderRadius:8,overflow:"hidden"}}>
+                <div style={{width:lvP+"%",height:"100%",borderRadius:8,background:"linear-gradient(90deg,"+C.primary+",#8B73F0)",transition:"width .8s cubic-bezier(.2,.8,.2,1)"}}/>
+              </div>
+            </div>
+            {/* Chapters */}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {CHAPTERS[curLevel].map((ch,i)=>{
+                const isCur=ch.id===curChapter;
+                const chCards=allCards.filter(c=>c.chapter===ch.id);
+                const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;
+                const chPct=chCards.length?Math.round((chDone/chCards.length)*100):0;
+                const icon=CHAPTER_ICONS[ch.id]||"book";
+                return(
+                  <button key={ch.id} onClick={()=>onLevelChapterSelect(curLevel,ch.id)} className="press"
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:16,border:"1.5px solid "+(isCur?C.primary:C.line),background:isCur?C.primarySoft:C.surface,boxShadow:isCur?"0 2px 12px "+C.primary+"22":"none",cursor:"pointer",textAlign:"left",fontFamily:FONT,transition:"all .2s"}}>
+                    <div style={{width:34,height:34,borderRadius:10,background:isCur?C.primary:C.line,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <Icon name={icon} size={15} color={isCur?"#fff":C.sub}/>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:isCur?800:600,color:isCur?C.primary:C.ink,marginBottom:6}}>{ch.title}</div>
+                      <div style={{height:4,background:isCur?"rgba(90,79,227,0.18)":C.line,borderRadius:3,overflow:"hidden"}}>
+                        <div style={{width:chPct+"%",height:"100%",borderRadius:3,background:isCur?C.primary:"#C4BFF0",transition:"width .8s cubic-bezier(.2,.8,.2,1)"}}/>
+                      </div>
+                    </div>
+                    <span style={{fontSize:12,fontWeight:800,color:isCur?C.primary:C.sub,flexShrink:0}}>{chPct}%</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{marginTop:18}}><PrimaryButton onClick={onStart}>Continue</PrimaryButton></div>
           </div>
-          <div style={{width:44,height:44,borderRadius:13,background:lc.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <span style={{fontSize:15,fontWeight:900,color:lc.deep}}>{curLevel}</span>
-          </div>
         </div>
-        {/* Chapters — selectable inline */}
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {CHAPTERS[curLevel].map((ch,i)=>{
-            const isCur=ch.id===curChapter;
-            const chCards=allCards.filter(c=>c.chapter===ch.id);
-            const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;
-            const chPct=chCards.length?Math.round((chDone/chCards.length)*100):0;
-            const icon=CHAPTER_ICONS[ch.id]||"book";
-            return(
-              <button key={ch.id} onClick={()=>onLevelChapterSelect(curLevel,ch.id)} className="press"
-                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 12px",borderRadius:14,border:"none",background:isCur?lc.deep:lc.bg,boxShadow:isCur?"0 5px 16px "+lc.bar+"4D":"none",cursor:"pointer",textAlign:"left",fontFamily:FONT,transition:"all .2s"}}>
-                <div style={{width:32,height:32,borderRadius:9,background:isCur?"rgba(255,255,255,0.22)":"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <Icon name={icon} size={15} color={isCur?"#fff":lc.deep}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:isCur?800:700,color:isCur?"#fff":lc.deep,marginBottom:5}}>{ch.title}</div>
-                  <div style={{height:5,background:isCur?"rgba(255,255,255,0.28)":lc.bar+"33",borderRadius:3,overflow:"hidden"}}>
-                    <div style={{width:chPct+"%",height:"100%",borderRadius:3,background:isCur?"#fff":lc.bar,transition:"width .8s cubic-bezier(.2,.8,.2,1)"}}/>
-                  </div>
-                </div>
-                <span style={{fontSize:11.5,fontWeight:800,color:isCur?"#fff":lc.deep,flexShrink:0}}>{chPct}%</span>
-              </button>
-            );
-          })}
+      );
+    })()}
+    {/* review — side by side cards */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <button onClick={reviewCount>0?onStartReview:undefined} className="press" style={{background:reviewCount>0?C.redSoft:"#FFF8F8",border:"1.5px solid "+(reviewCount>0?C.red+"44":"#FDDCDC"),borderRadius:18,padding:"16px 14px",cursor:reviewCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{width:38,height:38,borderRadius:11,background:reviewCount>0?C.red+"22":"#FDDCDC",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="rotate-left" size={17} color={reviewCount>0?C.red:"#E8A0A0"}/></div>
+        <div>
+          {reviewCount>0
+            ? <><div style={{fontSize:28,fontWeight:900,color:C.red,letterSpacing:-1,lineHeight:1}}>{reviewCount}</div><div style={{fontSize:12.5,fontWeight:700,color:C.ink,marginTop:3}}>to review</div><div style={{fontSize:11,color:C.sub,marginTop:2}}>Tap to practice</div></>
+            : <><div style={{fontSize:13,fontWeight:800,color:"#C07070",lineHeight:1.3}}>All clear!</div><div style={{fontSize:11,color:C.sub,marginTop:3}}>No unknown cards right now</div></>
+          }
         </div>
-        {/* continue */}
-        <div style={{marginTop:16}}>
-          <PrimaryButton onClick={onStart}>Continue</PrimaryButton>
-        </div>
-      </div>
-    </div>
-
-    {/* review cards */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      <button onClick={reviewCount>0?onStartReview:undefined} className="press" style={{background:reviewCount>0?C.redSoft:C.bg,border:"1.5px solid "+(reviewCount>0?C.red+"44":C.line),borderRadius:18,padding:"16px 14px",cursor:reviewCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10,opacity:reviewCount===0?0.6:1}}>
-        <div style={{width:40,height:40,borderRadius:12,background:reviewCount>0?C.red+"20":C.line,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="rotate-left" size={18} color={reviewCount>0?C.red:C.sub}/></div>
-        <div><div style={{fontSize:22,fontWeight:900,color:reviewCount>0?C.red:C.sub,letterSpacing:-0.5,lineHeight:1}}>{reviewCount}</div><div style={{fontSize:12.5,fontWeight:700,color:reviewCount>0?C.ink:C.sub,marginTop:2}}>Unknown</div><div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div></div>
       </button>
-      <button onClick={markedCount>0?onStartMarked:undefined} className="press" style={{background:markedCount>0?C.primarySoft:C.bg,border:"1.5px solid "+(markedCount>0?C.primary+"44":C.line),borderRadius:18,padding:"16px 14px",cursor:markedCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10,opacity:markedCount===0?0.6:1}}>
-        <div style={{width:40,height:40,borderRadius:12,background:markedCount>0?C.primary+"20":C.line,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="bookmark" size={18} color={markedCount>0?C.primary:C.sub}/></div>
-        <div><div style={{fontSize:22,fontWeight:900,color:markedCount>0?C.primary:C.sub,letterSpacing:-0.5,lineHeight:1}}>{markedCount}</div><div style={{fontSize:12.5,fontWeight:700,color:markedCount>0?C.ink:C.sub,marginTop:2}}>Marked</div><div style={{fontSize:11,color:C.sub,marginTop:1}}>cards to review</div></div>
+      <button onClick={markedCount>0?onStartMarked:undefined} className="press" style={{background:markedCount>0?C.primarySoft:"#F5F4FF",border:"1.5px solid "+(markedCount>0?C.primary+"44":"#D8D4F5"),borderRadius:18,padding:"16px 14px",cursor:markedCount>0?"pointer":"default",textAlign:"left",fontFamily:FONT,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{width:38,height:38,borderRadius:11,background:markedCount>0?C.primary+"18":"#D8D4F5",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="bookmark" size={17} color={markedCount>0?C.primary:"#A098D8"}/></div>
+        <div>
+          {markedCount>0
+            ? <><div style={{fontSize:28,fontWeight:900,color:C.primary,letterSpacing:-1,lineHeight:1}}>{markedCount}</div><div style={{fontSize:12.5,fontWeight:700,color:C.ink,marginTop:3}}>bookmarked</div><div style={{fontSize:11,color:C.sub,marginTop:2}}>Tap to practice</div></>
+            : <><div style={{fontSize:13,fontWeight:800,color:"#7068B0",lineHeight:1.3}}>Nothing yet</div><div style={{fontSize:11,color:C.sub,marginTop:3}}>Bookmark cards during sessions</div></>
+          }
+        </div>
       </button>
     </div>
-
-    {dlg==="streak"&&<StreakDialog history={history} streak={dayStreak} onClose={()=>setDlg(null)}/>}
+        {dlg==="streak"&&<StreakDialog history={history} streak={dayStreak} onClose={()=>setDlg(null)}/>}
     {dlg==="points"&&<PointsDialog points={totalPoints} onClose={()=>setDlg(null)}/>}
   </div>);
 }
@@ -707,63 +808,92 @@ function MyFlashcardsPage({allCards,learnedIds,markedIds,reviewIds,curLevel,curC
   const[group,setGroup]=useState("level");const[expandedLevel,setExpandedLevel]=useState(curLevel);const[q,setQ]=useState("");const[open,setOpen]=useState(null);const[adding,setAdding]=useState(false);
   const customCards=allCards.filter(c=>c.custom);const markedCards=allCards.filter(c=>markedIds.includes(c.id));const reviewCards=allCards.filter(c=>reviewIds.includes(c.id));
   const langsPresent=["fa","de"].filter(l=>allCards.some(c=>c.language===l));const s=q.trim().toLowerCase();
-  const CardRow=({c})=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const mkd=markedIds.includes(c.id);return(
+  const CardRow=({c})=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const rv=reviewIds.includes(c.id);const mkd=markedIds.includes(c.id);const badge=dn?{label:"Done",color:C.green,bg:C.greenSoft}:rv?{label:"Unknown",color:C.red,bg:C.redSoft}:{label:"New",color:C.sub,bg:C.bg};return(
     <div onClick={()=>setOpen(c)} style={{display:"flex",alignItems:"center",gap:10,background:"#FBFAFF",border:"1px solid "+C.line,borderRadius:14,padding:"11px 12px",cursor:"pointer"}}>
       <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();speak(sayWordOf(c),m.ttsLang);}} className="press" style={{width:30,height:30,borderRadius:"50%",border:"none",cursor:"pointer",background:m.color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={13} color={m.color}/></button>
       <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.word}</div><div style={{fontSize:12,color:C.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.translation}</div></div>
-      <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?C.primary:C.sub}}/></button>
-      <span style={{fontSize:11,fontWeight:700,color:dn?C.green:C.sub,background:dn?C.greenSoft:C.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{dn?"Done":"Later"}</span>
+      <span style={{fontSize:11,fontWeight:700,color:badge.color,background:badge.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{badge.label}</span>
+      <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+(mkd?C.primary:C.line),background:mkd?C.primary:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .15s ease"}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?"#fff":C.sub}}/></button>
       {c.custom&&<button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(c.id);}} className="press" style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><Icon name="xmark" size={13} color={C.sub}/></button>}
     </div>);};
   const groupTabs=[{k:"level",label:"By Level",count:null},{k:"marked",label:"Marked",count:markedCards.length},{k:"review",label:"Review",count:reviewCards.length},{k:"mine",label:"Mine",count:customCards.length}];
-  const fc=cards=>s?cards.filter(c=>c.word.toLowerCase().includes(s)||(c.translation||"").toLowerCase().includes(s)):cards;
+  const fc=cards=>s?cards.filter(c=>c.word.toLowerCase().includes(s)||(c.translation||"").toLowerCase().includes(s)||(c.farsi||"").includes(q.trim())):cards;
   return(<div style={{padding:"24px 20px 28px",display:"flex",flexDirection:"column",gap:14}}>
     <h1 style={{fontSize:24,fontWeight:800,color:C.ink,margin:0,letterSpacing:-0.6}}>My Flashcards</h1>
     <button onClick={()=>setAdding(true)} className="press" style={{padding:14,borderRadius:16,border:"2px dashed "+C.primary+"55",background:C.primarySoft,color:C.primary,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="plus" size={14} color={C.primary}/> Add a flashcard</button>
     <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:2}}>{groupTabs.map(gt=>{const on=group===gt.k;return(<button key={gt.k} onClick={()=>setGroup(gt.k)} className="press" style={{flexShrink:0,padding:"8px 12px",borderRadius:13,border:"1.5px solid "+(on?C.primary:C.line),background:on?C.primary:C.surface,color:on?"#fff":C.sub,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",gap:6}}>{gt.label}{gt.count!=null&&<span style={{background:on?"rgba(255,255,255,0.2)":C.line,borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:700,color:on?"#fff":C.sub}}>{gt.count}</span>}</button>);})}</div>
     <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={14} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search flashcards…" style={{width:"100%",padding:"11px 14px 11px 38px",fontSize:14.5,borderRadius:13,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
-    {group==="level"&&(<div style={{display:"flex",flexDirection:"column",gap:10}}>{LEVELS_ORDER.map(lv=>{const expanded=expandedLevel===lv;const lci=LEVEL_COLOR[lv];const lvCards=allCards.filter(c=>!c.custom&&c.level===lv);const lvDone=lvCards.filter(c=>learnedIds.includes(c.id)).length;return(<div key={lv} style={{background:C.surface,borderRadius:18,border:"1px solid "+C.line,overflow:"hidden"}}>
-      <button onClick={()=>setExpandedLevel(expanded?null:lv)} className="press" style={{width:"100%",padding:"13px 16px",border:"none",background:"transparent",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-        <div style={{width:36,height:36,borderRadius:10,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:lci.text,flexShrink:0}}>{lv}</div>
-        <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{LEVEL_LABEL[lv]}</div><div style={{fontSize:12,color:C.sub}}>{lvDone}/{lvCards.length} done</div></div>
-        <Icon name={expanded?"chevron-up":"chevron-down"} size={14} color={C.sub}/>
-      </button>
-      {expanded&&(<div style={{borderTop:"1px solid "+C.line}}>{CHAPTERS[lv].map((ch,ci)=>{const chCards=allCards.filter(c=>!c.custom&&c.chapter===ch.id);const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;const icon=CHAPTER_ICONS[ch.id]||"book";return(<button key={ch.id} onClick={()=>onOpenChapter({level:lv,chapterId:ch.id,title:ch.title})} className="press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 16px",background:C.surface,border:"none",borderBottom:ci<CHAPTERS[lv].length-1?"1px solid "+C.line:"none",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
-        <div style={{width:30,height:30,borderRadius:9,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={14} color={lci.text}/></div>
-        <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:11.5,color:C.sub}}>{chDone}/{chCards.length} done</div></div>
-        <Icon name="chevron-right" size={13} color={C.sub}/>
-      </button>);})}</div>)}
-    </div>);})}
-    </div>)}
+    {group==="level"&&(
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {s
+          ? (fc(allCards.filter(c=>!c.custom)).length===0
+              ? <div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>No matches.</div>
+              : fc(allCards.filter(c=>!c.custom)).map(c=><CardRow key={c.id} c={c}/>)
+            )
+          : LEVELS_ORDER.map(lv=>{
+              const expanded=expandedLevel===lv;
+              const lci=LEVEL_COLOR[lv];
+              const lvCards=allCards.filter(c=>!c.custom&&c.level===lv);
+              const lvDone=lvCards.filter(c=>learnedIds.includes(c.id)).length;
+              return(
+                <div key={lv} style={{background:C.surface,borderRadius:18,border:"1px solid "+C.line,overflow:"hidden"}}>
+                  <button onClick={()=>setExpandedLevel(expanded?null:lv)} className="press" style={{width:"100%",padding:"13px 16px",border:"none",background:"transparent",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
+                    <div style={{width:36,height:36,borderRadius:10,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:lci.text,flexShrink:0}}>{lv}</div>
+                    <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800,color:C.ink}}>{LEVEL_LABEL[lv]}</div><div style={{fontSize:12,color:C.sub}}>{lvDone}/{lvCards.length} done</div></div>
+                    <Icon name={expanded?"chevron-up":"chevron-down"} size={14} color={C.sub}/>
+                  </button>
+                  {expanded&&(
+                    <div style={{borderTop:"1px solid "+C.line}}>
+                      {CHAPTERS[lv].map((ch,ci)=>{
+                        const chCards=allCards.filter(c=>!c.custom&&c.chapter===ch.id);
+                        const chDone=chCards.filter(c=>learnedIds.includes(c.id)).length;
+                        const icon=CHAPTER_ICONS[ch.id]||"book";
+                        return(
+                          <button key={ch.id} onClick={()=>onOpenChapter({level:lv,chapterId:ch.id,title:ch.title})} className="press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 16px",background:C.surface,border:"none",borderBottom:ci<CHAPTERS[lv].length-1?"1px solid "+C.line:"none",cursor:"pointer",fontFamily:FONT,textAlign:"left"}}>
+                            <div style={{width:30,height:30,borderRadius:9,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={14} color={lci.text}/></div>
+                            <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.ink}}>{ch.title}</div><div style={{fontSize:11.5,color:C.sub}}>{chDone}/{chCards.length} done</div></div>
+                            <Icon name="chevron-right" size={13} color={C.sub}/>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+        }
+      </div>
+    )}
     {group==="marked"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(markedCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>Bookmark cards during sessions to find them here.</div>:fc(markedCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
     {group==="review"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(reviewCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>Cards you swipe left will appear here.</div>:fc(reviewCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
     {group==="mine"&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{fc(customCards).length===0?<div style={{color:C.sub,fontSize:13.5,textAlign:"center",padding:"18px 0"}}>No custom cards yet.</div>:fc(customCards).map(c=><CardRow key={c.id} c={c}/>)}</div>}
-    {adding&&<AddWordModal selectedLangs={langsPresent} curLevel={curLevel} curChapter={curChapter} onClose={()=>setAdding(false)} onAdd={addCard}/>}
+    {adding&&<AddWordModal selectedLangs={langsPresent} curLevel={curLevel} curChapter={curChapter} onClose={()=>setAdding(false)} onAdd={onAdd}/>}
     {open&&<FlashcardModal card={open} learned={learnedIds.includes(open.id)} marked={markedIds.includes(open.id)} onResult={onResult} onMark={()=>onMark(open.id)} onClose={()=>setOpen(null)}/>}
   </div>);
 }
 
 /* ── CHAPTER DETAIL ── */
-function ChapterDetailScreen({chapter,allCards,learnedIds,markedIds,onMark,onResult,onBack,onDelete}){
+function ChapterDetailScreen({chapter,allCards,learnedIds,markedIds,reviewIds,onMark,onResult,onBack,onDelete}){
   const[q,setQ]=useState("");const[open,setOpen]=useState(null);
   const chCards=allCards.filter(c=>c.chapter===chapter.chapterId);const s=q.trim().toLowerCase();
   const filtered=s?chCards.filter(c=>c.word.toLowerCase().includes(s)||(c.translation||"").toLowerCase().includes(s)):chCards;
-  const done=chCards.filter(c=>learnedIds.includes(c.id)).length;const lci=LEVEL_COLOR[chapter.level];const icon=CHAPTER_ICONS[chapter.chapterId]||"book";
+  const done=chCards.filter(c=>learnedIds.includes(c.id)).length;const lci=LEVEL_COLOR[chapter.level];
   return(<div style={{flex:1,overflowY:"auto",minHeight:0}}>
     <div style={{padding:"18px 20px 28px",display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <button onClick={onBack} className="press" style={{width:42,height:42,borderRadius:13,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="arrow-left" size={16} color={C.ink}/></button>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,color:C.sub,fontWeight:600}}>{LEVEL_LABEL[chapter.level]}</div><h1 style={{fontSize:19,fontWeight:800,color:C.ink,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{chapter.title}</h1></div>
-        <div style={{width:42,height:42,borderRadius:13,background:lci.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={icon} size={18} color={lci.text}/></div>
       </div>
       <div style={{fontSize:13,color:C.sub,fontWeight:600}}>{done}/{chCards.length} cards done</div>
       <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={14} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…" style={{width:"100%",padding:"11px 14px 11px 38px",fontSize:14.5,borderRadius:13,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
-      <div style={{display:"flex",flexDirection:"column",gap:9}}>{filtered.length===0?<div style={{color:C.sub,fontSize:13,textAlign:"center",padding:"18px 0"}}>No matches.</div>:filtered.map(c=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const mkd=markedIds.includes(c.id);return(
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>{filtered.length===0?<div style={{color:C.sub,fontSize:13,textAlign:"center",padding:"18px 0"}}>No matches.</div>:filtered.map(c=>{const m=langMeta[c.language];const dn=learnedIds.includes(c.id);const rv=reviewIds&&reviewIds.includes(c.id);const mkd=markedIds.includes(c.id);
+        const badge=dn?{label:"Done",color:C.green,bg:C.greenSoft}:rv?{label:"Unknown",color:C.red,bg:C.redSoft}:{label:"New",color:C.sub,bg:C.bg};
+        return(
         <div key={c.id} onClick={()=>setOpen(c)} style={{display:"flex",alignItems:"center",gap:10,background:"#FBFAFF",border:"1px solid "+C.line,borderRadius:14,padding:"11px 12px",cursor:"pointer"}}>
           <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();speak(sayWordOf(c),m.ttsLang);}} className="press" style={{width:30,height:30,borderRadius:"50%",border:"none",cursor:"pointer",background:m.color+"1A",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="volume-high" size={13} color={m.color}/></button>
           <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,color:C.ink,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.word}</div><div style={{fontSize:12,color:C.sub}}>{c.translation}</div></div>
-          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+C.line,background:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?C.primary:C.sub}}/></button>
-          <span style={{fontSize:11,fontWeight:700,color:dn?C.green:C.sub,background:dn?C.greenSoft:C.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{dn?"Done":"Later"}</span>
+          <span style={{fontSize:11,fontWeight:700,color:badge.color,background:badge.bg,padding:"3px 8px",borderRadius:8,flexShrink:0}}>{badge.label}</span>
+          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMark(c.id);}} className="press" style={{width:34,height:34,borderRadius:10,border:"1.5px solid "+(mkd?C.primary:C.line),background:mkd?C.primary:C.surface,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .15s ease"}}><i className={mkd?"fa-solid fa-bookmark":"fa-regular fa-bookmark"} style={{fontSize:13,color:mkd?"#fff":C.sub}}/></button>
           {c.custom&&<button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(c.id);}} className="press" style={{background:"transparent",border:"none",cursor:"pointer",padding:4}}><Icon name="xmark" size={13} color={C.sub}/></button>}
         </div>);})}
       </div>
@@ -777,25 +907,74 @@ function AddWordModal({selectedLangs,curLevel,curChapter,onClose,onAdd}){
   const[lang,setLang]=useState(selectedLangs[0]||"fa");
   const[tg,setTg]=useState("mine");const[tl,setTl]=useState(curLevel);const[tc,setTc]=useState(curChapter);
   const[f,setF]=useState({word:"",translation:"",pron:"",example:"",exampleTranslation:"",farsi:"",farsiExample:""});
-  const set=k=>v=>setF(p=>({...p,[k]:v}));const[auto,setAuto]=useState("idle");
-  const autofill=async()=>{
-    if(!f.word.trim()||auto==="loading")return;setAuto("loading");
-    try{
-      const sys="You are a language flashcard assistant. Respond ONLY with a valid JSON object, no markdown, no backticks, no explanation.";
-      const prompt='Create a flashcard for the word "'+f.word.trim()+'" in '+(lang==="fa"?"Persian (respond with Finglish=Latin transliteration, AND farsi=actual Persian script)":"German")+'. Return ONLY this JSON structure: {"word":"the word in '+(lang==="fa"?"Finglish":"German with article if noun")+' ","pron":"pronunciation guide","translation":"English meaning","example":"one example sentence in '+(lang==="fa"?"Finglish":"German")+'","exampleTranslation":"English translation of example","note":"part of speech"'+(lang==="fa"?',"farsi":"word in Persian script","farsiExample":"example in Persian script"':'')+'}';
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system:sys,messages:[{role:"user",content:prompt}]})});
-      if(!res.ok)throw new Error("api error "+res.status);
-      const data=await res.json();
-      const rawText=(data.content||[]).map(b=>b.type==="text"?b.text:"").join("").trim();
-      // Strip any markdown fences
-      const jsonText=rawText.replace(/^```[a-z]*\n?/,"").replace(/\n?```$/,"").trim();
-      let obj;
-      try{obj=JSON.parse(jsonText);}catch(_){const m=jsonText.match(/\{[\s\S]*\}/);if(!m)throw new Error("parse");obj=JSON.parse(m[0]);}
-      setF(prev=>({...prev,word:obj.word||prev.word,translation:obj.translation||"",pron:obj.pron||"",example:obj.example||"",exampleTranslation:obj.exampleTranslation||"",farsi:obj.farsi||"",farsiExample:obj.farsiExample||""}));
-      setAuto("done");
-    }catch(e){console.error("autofill error",e);setAuto("error");}
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+  const[auto,setAuto]=useState("idle");
+
+  /* MyMemory free translation — no key needed */
+  const myMemoryTranslate=async(text,from,to)=>{
+    const url="https://api.mymemory.translated.net/get?q="+encodeURIComponent(text)+"&langpair="+from+"%7C"+to+"&de=memzy@app.com";
+    const r=await fetch(url);
+    if(!r.ok)throw new Error("net "+r.status);
+    const d=await r.json();
+    if(d.responseStatus!==200)throw new Error("status "+d.responseStatus);
+    const t=(d.responseData?.translatedText||"").trim();
+    if(!t||t.toUpperCase()===text.toUpperCase())throw new Error("no result");
+    return t;
   };
-  const canAdd=f.word.trim()&&f.translation.trim();
+
+  /* Simple pronunciation hint from romanized input */
+  const makePron=word=>{
+    const syllables=word.toLowerCase().replace(/([bcdfghjklmnpqrstvwxyz]+)([aeiouâêîôûäöü]+)/g,"$1$2-").replace(/-$/,"");
+    return syllables||word.toLowerCase();
+  };
+
+  const autofill=async()=>{
+    if(!f.word.trim()||auto==="loading")return;
+    setAuto("loading");
+    try{
+      const word=f.word.trim();
+      const srcLang=lang==="fa"?"fa":"de";
+
+      // Translate word → English
+      const translationEn=await myMemoryTranslate(word,srcLang,"en");
+
+      // For Persian: get Farsi script by translating the English back → fa
+      let farsi="";
+      if(lang==="fa"){
+        try{farsi=await myMemoryTranslate(translationEn,"en","fa");}catch(_){}
+      }
+
+      // Pronunciation: simple syllable hint from the romanized word the user typed
+      const pron=makePron(word);
+
+      // Example sentence templates — varied, natural-sounding sentences
+      const exTemplates=lang==="fa"
+        ?[{ex:"Emrooz "+word+" kharidam.",exFa:"امروز "+(farsi||word)+" خریدم.",exEn:"I bought "+translationEn+" today."},
+          {ex:word+" ro doost daram.",exFa:(farsi||word)+" رو دوست دارم.",exEn:"I love "+translationEn+"."},
+          {ex:"Mishe "+word+" dadasht?",exFa:"میشه "+(farsi||word)+" داشت؟",exEn:"Can you have "+translationEn+"?"},
+          {ex:word+" baraye man mohem-e.",exFa:(farsi||word)+" برام مهمه.",exEn:translationEn+" is important to me."},
+          {ex:"Oon "+word+" bood ke didam.",exFa:"اون "+(farsi||word)+" بود که دیدم.",exEn:"It was the "+translationEn+" I saw."}]
+        :[{ex:"Gestern habe ich "+word+" gesehen.",exEn:"Yesterday I saw "+translationEn+"."},
+          {ex:"Kannst du mir "+word+" erklären?",exEn:"Can you explain "+translationEn+" to me?"},
+          {ex:"Ohne "+word+" geht es nicht.",exEn:"Without "+translationEn+" it doesn't work."},
+          {ex:"Ich denke oft an "+word+".",exEn:"I often think about "+translationEn+"."},
+          {ex:word+" hat mich überrascht.",exEn:translationEn+" surprised me."}];
+      const ex=exTemplates[Math.floor(Math.random()*exTemplates.length)];
+
+      setF(prev=>({
+        ...prev,
+        translation:translationEn,
+        pron:pron,
+        example:ex.ex,
+        exampleTranslation:ex.exEn,
+        farsi:farsi||prev.farsi,
+        farsiExample:ex.exFa||prev.farsiExample,
+      }));
+      setAuto("done");
+    }catch(e){console.error("autofill:",e);setAuto("error");}
+  };
+
+  const canAdd=f.word.trim()&&f.translation.trim()&&(lang!=="fa"||f.farsi.trim());
   const add=()=>{if(!canAdd)return;onAdd({id:"u"+Date.now(),language:lang,level:tg==="mine"?"custom":tl,chapter:tg==="mine"?"custom":tc,word:f.word.trim(),translation:f.translation.trim(),pron:f.pron.trim(),example:f.example.trim(),exampleTranslation:f.exampleTranslation.trim(),note:"added by you",farsi:f.farsi.trim(),farsiExample:f.farsiExample.trim(),custom:tg==="mine"});onClose();};
   const inp={width:"100%",marginTop:5,padding:"11px 13px",fontSize:14.5,borderRadius:12,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"};
   const lbl={fontSize:12.5,fontWeight:700,color:C.sub,display:"block",marginTop:12};
@@ -809,15 +988,13 @@ function AddWordModal({selectedLangs,curLevel,curChapter,onClose,onAdd}){
     <button onClick={autofill} disabled={!f.word.trim()||auto==="loading"} className="press" style={{width:"100%",marginTop:10,padding:11,borderRadius:12,border:"1.5px solid "+C.primary+"55",background:C.primarySoft,color:C.primary,fontWeight:800,fontSize:14,cursor:f.word.trim()?"pointer":"default",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
       {auto==="loading"?<><span className="spinner"/> Auto-filling…</>:<><Icon name="wand-magic-sparkles" size={14} color={C.primary}/> Auto-fill</>}
     </button>
-    {auto==="done"&&<div style={{fontSize:12,color:C.green,marginTop:6,fontWeight:600}}>Filled in — edit if needed.</div>}
-    {auto==="error"&&<div style={{fontSize:12,color:C.red,marginTop:6,fontWeight:600}}>Auto-fill failed. Please fill in manually below.</div>}
+    {auto==="done"&&<div style={{fontSize:12,color:C.green,marginTop:6,fontWeight:600}}>✓ Filled in — review and edit if needed.</div>}
+    {auto==="error"&&<div style={{fontSize:12,color:C.red,marginTop:6,fontWeight:600}}>Couldn't auto-fill — check spelling or fill in manually.</div>}
     <label style={lbl}>Translation (English)</label><input value={f.translation} onChange={e=>set("translation")(e.target.value)} placeholder="e.g. the apple" style={inp}/>
     <label style={lbl}>Pronunciation (optional)</label><input value={f.pron} onChange={e=>set("pron")(e.target.value)} placeholder="e.g. dair AP-fel" style={inp}/>
     <label style={lbl}>Example sentence (optional)</label><input value={f.example} onChange={e=>set("example")(e.target.value)} placeholder="a short sentence" style={inp}/>
     <label style={lbl}>Example translation (optional)</label><input value={f.exampleTranslation} onChange={e=>set("exampleTranslation")(e.target.value)} placeholder="its translation" style={inp}/>
-    {lang==="fa"&&<><label style={lbl}>Farsi script (optional)</label><input value={f.farsi} onChange={e=>set("farsi")(e.target.value)} placeholder="e.g. مهربون" dir="rtl" style={inp}/></>}
-    <label style={lbl}>Save to group</label>
-    {/* openUp=true so dropdown opens upward, not clipped by sheet bottom */}
+    {lang==="fa"&&<><label style={lbl}>Farsi script <span style={{color:C.red}}>*</span></label><input value={f.farsi} onChange={e=>set("farsi")(e.target.value)} placeholder="e.g. مهربون" dir="rtl" style={{...inp,border:"1.5px solid "+(f.farsi.trim()?C.line:C.red+"66")}}/>{!f.farsi.trim()&&<div style={{fontSize:11.5,color:C.red,marginTop:3,fontWeight:600}}>Required for Persian cards</div>}</>}    <label style={lbl}>Save to group</label>
     <div style={{marginTop:5}}>
       <AppSelect value={tg==="mine"?"mine":(tl+"|"+tc)} onChange={v=>{if(v==="mine"){setTg("mine");}else{const[lv,ch]=v.split("|");setTg("level");setTl(lv);setTc(ch);}}} options={groupOpts} openUp={true}/>
     </div>
@@ -827,12 +1004,47 @@ function AddWordModal({selectedLangs,curLevel,curChapter,onClose,onAdd}){
 
 /* ── FRIENDS ── */
 function FriendsPage({currentUser,allUsers,friends,onAdd,onRemove,onSendHeart,receivedHearts}){
-  const[q,setQ]=useState("");const[sel,setSel]=useState(null);const[showHearts,setShowHearts]=useState(false);const[friendTab,setFriendTab]=useState("discover");
+  const[q,setQ]=useState("");const[sel,setSel]=useState(null);const[showHearts,setShowHearts]=useState(false);const[tab,setTab]=useState("discover");
   const myFriends=allUsers.filter(u=>friends.includes(u.id));
   const discover=allUsers.filter(u=>!friends.includes(u.id)&&(!q||u.name.toLowerCase().includes(q.toLowerCase())));
   const filteredFriends=myFriends.filter(u=>!q||u.name.toLowerCase().includes(q.toLowerCase()));
-  const leaderboard=[...allUsers].sort((a,b)=>b.weekPts-a.weekPts);
   const MEDAL=["#F59E0B","#94A3B8","#CD7F32"];
+
+  const meEntry=currentUser?{id:"__me__",name:cap(currentUser.name||"You"),avatar:currentUser.avatar,weekPts:0,streak:0,points:0,activeDays:0,bestDay:0,_isMe:true}:null;
+
+  const everyoneBoard=useMemo(()=>{
+    const base=[...allUsers];
+    if(meEntry&&!base.some(u=>u.name===meEntry.name))base.push(meEntry);
+    return base.sort((a,b)=>b.weekPts-a.weekPts);
+  },[allUsers,meEntry]);
+
+  const friendsBoard=useMemo(()=>{
+    const base=allUsers.filter(u=>friends.includes(u.id));
+    if(meEntry&&!base.some(u=>u.name===meEntry.name))base.push(meEntry);
+    return base.sort((a,b)=>b.weekPts-a.weekPts);
+  },[allUsers,friends,meEntry]);
+
+  const LeaderRow=({u,i,total})=>{
+    const medal=i<3?MEDAL[i]:null;
+    const isMe=u._isMe||(currentUser&&u.name===cap(currentUser.name||""));
+    return(
+      <div onClick={()=>!u._isMe&&setSel(u)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderBottom:i<total-1?"1px solid "+C.line:"none",background:isMe?"linear-gradient(135deg,"+C.primary+"12,"+C.primary+"06)":"transparent",cursor:u._isMe?"default":"pointer"}}>
+        <div style={{width:26,height:26,borderRadius:"50%",background:medal||C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,color:medal?"#fff":C.sub,flexShrink:0,border:medal?"none":"1.5px solid "+C.line}}>{i<3?<Icon name="trophy" size={11} color="#fff"/>:i+1}</div>
+        <Avatar seed={u.avatar} size={34}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.ink}}>{u.name}{isMe&&<span style={{fontSize:11,color:C.primary,fontWeight:700,marginLeft:5}}>· You</span>}</div>
+          <div style={{fontSize:11,color:C.sub}}>{u.streak||0}d streak</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:15,fontWeight:800,color:medal?medal:C.ink}}>{u.weekPts||0}</div>
+          <div style={{fontSize:10,color:C.sub}}>pts</div>
+        </div>
+      </div>
+    );
+  };
+
+  const tabs=[{k:"discover",label:"Discover",icon:"magnifying-glass"},{k:"everyone",label:"Everyone",icon:"globe"},{k:"friends",label:"Friends",icon:"users"}];
+
   return(<div style={{padding:"24px 20px 28px",display:"flex",flexDirection:"column",gap:12}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <h1 style={{fontSize:24,fontWeight:800,color:C.ink,margin:0}}>Friends</h1>
@@ -841,31 +1053,29 @@ function FriendsPage({currentUser,allUsers,friends,onAdd,onRemove,onSendHeart,re
         {receivedHearts.length>0&&<div style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:"#fff"}}>{receivedHearts.length>9?"9+":receivedHearts.length}</div>}
       </button>
     </div>
-    {/* tabs — styled clearly */}
-    <div style={{display:"flex",gap:8}}>
-      {[{k:"discover",label:"Discover"},{k:"leaderboard",label:"Leaderboard"}].map(t=>{const on=friendTab===t.k;return(<button key={t.k} onClick={()=>setFriendTab(t.k)} className="press" style={{flex:1,padding:"11px",borderRadius:13,border:"1.5px solid "+(on?C.primary:C.line),cursor:"pointer",background:on?C.primary:C.surface,color:on?"#fff":C.ink,fontWeight:700,fontSize:14,fontFamily:FONT}}>{t.label}</button>);})}
-    </div>
 
-    {friendTab==="discover"&&(<>
+    {/* single 3-tab bar */}
+    <div style={{display:"flex",background:C.bg,borderRadius:14,padding:3,gap:0}}>
+      {tabs.map(t=>{const on=tab===t.k;return(<button key={t.k} onClick={()=>setTab(t.k)} className="press" style={{flex:1,padding:"9px 6px",borderRadius:11,border:"none",cursor:"pointer",background:on?C.surface:"transparent",color:on?C.primary:C.sub,fontWeight:800,fontSize:12.5,fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:5,boxShadow:on?"0 1px 6px rgba(90,79,227,0.10)":"none",transition:"all .15s ease"}}><Icon name={t.icon} size={12} color={on?C.primary:C.sub}/>{t.label}</button>);})}</div>
+
+    {tab==="discover"&&(<>
       <div style={{position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><Icon name="magnifying-glass" size={15} color={C.sub}/></span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search learners…" style={{width:"100%",padding:"11px 15px 11px 40px",fontSize:15,borderRadius:14,border:"1.5px solid "+C.line,outline:"none",fontFamily:FONT,color:C.ink,boxSizing:"border-box"}}/></div>
       {filteredFriends.length>0&&(<><div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:0.5}}>My Friends</div>{filteredFriends.map(u=><UserRow key={u.id} u={u} isFriend={true} onAdd={onAdd} onRemove={onRemove} onTap={()=>setSel(u)}/>)}</>)}
       <div style={{fontSize:12,fontWeight:800,color:C.sub,textTransform:"uppercase",letterSpacing:0.5}}>{q?"Results":"Discover"}</div>
       {discover.map(u=><UserRow key={u.id} u={u} isFriend={false} onAdd={onAdd} onRemove={onRemove} onTap={()=>setSel(u)}/>)}
     </>)}
 
-    {friendTab==="leaderboard"&&(
-      <div style={{background:C.surface,borderRadius:20,border:"1px solid "+C.line,overflow:"hidden"}}>
-        <div style={{padding:"12px 16px 10px",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{fontSize:14,fontWeight:800,color:C.ink}}>This week</div>
-          <div style={{fontSize:11,color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><Icon name="calendar-week" size={11} color={C.sub}/>Weekly points</div>
+    {(tab==="everyone"||tab==="friends")&&(
+      <div style={{background:C.surface,borderRadius:18,border:"1px solid "+C.line,overflow:"hidden"}}>
+        <div style={{padding:"10px 16px 9px",borderBottom:"1px solid "+C.line,display:"flex",alignItems:"center",justifyContent:"space-between",background:tab==="everyone"?"linear-gradient(135deg,"+C.primary+"10,transparent)":"linear-gradient(135deg,"+C.green+"10,transparent)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><Icon name={tab==="everyone"?"globe":"users"} size={13} color={tab==="everyone"?C.primary:C.green}/><span style={{fontSize:13,fontWeight:800,color:C.ink}}>{tab==="everyone"?"Weekly ranking":"Friends ranking"}</span></div>
+          <span style={{fontSize:11,color:C.sub,fontWeight:600,display:"flex",alignItems:"center",gap:3}}><Icon name="calendar-week" size={11} color={C.sub}/>This week</span>
         </div>
-        {leaderboard.map((u,i)=>{const medal=i<3?MEDAL[i]:null;const isMe=currentUser&&u.name===cap(currentUser.name||"");return(
-          <div key={u.id} onClick={()=>setSel(u)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:i<leaderboard.length-1?"1px solid "+C.line:"none",background:isMe?C.primarySoft:"transparent",cursor:"pointer"}}>
-            <div style={{width:26,height:26,borderRadius:"50%",background:medal||C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,color:medal?"#fff":C.sub,flexShrink:0,border:medal?"none":"1.5px solid "+C.line}}>{i<3?<Icon name="trophy" size={11} color="#fff"/>:i+1}</div>
-            <Avatar seed={u.avatar} size={36}/>
-            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13.5,fontWeight:800,color:C.ink}}>{u.name}{isMe&&<span style={{fontSize:11,color:C.primary,fontWeight:700,marginLeft:5}}>· You</span>}</div><div style={{fontSize:11,color:C.sub}}>{u.streak}d streak</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:medal?medal:C.ink}}>{u.weekPts}</div><div style={{fontSize:10,color:C.sub}}>pts</div></div>
-          </div>);})}
+        {tab==="everyone"&&everyoneBoard.map((u,i)=><LeaderRow key={u.id} u={u} i={i} total={everyoneBoard.length}/>)}
+        {tab==="friends"&&(friendsBoard.length===0?
+          <div style={{padding:"24px 16px",textAlign:"center",color:C.sub,fontSize:13}}>Follow friends to compare scores.</div>:
+          friendsBoard.map((u,i)=><LeaderRow key={u.id} u={u} i={i} total={friendsBoard.length}/>)
+        )}
       </div>
     )}
 
@@ -964,29 +1174,60 @@ function AvatarPicker({current,onPick,onClose}){return(<Sheet onClose={onClose} 
 
 /* ── SESSION COMPLETE ── */
 const CHEERS=[(n)=>"You smashed it, "+n+"! 💥",(n)=>"On fire, "+n+"! 🔥",(n)=>"Nailed it, "+n+"! 🎉",(n)=>"Look at you go, "+n+"! ✨",(n)=>"Unstoppable, "+n+"! ⚡"];
-function SessionComplete({points,dayStreak,name,level,chapterTitle,onContinue}){
-  const pts=useCountUp(points);const line=useMemo(()=>CHEERS[Math.floor(Math.random()*CHEERS.length)](cap(name||"friend")),[name]);
-  const[shareMsg,setShareMsg]=useState("");const capRef=useRef(null);
-  const doShare=async()=>{setShareMsg("Preparing…");const text="Just finished a round in Memzy!\n⭐ "+points+" points · 🔥 "+dayStreak+"-day streak\n"+LEVEL_LABEL[level]+(chapterTitle?" · "+chapterTitle:"")+"\nJoin me at memzy.app!";const r=await shareImage(capRef.current,text,"memzy-result.png",C.bg);setShareMsg(r==="shared"?"":r==="downloaded"?"Image saved!":"Couldn't share");setTimeout(()=>setShareMsg(""),2200);};
-  return(<div style={{position:"relative",width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",background:C.bg,padding:"20px 24px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>
-    <Confetti/>
-    <div ref={capRef} style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"24px 20px",borderRadius:28,background:C.surface,border:"1px solid "+C.line,boxShadow:"0 20px 60px rgba(28,26,46,0.12)",width:"100%",maxWidth:320,position:"relative",zIndex:10}}>
-      <div className="pop" style={{width:96,height:96,borderRadius:"50%",background:"linear-gradient(135deg,"+C.amber+",#FF6B4A)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,boxShadow:"0 12px 36px "+C.amber+"55"}}><Icon name="trophy" size={46} color="#fff"/></div>
-      <h1 style={{fontSize:24,fontWeight:800,color:C.ink,margin:"0 0 6px",letterSpacing:-0.6}}>{line}</h1>
-      <div style={{fontSize:13,color:C.sub,marginBottom:16}}>{LEVEL_LABEL[level]}{chapterTitle?" · "+chapterTitle:""}</div>
-      <div style={{background:"linear-gradient(135deg,"+C.amber+"22,"+C.amber+"08)",border:"1px solid "+C.amber+"44",borderRadius:20,padding:"16px 32px",marginBottom:16}}>
-        <div style={{fontSize:56,fontWeight:800,color:C.amber,letterSpacing:-2,lineHeight:1,display:"flex",alignItems:"center",gap:10}}><Icon name="star" size={40} color={C.amber}/>{pts}</div>
-        <div style={{fontSize:13,color:C.sub,fontWeight:600,marginTop:4}}>points this round</div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.redSoft,borderRadius:14,padding:"10px 20px"}}><Icon name="fire" size={18} color={C.red}/><span style={{fontSize:16,fontWeight:800,color:C.ink}}>{dayStreak} day streak!</span></div>
+function AnimatedFace({seed,size=110}){
+  const[eyeX,setEyeX]=useState(0);const[eyeY,setEyeY]=useState(0);const[blink,setBlink]=useState(false);
+  useEffect(()=>{
+    const mvs=[{x:-3,y:0},{x:0,y:0},{x:3,y:0},{x:2,y:-2},{x:0,y:0},{x:-2,y:1},{x:0,y:0}];
+    let mi=0;
+    const bl=setInterval(()=>{setBlink(true);setTimeout(()=>setBlink(false),140);},2800);
+    const mv=setInterval(()=>{mi=(mi+1)%mvs.length;setEyeX(mvs[mi].x);setEyeY(mvs[mi].y);},700);
+    return()=>{clearInterval(bl);clearInterval(mv);};
+  },[]);
+  const ry=blink?0.4:4.5;
+  return(
+    <div style={{position:"relative",width:size,height:size}}>
+      <img src={avatarURL(seed)} crossOrigin="anonymous" alt="" style={{width:size,height:size,borderRadius:"50%",display:"block"}}/>
+      <svg width={size} height={size} style={{position:"absolute",inset:0,pointerEvents:"none"}} viewBox="0 0 110 110">
+        <ellipse cx={38+eyeX} cy={46+eyeY} rx={4.5} ry={ry} fill="rgba(0,0,0,0.72)"/>
+        <ellipse cx={72+eyeX} cy={46+eyeY} rx={4.5} ry={ry} fill="rgba(0,0,0,0.72)"/>
+      </svg>
     </div>
-    {shareMsg&&<div style={{fontSize:13,color:C.green,fontWeight:700,marginTop:12,zIndex:10}}>{shareMsg}</div>}
-    <div style={{width:"100%",maxWidth:320,marginTop:20,display:"flex",flexDirection:"column",gap:10,zIndex:10}}>
+  );
+}
+
+function SessionComplete({points,dayStreak,name,level,chapterTitle,onContinue,userAvatar}){
+  const pts=useCountUp(points,"roundPts");
+  const streakCu=useCountUp(dayStreak,"roundStreak");
+  const ptsTodayCu=useCountUp(points,"roundPtsToday");
+  const line=useMemo(()=>CHEERS[Math.floor(Math.random()*CHEERS.length)](cap(name||"friend")),[name]);
+  const[shareMsg,setShareMsg]=useState("");const capRef=useRef(null);
+  const doShare=async()=>{setShareMsg("Preparing...");const text="Just finished a round in Memzy! "+points+" pts, "+dayStreak+"-day streak. memzy.app";const r=await shareImage(capRef.current,text,"memzy-result.png",C.bg);setShareMsg(r==="shared"?"":r==="downloaded"?"Image saved!":"Could not share");setTimeout(()=>setShareMsg(""),2200);};
+  return(<div style={{position:"relative",width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",background:"linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)",padding:"20px 24px",paddingBottom:"calc(24px + env(safe-area-inset-bottom))"}}>
+    <Confetti/>
+    <div ref={capRef} style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"24px 20px 20px",borderRadius:28,background:C.surface,border:"1px solid "+C.line,boxShadow:"0 16px 56px rgba(28,26,46,0.10)",width:"100%",maxWidth:320,position:"relative",zIndex:10}}>
+      {/* Avatar inside the share card */}
+        <div style={{width:88,height:88,borderRadius:"50%",overflow:"hidden",border:"4px solid "+C.primarySoft,background:C.primarySoft,boxShadow:"0 0 0 3px "+C.primary+"44",marginBottom:14,flexShrink:0,position:"relative"}}>
+        <Avatar seed={userAvatar} size={88}/>
+      </div>
+      <h1 style={{fontSize:21,fontWeight:800,color:C.ink,margin:"0 0 4px",letterSpacing:-0.5,lineHeight:1.2}}>{line}</h1>
+      <div style={{fontSize:12.5,color:C.sub,marginBottom:16}}>{LEVEL_LABEL[level]}{chapterTitle?" · "+chapterTitle:""}</div>
+      <div style={{background:"linear-gradient(135deg,"+C.primary+"16,"+C.primary+"06)",border:"1px solid "+C.primary+"28",borderRadius:20,padding:"14px 24px",marginBottom:12,width:"100%"}}>
+        <div style={{fontSize:54,fontWeight:800,color:C.primary,letterSpacing:-2,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="star" size={36} color={C.primary}/>{pts}</div>
+        <div style={{fontSize:12,color:C.sub,fontWeight:600,marginTop:3}}>points this round</div>
+      </div>
+      <div style={{display:"flex",gap:8,width:"100%"}}>
+        <div style={{flex:1,background:C.amber+"15",border:"1px solid "+C.amber+"28",borderRadius:14,padding:"10px 8px",textAlign:"center"}}><Icon name="fire" size={15} color={C.amber}/><div style={{fontSize:18,fontWeight:800,color:C.ink,marginTop:3}}>{streakCu}</div><div style={{fontSize:10,color:C.sub,fontWeight:600,marginTop:1}}>day streak</div></div>
+        <div style={{flex:1,background:C.greenSoft,border:"1px solid "+C.green+"28",borderRadius:14,padding:"10px 8px",textAlign:"center"}}><Icon name="circle-check" size={15} color={C.green}/><div style={{fontSize:18,fontWeight:800,color:C.ink,marginTop:3}}>{ptsTodayCu}</div><div style={{fontSize:10,color:C.sub,fontWeight:600,marginTop:1}}>earned today</div></div>
+      </div>
+    </div>
+    {shareMsg&&<div style={{fontSize:13,color:C.green,fontWeight:700,marginTop:10,zIndex:10}}>{shareMsg}</div>}
+    <div style={{width:"100%",maxWidth:320,marginTop:16,display:"flex",flexDirection:"column",gap:10,zIndex:10}}>
       <PrimaryButton onClick={onContinue}>Continue</PrimaryButton>
-      <button onClick={doShare} className="press" style={{padding:14,borderRadius:18,border:"1.5px solid "+C.line,background:C.surface,color:C.ink,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="arrow-up-from-bracket" size={14} color={C.ink}/>Share result</button>
+      <button onClick={doShare} className="press" style={{padding:13,borderRadius:18,border:"1.5px solid "+C.line,background:C.surface,color:C.ink,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="arrow-up-from-bracket" size={13} color={C.ink}/>Share result</button>
     </div>
   </div>);
 }
+
 
 function StyleTag(){return(<style>{`
   @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}
@@ -1004,6 +1245,8 @@ function StyleTag(){return(<style>{`
   input::placeholder{color:#B6B2CE}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}
+  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}
 `}</style>);}
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
