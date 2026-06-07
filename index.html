@@ -1222,6 +1222,18 @@ function App() {
     _useState30 = _slicedToArray(_useState29, 2),
     curChapter = _useState30[0],
     setCurChapter = _useState30[1];
+  /* LEVEL UNLOCK SYSTEM — A1 is always unlocked; others must be earned via exam */
+  var _useState_ul = useState(["A1"]),
+    _useState_ul2 = _slicedToArray(_useState_ul, 2),
+    unlockedLevels = _useState_ul2[0],
+    setUnlockedLevels = _useState_ul2[1];
+  /* EXAM MODE: null = not in exam, else { level, prevLevel, pool, passed } */
+  var _useState_exam = useState(null),
+    _useState_exam2 = _slicedToArray(_useState_exam, 2),
+    examMode = _useState_exam2[0],
+    setExamMode = _useState_exam2[1];
+  /* Tracks correct swipes during exam round */
+  var examCorrectRef = React.useRef(0);
   var _useState31 = useState([]),
     _useState32 = _slicedToArray(_useState31, 2),
     friends = _useState32[0],
@@ -1237,6 +1249,7 @@ function App() {
     _useState38 = _slicedToArray(_useState37, 2),
     cardsSubScreen = _useState38[0],
     setCardsSubScreen = _useState38[1];
+  var _useState37b = useState(null), _useState38b = _slicedToArray(_useState37b, 2), openDeckType = _useState38b[0], setOpenDeckType = _useState38b[1];
   var dayStreak = useMemo(function () {
     return calcStreak(history);
   }, [history]);
@@ -1307,14 +1320,17 @@ function App() {
         var li = LEVELS_ORDER.indexOf(curLevel);
         if (li >= 0 && li < LEVELS_ORDER.length - 1) {
           var nxt = LEVELS_ORDER[li + 1];
-          setTimeout(function () {
-            setCurLevel(nxt);
-            setCurChapter(CHAPTERS[nxt][0].id);
-          }, 1000);
+          /* Only auto-advance if next level is already unlocked */
+          if (unlockedLevels && unlockedLevels.includes(nxt)) {
+            setTimeout(function () {
+              setCurLevel(nxt);
+              setCurChapter(CHAPTERS[nxt][0].id);
+            }, 1000);
+          }
         }
       }
     }
-  }, [chapterCards.length, chapterRemaining.length, curChapter, curLevel]);
+  }, [chapterCards.length, chapterRemaining.length, curChapter, curLevel, unlockedLevels]);
   var _useState39 = useState(false),
     _useState40 = _slicedToArray(_useState39, 2),
     flipped = _useState40[0],
@@ -1370,6 +1386,24 @@ function App() {
       return markedIds.includes(c.id);
     }));
   };
+  /* Start level-unlock exam: 30 random cards from previous level */
+  var startLevelExam = function startLevelExam(lockedLevel) {
+    var li = LEVELS_ORDER.indexOf(lockedLevel);
+    if (li <= 0) return;
+    var prevLevel = LEVELS_ORDER[li - 1];
+    var pool = shuffle(allCards.filter(function (c) { return c.level === prevLevel; })).slice(0, 30);
+    if (!pool.length) return;
+    examCorrectRef.current = 0;
+    setExamMode({ level: lockedLevel, prevLevel: prevLevel, total: pool.length });
+    setQueue(shuffle(_toConsumableArray(pool)));
+    roundPointsRef.current = 0;
+    committed.current = false;
+    setFlipped(false);
+    setDragX(0);
+    setExitDir(null);
+    setHistoryStack([]);
+    setScreen("deck");
+  };
   var commitRound = function commitRound(pts) {
     if (pts <= 0) return;
     setHistory(function (h) {
@@ -1385,6 +1419,8 @@ function App() {
       committed.current = true;
       commitRound(roundPointsRef.current);
     }
+    setExamMode(null);
+    examCorrectRef.current = 0;
     _setTab("dashboard");
     setScreen("app");
   };
@@ -1406,14 +1442,18 @@ function App() {
       var top = q[0],
         rest = q.slice(1);
       if (dir === "right") {
-        setLearnedIds(function (ids) {
-          return ids.includes(top.id) ? ids : [].concat(_toConsumableArray(ids), [top.id]);
-        });
-        setReviewIds(function (ids) {
-          return ids.filter(function (x) {
-            return x !== top.id;
+        if (examMode) {
+          examCorrectRef.current += 1;
+        } else {
+          setLearnedIds(function (ids) {
+            return ids.includes(top.id) ? ids : [].concat(_toConsumableArray(ids), [top.id]);
           });
-        });
+          setReviewIds(function (ids) {
+            return ids.filter(function (x) {
+              return x !== top.id;
+            });
+          });
+        }
         roundPointsRef.current += 1;
         setHistoryStack(function (h) {
           return [top].concat(_toConsumableArray(h));
@@ -1702,6 +1742,7 @@ function App() {
             case 0:
               setCurLevel(lv);
               setCurChapter(CHAPTERS[lv][0].id);
+              setUnlockedLevels(LEVELS_ORDER.slice(0, LEVELS_ORDER.indexOf(lv) + 1));
               _context2.n = 1;
               return initData(selectedLangs, lv);
             case 1:
@@ -1836,6 +1877,8 @@ function App() {
     var _CHAPTERS$curLevel;
     var current = queue[0];
     var sessionDone = queue.length === 0;
+    /* For exam mode: compute correct count at completion */
+    var examPassed = examMode && examCorrectRef.current >= 25;
     var chDone = chapterCards.filter(function (c) {
       return learnedIds.includes(c.id);
     }).length;
@@ -1921,9 +1964,11 @@ function App() {
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        width: (chapterCards.length ? chDone / chapterCards.length * 100 : 0) + "%",
+        width: (examMode
+          ? (examMode.total > 0 ? (examMode.total - queue.length) / examMode.total * 100 : 0)
+          : (chapterCards.length ? chDone / chapterCards.length * 100 : 0)) + "%",
         height: "100%",
-        background: C.primary,
+        background: examMode ? "#E8A030" : C.primary,
         borderRadius: 8,
         transition: "width .4s"
       }
@@ -1937,9 +1982,11 @@ function App() {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, LEVEL_LABEL[curLevel], " \xB7 ", chap === null || chap === void 0 ? void 0 : chap.title, " \xB7 ", queue.length, " left")), /*#__PURE__*/React.createElement("button", {
+    }, examMode
+      ? "\uD83C\uDFC6 Level Exam \xB7 " + examCorrectRef.current + "/25 correct \xB7 " + queue.length + " left"
+      : (LEVEL_LABEL[curLevel] + " \xB7 " + (chap === null || chap === void 0 ? void 0 : chap.title) + " \xB7 " + queue.length + " left"))), /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
-        return setShowDeckSettings(true);
+        if (!examMode) setShowDeckSettings(true);
       },
       className: "press",
       style: {
@@ -1948,11 +1995,12 @@ function App() {
         borderRadius: 14,
         width: 44,
         height: 44,
-        cursor: "pointer",
+        cursor: examMode ? "default" : "pointer",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        flexShrink: 0
+        flexShrink: 0,
+        opacity: examMode ? 0.3 : 1
       }
     }, /*#__PURE__*/React.createElement(Icon, {
       name: "gear",
@@ -1968,7 +2016,26 @@ function App() {
         padding: sessionDone ? "0" : "8px 20px 0",
         minHeight: 0
       }
-    }, sessionDone ? /*#__PURE__*/React.createElement(SessionComplete, {
+    }, sessionDone && examMode ? /*#__PURE__*/React.createElement(ExamComplete, {
+      correct: examCorrectRef.current,
+      total: examMode.total,
+      passed: examPassed,
+      level: examMode.level,
+      prevLevel: examMode.prevLevel,
+      onContinue: function onContinue() {
+        if (examPassed) {
+          setUnlockedLevels(function (ul) {
+            return ul.includes(examMode.level) ? ul : [].concat(_toConsumableArray(ul), [examMode.level]);
+          });
+          setCurLevel(examMode.level);
+          setCurChapter(CHAPTERS[examMode.level][0].id);
+        }
+        setExamMode(null);
+        examCorrectRef.current = 0;
+        _setTab("dashboard");
+        setScreen("app");
+      }
+    }) : sessionDone ? /*#__PURE__*/React.createElement(SessionComplete, {
       points: roundPointsRef.current,
       dayStreak: dayStreak,
       name: user && user.name,
@@ -2278,17 +2345,17 @@ function App() {
     onStart: startChapter,
     onStartReview: startReview,
     onStartMarked: startMarked,
+    onStartLevelExam: startLevelExam,
+    unlockedLevels: unlockedLevels,
     onOpenProfile: function onOpenProfile() {
       return _setTab("profile");
     },
-    scrollRef: scrollRef
-  }), tab === "stats" && /*#__PURE__*/React.createElement(StatsPage, {
-    history: history,
-    totalPoints: totalPoints,
-    dayStreak: dayStreak,
-    allCards: allCards,
-    learnedIds: learnedIds
+    scrollRef: scrollRef,
+    onOpenDeck: function(type) { setOpenDeckType(type); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
+    initialDeckScreen: openDeckType ? { type: openDeckType } : null,
+    onInitDeckScreenConsumed: function() { setOpenDeckType(null); },
+    onBackToHome: function() { setOpenDeckType(null); _setTab("dashboard"); },
     allCards: allCards,
     learnedIds: learnedIds,
     markedIds: markedIds,
@@ -2331,6 +2398,7 @@ function App() {
     setSelectedLangs: setSelectedLangs,
     dayStreak: dayStreak,
     totalPoints: totalPoints,
+    history: history,
     onLangsChanged: (/*#__PURE__*/function () {
       var _ref14 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(langs) {
         return _regenerator().w(function (_context4) {
@@ -2766,10 +2834,6 @@ function TabBar(_ref19) {
     k: "dashboard",
     icon: "house",
     label: "Home"
-  }, {
-    k: "stats",
-    icon: "chart-column",
-    label: "Stats"
   }, {
     k: "mywords",
     icon: "layer-group",
@@ -3850,7 +3914,10 @@ function Dashboard(_ref27) {
     onStart = _ref27.onStart,
     onStartReview = _ref27.onStartReview,
     onStartMarked = _ref27.onStartMarked,
+    onStartLevelExam = _ref27.onStartLevelExam,
+    unlockedLevels = _ref27.unlockedLevels,
     onOpenProfile = _ref27.onOpenProfile,
+    onOpenDeck = _ref27.onOpenDeck,
     scrollRef = _ref27.scrollRef;
   var chap = ((_CHAPTERS$curLevel2 = CHAPTERS[curLevel]) === null || _CHAPTERS$curLevel2 === void 0 ? void 0 : _CHAPTERS$curLevel2.find(function (c) {
     return c.id === curChapter;
@@ -3995,6 +4062,8 @@ function Dashboard(_ref27) {
     var li = LEVELS_ORDER.indexOf(curLevel);
     var canPrev = li > 0;
     var canNext = li < LEVELS_ORDER.length - 1;
+    /* CRITICAL: level lock check */
+    var isLevelLocked = unlockedLevels ? !unlockedLevels.includes(curLevel) : false;
     return /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.surface,
@@ -4121,13 +4190,19 @@ function Dashboard(_ref27) {
         transition: "width .8s cubic-bezier(.2,.8,.2,1)"
       }
     }))), /*#__PURE__*/React.createElement("div", {
+      style: { position: "relative" }
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
-        gap: 10
+        gap: 10,
+        filter: isLevelLocked ? "blur(3px)" : "none",
+        pointerEvents: isLevelLocked ? "none" : "auto",
+        userSelect: isLevelLocked ? "none" : "auto",
+        transition: "filter .3s"
       }
     }, CHAPTERS[curLevel].map(function (ch, i) {
-      var isCur = ch.id === curChapter;
+      var isCur = !isLevelLocked && ch.id === curChapter;
       var chCards = allCards.filter(function (c) {
         return c.chapter === ch.id;
       });
@@ -4206,148 +4281,125 @@ function Dashboard(_ref27) {
           flexShrink: 0
         }
       }, chPct, "%"));
-    })), /*#__PURE__*/React.createElement("div", {
+    })),
+    /* CRITICAL: Lock overlay — single blurred box covering all chapters */
+    isLevelLocked && /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 0,
+        borderRadius: 16,
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+        background: "rgba(245,244,251,0.65)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        border: "1.5px solid #D8D4F5",
+        zIndex: 2,
+        padding: "16px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 22, color: C.primary }),
+    /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 700,
+        color: C.ink,
+        textAlign: "center",
+        lineHeight: 1.45,
+        padding: "0 8px"
+      }
+    }, "Complete 80% of ", LEVEL_LABEL[LEVELS_ORDER[LEVELS_ORDER.indexOf(curLevel) - 1]], " to unlock"))),
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: C.sub, textAlign: "center", paddingBottom: 2 }
+    }, "Take an exam to unlock level"))
+    ), /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 18
       }
-    }, /*#__PURE__*/React.createElement(PrimaryButton, {
-      onClick: onStart
-    }, "Continue"))));
+    }, isLevelLocked
+      ? /*#__PURE__*/React.createElement(PrimaryButton, {
+          onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(curLevel); },
+          style: { background: "#7C5CFA" }
+        }, "Unlock Level")
+      : /*#__PURE__*/React.createElement(PrimaryButton, {
+          onClick: onStart
+        }, "Continue")
+    )));
   }(), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: reviewCount > 0 ? onStartReview : undefined,
-    className: "press",
-    style: {
-      background: reviewCount > 0 ? C.redSoft : "#FFF8F8",
-      border: "1.5px solid " + (reviewCount > 0 ? C.red + "44" : "#FDDCDC"),
-      borderRadius: 18,
-      padding: "16px 14px",
-      cursor: reviewCount > 0 ? "pointer" : "default",
-      textAlign: "left",
-      fontFamily: FONT,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 38,
-      height: 38,
-      borderRadius: 11,
-      background: reviewCount > 0 ? C.red + "22" : "#FDDCDC",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "rotate-left",
-    size: 17,
-    color: reviewCount > 0 ? C.red : "#E8A0A0"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 36,
-      display: "flex",
-      alignItems: "flex-end"
-    }
-  }, reviewCount > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 28,
-      fontWeight: 900,
-      color: C.red,
-      letterSpacing: -1,
-      lineHeight: 1
-    }
-  }, reviewCount)), /*#__PURE__*/React.createElement("div", {
-    style: {marginTop: 4}
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      fontWeight: 700,
-      color: reviewCount > 0 ? C.ink : "#C07070",
-      lineHeight: 1.3
-    }
-  }, reviewCount > 0 ? "to review" : "All clear!"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.sub,
-      marginTop: 2
-    }
-  }, reviewCount > 0 ? "Tap to practice" : "No unknown cards")))), /*#__PURE__*/React.createElement("button", {
-    onClick: markedCount > 0 ? onStartMarked : undefined,
-    className: "press",
-    style: {
-      background: markedCount > 0 ? C.primarySoft : "#F5F4FF",
-      border: "1.5px solid " + (markedCount > 0 ? C.primary + "44" : "#D8D4F5"),
-      borderRadius: 18,
-      padding: "16px 14px",
-      cursor: markedCount > 0 ? "pointer" : "default",
-      textAlign: "left",
-      fontFamily: FONT,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 38,
-      height: 38,
-      borderRadius: 11,
-      background: markedCount > 0 ? C.primary + "18" : "#D8D4F5",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "bookmark",
-    size: 17,
-    color: markedCount > 0 ? C.primary : "#A098D8"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 36,
-      display: "flex",
-      alignItems: "flex-end"
-    }
-  }, markedCount > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 28,
-      fontWeight: 900,
-      color: C.primary,
-      letterSpacing: -1,
-      lineHeight: 1
-    }
-  }, markedCount)), /*#__PURE__*/React.createElement("div", {
-    style: {marginTop: 4}
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      fontWeight: 700,
-      color: markedCount > 0 ? C.ink : "#7068B0",
-      lineHeight: 1.3
-    }
-  }, markedCount > 0 ? "bookmarked" : "Nothing yet"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.sub,
-      marginTop: 2
-    }
-  }, markedCount > 0 ? "Tap to practice" : "Bookmark cards"))))), dlg === "streak" && /*#__PURE__*/React.createElement(StreakDialog, {
+    style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }
+  },
+    /* Review deck card */
+    (function() {
+      var pct = 0;
+      var borderCol = C.red + "44";
+      return /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { if (onOpenDeck) onOpenDeck("review"); },
+        className: "press",
+        style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
+      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 90 } },
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 82, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 82, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+        /*#__PURE__*/React.createElement("div", {
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 82, borderRadius: 15, background: C.redSoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.red + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: C.red + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                /*#__PURE__*/React.createElement(Icon, { name: "rotate-left", size: 12, color: C.red })
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: C.red, letterSpacing: -0.2, lineHeight: 1.15 } }, "Review"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.red + "99", fontWeight: 600, marginTop: 1 } }, "To revisit")
+              )
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: C.red + "BB", flexShrink: 0, paddingTop: 1 } }, reviewCount)
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.red + "28", overflow: "hidden" } },
+            /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: pct + "%", borderRadius: 3, background: C.red } })
+          )
+        )
+      ));
+    }()),
+    /* Marked deck card */
+    (function() {
+      var pct = 0;
+      var borderCol = C.primary + "44";
+      return /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { if (onOpenDeck) onOpenDeck("marked"); },
+        className: "press",
+        style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
+      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 90 } },
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 82, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 82, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+        /*#__PURE__*/React.createElement("div", {
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 82, borderRadius: 15, background: C.primarySoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.primary + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: C.primary + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                /*#__PURE__*/React.createElement(Icon, { name: "bookmark", size: 12, color: C.primary })
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: C.primary, letterSpacing: -0.2, lineHeight: 1.15 } }, "Bookmarked"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.primary + "99", fontWeight: 600, marginTop: 1 } }, "Saved cards")
+              )
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: C.primary + "BB", flexShrink: 0, paddingTop: 1 } }, markedCount)
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.primary + "28", overflow: "hidden" } },
+            /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: pct + "%", borderRadius: 3, background: C.primary } })
+          )
+        )
+      ));
+    }())
+  ), dlg === "streak" && /*#__PURE__*/React.createElement(StreakDialog, {
     history: history,
     streak: dayStreak,
     onClose: function onClose() {
@@ -4917,27 +4969,36 @@ function MyFlashcardsPage(_ref31) {
     selectedLangs = _ref31.selectedLangs,
     deckSettings = _ref31.deckSettings,
     onOpenDeckSettings = _ref31.onOpenDeckSettings,
-    onOpenChapter = _ref31.onOpenChapter;
-  var _useState81 = useState("level"),
+    onOpenChapter = _ref31.onOpenChapter,
+    initialDeckScreen = _ref31.initialDeckScreen,
+    onInitDeckScreenConsumed = _ref31.onInitDeckScreenConsumed,
+    onBackToHome = _ref31.onBackToHome;
+  var _useState81 = useState(initialDeckScreen || null),
+    /* Track if deckScreen was seeded from home navigation */
     _useState82 = _slicedToArray(_useState81, 2),
-    group = _useState82[0],
-    setGroup = _useState82[1];
-  var _useState83 = useState(curLevel),
+    deckScreen = _useState82[0],
+    setDeckScreen = _useState82[1];
+  var _useState83 = useState(""),
     _useState84 = _slicedToArray(_useState83, 2),
-    expandedLevel = _useState84[0],
-    setExpandedLevel = _useState84[1];
-  var _useState85 = useState(""),
+    q = _useState84[0],
+    setQ = _useState84[1];
+  var _useState85 = useState(null),
     _useState86 = _slicedToArray(_useState85, 2),
-    q = _useState86[0],
-    setQ = _useState86[1];
-  var _useState87 = useState(null),
+    open = _useState86[0],
+    setOpen = _useState86[1];
+  var _useState87 = useState(false),
     _useState88 = _slicedToArray(_useState87, 2),
-    open = _useState88[0],
-    setOpen = _useState88[1];
-  var _useState89 = useState(false),
-    _useState90 = _slicedToArray(_useState89, 2),
-    adding = _useState90[0],
-    setAdding = _useState90[1];
+    adding = _useState88[0],
+    setAdding = _useState88[1];
+  useEffect(function() {
+    if (initialDeckScreen && onInitDeckScreenConsumed) onInitDeckScreenConsumed();
+  }, []);
+  /* If deckScreen was seeded from home, back should return to home not cards-home */
+  var fromHome = useRef(!!initialDeckScreen);
+  var handleBackFromDeck = function handleBackFromDeck() {
+    if (fromHome.current) { fromHome.current = false; if (onBackToHome) { onBackToHome(); return; } }
+    setDeckScreen(null); setQ("");
+  };
   var customCards = allCards.filter(function (c) {
     return c.custom;
   });
@@ -5092,397 +5153,252 @@ function MyFlashcardsPage(_ref31) {
       color: C.sub
     })));
   };
-  var groupTabs = [{
-    k: "level",
-    label: "By Level",
-    count: null
-  }, {
-    k: "marked",
-    label: "Marked",
-    count: markedCards.length
-  }, {
-    k: "review",
-    label: "Review",
-    count: reviewCards.length
-  }, {
-    k: "mine",
-    label: "Mine",
-    count: customCards.length
-  }];
   var fc = function fc(cards) {
     return s ? cards.filter(function (c) {
       return c.word.toLowerCase().includes(s) || (c.translation || "").toLowerCase().includes(s) || (c.farsi || "").includes(q.trim());
     }) : cards;
   };
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "24px 20px 28px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between"
-    }
-  }, /*#__PURE__*/React.createElement("h1", {
-    style: {
-      fontSize: 24,
-      fontWeight: 800,
-      color: C.ink,
-      margin: 0,
-      letterSpacing: -0.6
-    }
-  }, "My Flashcards"), onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
-    onClick: onOpenDeckSettings,
-    className: "press",
-    style: {
-      width: 40,
-      height: 40,
-      borderRadius: 13,
-      border: "1.5px solid " + C.line,
-      background: C.surface,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "gear",
-    size: 17,
-    color: C.sub
-  }))), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      return setAdding(true);
-    },
-    className: "press",
-    style: {
-      padding: 14,
-      borderRadius: 16,
-      border: "2px dashed " + C.primary + "55",
-      background: C.primarySoft,
-      color: C.primary,
-      fontSize: 15,
-      fontWeight: 800,
-      cursor: "pointer",
-      fontFamily: FONT,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "plus",
-    size: 14,
-    color: C.primary
-  }), " Add a flashcard"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      overflowX: "auto",
-      paddingBottom: 2
-    }
-  }, groupTabs.map(function (gt) {
-    var on = group === gt.k;
+  /* ── COLOR PALETTE for decks ── */
+  /* Levels: neutral/simple — white card, ink text, subtle gray border */
+  var LEVEL_NEUTRAL = { bg: C.surface, text: C.ink, bar: C.line, sub: C.sub };
+  /* Collections */
+  var COL_MARKED  = { bg: C.primarySoft, text: C.primary, bar: C.primary };   /* purple / primary */
+  var COL_REVIEW  = { bg: C.redSoft,     text: C.red,     bar: C.red   };
+  var COL_MINE    = { bg: "#FFF3CD",     text: "#B45309", bar: C.amber };      /* solid amber, no transparency */
+
+  /* ── SHARED DeckCard component (always compact / 2-per-row) ── */
+  var DeckCard = function DeckCard(_ref32b) {
+    var label = _ref32b.label, sublabel = _ref32b.sublabel, count = _ref32b.count,
+        doneCount = _ref32b.doneCount, colorObj = _ref32b.colorObj,
+        icon = _ref32b.icon, onClick = _ref32b.onClick;
+    var pct = count > 0 ? Math.round((doneCount / count) * 100) : 0;
+    var isNeutral = colorObj === LEVEL_NEUTRAL;
+    var borderCol = isNeutral ? C.line : colorObj.bar + "44";
+    /* Main card height. Shadow cards share same height, rotated slightly so edges peek at top */
+    var mainH = 82;
+    var containerH = mainH + 5; /* small room for rotation overflow at top */
     return /*#__PURE__*/React.createElement("button", {
-      key: gt.k,
-      onClick: function onClick() {
-        return setGroup(gt.k);
-      },
-      className: "press",
-      style: {
-        flexShrink: 0,
-        padding: "8px 12px",
-        borderRadius: 13,
-        border: "1.5px solid " + (on ? C.primary : C.line),
-        background: on ? C.primary : C.surface,
-        color: on ? "#fff" : C.sub,
-        fontWeight: 800,
-        fontSize: 13,
-        cursor: "pointer",
-        fontFamily: FONT,
-        display: "flex",
-        alignItems: "center",
-        gap: 6
-      }
-    }, gt.label, gt.count != null && /*#__PURE__*/React.createElement("span", {
-      style: {
-        background: on ? "rgba(255,255,255,0.2)" : C.line,
-        borderRadius: 8,
-        padding: "1px 7px",
-        fontSize: 11,
-        fontWeight: 700,
-        color: on ? "#fff" : C.sub
-      }
-    }, gt.count));
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      left: 14,
-      top: "50%",
-      transform: "translateY(-50%)"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "magnifying-glass",
-    size: 14,
-    color: C.sub
-  })), /*#__PURE__*/React.createElement("input", {
-    value: q,
-    onChange: function onChange(e) {
-      return setQ(e.target.value);
+      onClick: onClick, className: "press",
+      style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
     },
-    placeholder: "Search flashcards\u2026",
-    style: {
-      width: "100%",
-      padding: "11px 14px 11px 38px",
-      fontSize: 14.5,
-      borderRadius: 13,
-      border: "1.5px solid " + C.line,
-      outline: "none",
-      fontFamily: FONT,
-      color: C.ink,
-      boxSizing: "border-box"
-    }
-  })), group === "level" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 10
-    }
-  }, s ? fc(allCards.filter(function (c) {
-    return !c.custom;
-  })).length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.sub,
-      fontSize: 13.5,
-      textAlign: "center",
-      padding: "18px 0"
-    }
-  }, "No matches.") : fc(allCards.filter(function (c) {
-    return !c.custom;
-  })).map(function (c) {
-    return /*#__PURE__*/React.createElement(CardRow, {
-      key: c.id,
-      c: c
-    });
-  }) : LEVELS_ORDER.map(function (lv) {
-    var expanded = expandedLevel === lv;
-    var lci = LEVEL_COLOR[lv];
-    var lvCards = allCards.filter(function (c) {
-      return !c.custom && c.level === lv;
-    });
-    var lvDone = lvCards.filter(function (c) {
-      return learnedIds.includes(c.id);
-    }).length;
-    return /*#__PURE__*/React.createElement("div", {
-      key: lv,
-      style: {
-        background: C.surface,
-        borderRadius: 18,
-        border: "1px solid " + C.line,
-        overflow: "hidden"
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() {
-        return setExpandedLevel(expanded ? null : lv);
-      },
-      className: "press",
-      style: {
-        width: "100%",
-        padding: "13px 16px",
-        border: "none",
-        background: "transparent",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        cursor: "pointer",
-        fontFamily: FONT,
-        textAlign: "left"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        background: lci.bg,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 900,
-        fontSize: 13,
-        color: lci.text,
-        flexShrink: 0
-      }
-    }, lv), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 15,
-        fontWeight: 800,
-        color: C.ink
-      }
-    }, LEVEL_LABEL[lv]), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.sub
-      }
-    }, lvDone, "/", lvCards.length, " done")), /*#__PURE__*/React.createElement(Icon, {
-      name: expanded ? "chevron-up" : "chevron-down",
-      size: 14,
-      color: C.sub
-    })), expanded && /*#__PURE__*/React.createElement("div", {
-      style: {
-        borderTop: "1px solid " + C.line
-      }
-    }, CHAPTERS[lv].map(function (ch, ci) {
-      var chCards = allCards.filter(function (c) {
-        return !c.custom && c.chapter === ch.id;
-      });
-      var chDone = chCards.filter(function (c) {
-        return learnedIds.includes(c.id);
-      }).length;
-      var icon = CHAPTER_ICONS[ch.id] || "book";
-      return /*#__PURE__*/React.createElement("button", {
-        key: ch.id,
-        onClick: function onClick() {
-          return onOpenChapter({
-            level: lv,
-            chapterId: ch.id,
-            title: ch.title
-          });
+      /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: containerH } },
+        /* far shadow */
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+        /* near shadow */
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+        /* main card */
+        /*#__PURE__*/React.createElement("div", {
+          style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", height: mainH, borderRadius: 15, background: colorObj.bg, border: "1.5px solid " + borderCol, boxShadow: isNeutral ? "0 2px 8px rgba(0,0,0,0.07)" : "0 3px 14px " + colorObj.bar + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
         },
-        className: "press",
-        style: {
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "11px 16px",
-          background: C.surface,
-          border: "none",
-          borderBottom: ci < CHAPTERS[lv].length - 1 ? "1px solid " + C.line : "none",
-          cursor: "pointer",
-          fontFamily: FONT,
-          textAlign: "left"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          width: 30,
-          height: 30,
-          borderRadius: 9,
-          background: lci.bg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0
-        }
-      }, /*#__PURE__*/React.createElement(Icon, {
-        name: icon,
-        size: 14,
-        color: lci.text
-      })), /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 13.5,
-          fontWeight: 700,
-          color: C.ink
-        }
-      }, ch.title), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11.5,
-          color: C.sub
-        }
-      }, chDone, "/", chCards.length, " done")), /*#__PURE__*/React.createElement(Icon, {
-        name: "chevron-right",
-        size: 13,
-        color: C.sub
-      }));
-    })));
-  })), group === "marked" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 9
-    }
-  }, fc(markedCards).length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.sub,
-      fontSize: 13.5,
-      textAlign: "center",
-      padding: "18px 0"
-    }
-  }, "Bookmark cards during sessions to find them here.") : fc(markedCards).map(function (c) {
-    return /*#__PURE__*/React.createElement(CardRow, {
-      key: c.id,
-      c: c
-    });
-  })), group === "review" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 9
-    }
-  }, fc(reviewCards).length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.sub,
-      fontSize: 13.5,
-      textAlign: "center",
-      padding: "18px 0"
-    }
-  }, "Cards you swipe left will appear here.") : fc(reviewCards).map(function (c) {
-    return /*#__PURE__*/React.createElement(CardRow, {
-      key: c.id,
-      c: c
-    });
-  })), group === "mine" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 9
-    }
-  }, fc(customCards).length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.sub,
-      fontSize: 13.5,
-      textAlign: "center",
-      padding: "18px 0"
-    }
-  }, "No custom cards yet.") : fc(customCards).map(function (c) {
-    return /*#__PURE__*/React.createElement(CardRow, {
-      key: c.id,
-      c: c
-    });
-  })), adding && /*#__PURE__*/React.createElement(AddWordModal, {
-    selectedLangs: langsPresent,
-    curLevel: curLevel,
-    curChapter: curChapter,
-    onClose: function onClose() {
-      return setAdding(false);
+          /* top: icon + label + count */
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: isNeutral ? C.bg : colorObj.bar + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                icon === "↺"
+                  ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: colorObj.text, fontWeight: 700 } }, icon)
+                  : /*#__PURE__*/React.createElement(Icon, { name: icon, size: 12, color: isNeutral ? C.sub : colorObj.text })
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: colorObj.text, letterSpacing: -0.2, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, label),
+                sublabel && /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: isNeutral ? C.sub : colorObj.text + "99", fontWeight: 600, marginTop: 1 } }, sublabel)
+              )
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: isNeutral ? C.sub : colorObj.text + "BB", flexShrink: 0, paddingTop: 1 } }, count)
+          ),
+          /* progress bar */
+          /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: isNeutral ? C.line : colorObj.bar + "28", overflow: "hidden" } },
+            /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: pct + "%", borderRadius: 3, background: isNeutral ? C.primary : colorObj.bar, transition: "width .4s ease" } })
+          )
+        )
+      )
+    );
+  };
+
+  /* ── Shared sub-screen header ── */
+  var SubHeader = function SubHeader(_ref32c) {
+    var onBack = _ref32c.onBack, iconEl = _ref32c.iconEl, title = _ref32c.title, sub = _ref32c.sub;
+    return /*#__PURE__*/React.createElement("div", {
+      style: { padding: "16px 16px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid " + C.line, background: C.surface }
     },
-    onAdd: onAdd
-  }), open && /*#__PURE__*/React.createElement(FlashcardModal, {
-    card: open,
-    learned: learnedIds.includes(open.id),
-    marked: markedIds.includes(open.id),
-    onResult: onResult,
-    onMark: function onMark() {
-      return _onMark(open.id);
-    },
-    onClose: function onClose() {
-      return setOpen(null);
-    }
-  }));
+      /*#__PURE__*/React.createElement("button", {
+        onClick: onBack, className: "press",
+        style: { width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.line, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "chevron-left", size: 13, color: C.ink })),
+      iconEl,
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
+        sub && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.sub } }, sub)
+      ),
+      onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
+        onClick: onOpenDeckSettings, className: "press",
+        style: { width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 15, color: C.sub }))
+    );
+  };
+
+  /* ── Search bar ── */
+  var SearchBar = /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0" } },
+    /*#__PURE__*/React.createElement("div", { style: { position: "relative" } },
+      /*#__PURE__*/React.createElement("span", { style: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" } }, /*#__PURE__*/React.createElement(Icon, { name: "magnifying-glass", size: 13, color: C.sub })),
+      /*#__PURE__*/React.createElement("input", { value: q, onChange: function onChange(e) { return setQ(e.target.value); }, placeholder: "Search\u2026", style: { width: "100%", padding: "9px 12px 9px 34px", fontSize: 13.5, borderRadius: 11, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", background: C.surface } })
+    )
+  );
+
+  /* ── WORD LIST VIEW (chapter words) ── */
+  if (deckScreen && deckScreen.chapterId) {
+    var wds = deckScreen;
+    var wdColor = LEVEL_COLOR[wds.level] || { bg: C.primarySoft, text: C.primary, bar: C.primary };
+    var wdCards = allCards.filter(function (c) { return !c.custom && c.chapter === wds.chapterId; });
+    var wdFiltered = fc(wdCards);
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
+      /*#__PURE__*/React.createElement(SubHeader, {
+        onBack: function onBack() { setDeckScreen({ type: "level", level: wds.level }); setQ(""); },
+        iconEl: /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: wdColor.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[wds.chapterId] || "book", size: 13, color: wdColor.text })),
+        title: wds.chapterTitle,
+        sub: wds.level + " \u00B7 " + wdCards.length + " cards"
+      }),
+      SearchBar,
+      /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
+        wdFiltered.length === 0
+          ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, "No matches.")
+          : wdFiltered.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
+      ),
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+    );
+  }
+
+  /* ── LEVEL CHAPTERS VIEW ── */
+  if (deckScreen && deckScreen.type === "level") {
+    var lv = deckScreen.level;
+    var lvChapters = CHAPTERS[lv] || [];
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
+      /*#__PURE__*/React.createElement(SubHeader, {
+        onBack: handleBackFromDeck,
+        iconEl: /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: C.bg, border: "1px solid " + C.line, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, color: C.ink, flexShrink: 0 } }, lv),
+        title: LEVEL_LABEL[lv],
+        sub: lvChapters.length + " chapters"
+      }),
+      /*#__PURE__*/React.createElement("div", { style: { padding: "14px 14px 28px" } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          lvChapters.map(function (ch) {
+            var chCards = allCards.filter(function (c) { return !c.custom && c.chapter === ch.id; });
+            var chDone = chCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+            return /*#__PURE__*/React.createElement(DeckCard, {
+              key: ch.id,
+              label: ch.title,
+              sublabel: null,
+              count: chCards.length,
+              doneCount: chDone,
+              colorObj: LEVEL_NEUTRAL,
+              icon: CHAPTER_ICONS[ch.id] || "book",
+              onClick: function onClick() { setDeckScreen({ type: "level", level: lv, chapterId: ch.id, chapterTitle: ch.title }); setQ(""); }
+            });
+          })
+        )
+      ),
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+    );
+  }
+
+  /* ── COLLECTION WORD LIST ── */
+  if (deckScreen) {
+    var ds = deckScreen;
+    var dsCards = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : customCards;
+    var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : COL_MINE;
+    var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "↺" : "plus";
+    var dsLabel = ds.type === "marked" ? "Marked" : ds.type === "review" ? "Review" : "My Cards";
+    var dsEmpty = ds.type === "marked" ? "Bookmark cards during sessions." : ds.type === "review" ? "Cards you swipe left appear here." : "No custom cards yet.";
+    var filteredDs = fc(dsCards);
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
+      /*#__PURE__*/React.createElement(SubHeader, {
+        onBack: handleBackFromDeck,
+        iconEl: /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: dsColorObj.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, dsIconStr === "↺" ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 700, color: dsColorObj.text } }, dsIconStr) : /*#__PURE__*/React.createElement(Icon, { name: dsIconStr, size: 14, color: dsColorObj.text })),
+        title: dsLabel,
+        sub: dsCards.length + " cards"
+      }),
+      SearchBar,
+      /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
+        filteredDs.length === 0
+          ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, dsEmpty)
+          : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
+      ),
+      adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, onClose: function onClose() { return setAdding(false); }, onAdd: onAdd }),
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+    );
+  }
+
+  /* ── HOME VIEW ── */
+  return /*#__PURE__*/React.createElement("div", {
+    style: { padding: "20px 16px 28px", display: "flex", flexDirection: "column", gap: 20 }
+  },
+    /* Header */
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      /*#__PURE__*/React.createElement("h1", { style: { fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5 } }, "My Flashcards"),
+      onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
+        onClick: onOpenDeckSettings, className: "press",
+        style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
+    ),
+    /* Add card */
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { return setAdding(true); }, className: "press",
+      style: { padding: 13, borderRadius: 14, border: "2px dashed " + C.primary + "55", background: C.primarySoft, color: C.primary, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), "Add a flashcard"),
+    /* By Level — 2-col grid, neutral style */
+    /*#__PURE__*/React.createElement("div", null,
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "By Level"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+        LEVELS_ORDER.map(function (lv) {
+          var lvCards = allCards.filter(function (c) { return !c.custom && c.level === lv; });
+          var lvDone = lvCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+          return /*#__PURE__*/React.createElement(DeckCard, {
+            key: lv, label: lv, sublabel: LEVEL_LABEL[lv],
+            count: lvCards.length, doneCount: lvDone,
+            colorObj: LEVEL_NEUTRAL, icon: "layer-group",
+            onClick: function onClick() { setDeckScreen({ type: "level", level: lv }); }
+          });
+        })
+      )
+    ),
+    /* Collections — 2-col grid: Marked + Review, then Mine full-width if present */
+    /*#__PURE__*/React.createElement("div", null,
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "Collections"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+          /*#__PURE__*/React.createElement(DeckCard, {
+            label: "Marked", sublabel: "Bookmarked",
+            count: markedCards.length,
+            doneCount: markedCards.filter(function (c) { return learnedIds.includes(c.id); }).length,
+            colorObj: COL_MARKED, icon: "bookmark",
+            onClick: function onClick() { setDeckScreen({ type: "marked" }); }
+          }),
+          /*#__PURE__*/React.createElement(DeckCard, {
+            label: "Review", sublabel: "To revisit",
+            count: reviewCards.length, doneCount: 0,
+            colorObj: COL_REVIEW, icon: "↺",
+            onClick: function onClick() { setDeckScreen({ type: "review" }); }
+          })
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+          /*#__PURE__*/React.createElement(DeckCard, {
+            label: "My Cards", sublabel: "Custom",
+            count: customCards.length,
+            doneCount: customCards.filter(function (c) { return learnedIds.includes(c.id); }).length,
+            colorObj: COL_MINE, icon: "plus",
+            onClick: function onClick() { setDeckScreen({ type: "mine" }); }
+          })
+        )
+      )
+    ),
+    adding && /*#__PURE__*/React.createElement(AddWordModal, {
+      selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter,
+      onClose: function onClose() { return setAdding(false); }, onAdd: onAdd
+    }),
+    open && /*#__PURE__*/React.createElement(FlashcardModal, {
+      card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id),
+      onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); }
+    })
+  );
 }
 
 /* ── CHAPTER DETAIL ── */
@@ -6341,17 +6257,17 @@ function FriendsPage(_ref37) {
   };
   var tabs = [{
     k: "discover",
-    label: "Suggestions",
-    icon: "magnifying-glass"
-  }, {
-    k: "everyone",
-    label: "Everyone",
-    icon: "globe"
-  }, {
-    k: "friends",
     label: "Friends",
     icon: "users"
+  }, {
+    k: "leaderboard",
+    label: "Leaderboard",
+    icon: "trophy"
   }];
+  var _useState115 = useState("worldwide"),
+    _useState116 = _slicedToArray(_useState115, 2),
+    lbTab = _useState116[0],
+    setLbTab = _useState116[1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "24px 20px 28px",
@@ -6573,73 +6489,36 @@ function FriendsPage(_ref37) {
         fontFamily: FONT
       }
     }, isFr ? "Friends \u2713" : "+ Add"));
-  }))), (tab === "everyone" || tab === "friends") && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.surface,
-      borderRadius: 18,
-      border: "1px solid " + C.line,
-      overflow: "hidden"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 16px 9px",
-      borderBottom: "1px solid " + C.line,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      background: tab === "everyone" ? "linear-gradient(135deg," + C.primary + "10,transparent)" : "linear-gradient(135deg," + C.green + "10,transparent)"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: tab === "everyone" ? "globe" : "users",
-    size: 13,
-    color: tab === "everyone" ? C.primary : C.green
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      fontWeight: 800,
-      color: C.ink
-    }
-  }, tab === "everyone" ? "Weekly ranking" : "Friends ranking")), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: C.sub,
-      fontWeight: 600,
-      display: "flex",
-      alignItems: "center",
-      gap: 3
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "calendar-week",
-    size: 11,
-    color: C.sub
-  }), "This week")), tab === "everyone" && everyoneBoard.map(function (u, i) {
-    return /*#__PURE__*/React.createElement(LeaderRow, {
-      key: u.id,
-      u: u,
-      i: i,
-      total: everyoneBoard.length
-    });
-  }), tab === "friends" && (friendsBoard.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "24px 16px",
-      textAlign: "center",
-      color: C.sub,
-      fontSize: 13
-    }
-  }, "Follow friends to compare scores.") : friendsBoard.map(function (u, i) {
-    return /*#__PURE__*/React.createElement(LeaderRow, {
-      key: u.id,
-      u: u,
-      i: i,
-      total: friendsBoard.length
-    });
-  }))), sel && /*#__PURE__*/React.createElement(FriendDetailDialog, {
+  }))), tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
+    /* Header with inline tab switcher */
+    /*#__PURE__*/React.createElement("div", { style: { padding: "10px 12px 10px", borderBottom: "1px solid " + C.line, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } },
+        /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 13, color: C.amber }),
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.ink } }, "This week")
+      ),
+      /* Friends | Worldwide pill switcher inside the card */
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", background: C.bg, borderRadius: 10, padding: 2, gap: 0 } },
+        [{ k: "friends", label: "Friends", icon: "users" }, { k: "worldwide", label: "Worldwide", icon: "globe" }].map(function(lt) {
+          var on = lbTab === lt.k;
+          return /*#__PURE__*/React.createElement("button", {
+            key: lt.k,
+            onClick: function onClick() { return setLbTab(lt.k); },
+            className: "press",
+            style: { padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer", background: on ? C.surface : "transparent", color: on ? C.primary : C.sub, fontWeight: 700, fontSize: 11.5, fontFamily: FONT, display: "flex", alignItems: "center", gap: 4, boxShadow: on ? "0 1px 4px rgba(90,79,227,0.12)" : "none", transition: "all .15s ease" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 10, color: on ? C.primary : C.sub }), lt.label);
+        })
+      )
+    ),
+    lbTab === "worldwide" && everyoneBoard.map(function(u, i) {
+      return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: everyoneBoard.length });
+    }),
+    lbTab === "friends" && (friendsBoard.length === 0
+      ? /*#__PURE__*/React.createElement("div", { style: { padding: "24px 16px", textAlign: "center", color: C.sub, fontSize: 13 } }, "Follow friends to compare scores.")
+      : friendsBoard.map(function(u, i) {
+          return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: friendsBoard.length });
+        })
+    )
+  ), sel && /*#__PURE__*/React.createElement(FriendDetailDialog, {
     user: sel,
     isFriend: friends.includes(sel.id),
     onAdd: onAdd,
@@ -7041,6 +6920,7 @@ function ProfilePage(_ref42) {
     setSelectedLangs = _ref42.setSelectedLangs,
     dayStreak = _ref42.dayStreak,
     totalPoints = _ref42.totalPoints,
+    history = _ref42.history,
     onLangsChanged = _ref42.onLangsChanged,
     onSignOut = _ref42.onSignOut;
   var _useState119 = useState(false),
@@ -7063,6 +6943,10 @@ function ProfilePage(_ref42) {
     _useState128 = _slicedToArray(_useState127, 2),
     shareMsg = _useState128[0],
     setShareMsg = _useState128[1];
+  var _useState128b = useState(false),
+    _useState128c = _slicedToArray(_useState128b, 2),
+    editModal = _useState128c[0],
+    setEditModal = _useState128c[1];
   var cardRef = useRef(null);
   var langDirty = lang !== (selectedLangs[0] || "fa");
   var dirty = name.trim() !== (user && user.name || "") || langDirty;
@@ -7180,29 +7064,17 @@ function ProfilePage(_ref42) {
       border: "1px solid " + C.line,
       boxShadow: "0 8px 24px rgba(28,26,46,0.05)"
     }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: share,
-    className: "press",
-    style: {
-      position: "absolute",
-      top: 12,
-      right: 12,
-      zIndex: 2,
-      width: 34,
-      height: 34,
-      borderRadius: "50%",
-      border: "1px solid " + C.line,
-      background: C.bg,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "arrow-up-from-bracket",
-    size: 13,
-    color: C.primary
-  })), /*#__PURE__*/React.createElement("div", {
+  },
+    /* Share button — top-left */
+    /*#__PURE__*/React.createElement("button", {
+      onClick: share, className: "press",
+      style: { position: "absolute", top: 12, left: 12, zIndex: 2, width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 13, color: C.primary })),
+    /* Edit button — top-right */
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { setEditModal(true); }, className: "press",
+      style: { position: "absolute", top: 12, right: 12, zIndex: 2, width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "pen", size: 13, color: C.primary })), /*#__PURE__*/React.createElement("div", {
     ref: cardRef,
     style: {
       padding: "28px 20px 22px",
@@ -7212,14 +7084,6 @@ function ProfilePage(_ref42) {
       gap: 14,
       borderRadius: 22,
       background: C.surface
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      cursor: "pointer"
-    },
-    onClick: function onClick() {
-      return setPicker(true);
     }
   }, /*#__PURE__*/React.createElement("img", {
     src: avatarURL(user && user.avatar),
@@ -7234,24 +7098,6 @@ function ProfilePage(_ref42) {
       display: "block"
     }
   }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      right: -2,
-      bottom: -2,
-      width: 28,
-      height: 28,
-      borderRadius: "50%",
-      background: C.primary,
-      border: "3px solid " + C.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "pen",
-    size: 10,
-    color: "#fff"
-  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 20,
       fontWeight: 800,
@@ -7359,57 +7205,9 @@ function ProfilePage(_ref42) {
       color: C.green,
       fontWeight: 700
     }
-  }, shareMsg), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.surface,
-      borderRadius: 18,
-      padding: 16,
-      border: "1px solid " + C.line
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: lbl
-  }, "Name"), /*#__PURE__*/React.createElement("input", {
-    value: name,
-    onChange: function onChange(e) {
-      return setName(e.target.value);
-    },
-    onBlur: function onBlur(e) {
-      return setName(cap(e.target.value));
-    },
-    placeholder: "Your name",
-    style: inp
-  }), /*#__PURE__*/React.createElement("label", {
-    style: _objectSpread(_objectSpread({}, lbl), {}, {
-      marginTop: 12,
-      marginBottom: 5
-    })
-  }, "Language"), /*#__PURE__*/React.createElement(AppSelect, {
-    value: lang,
-    onChange: setLang,
-    options: langOpts
-  }), langDirty && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: C.sub,
-      marginTop: 8
-    }
-  }, "Changing language resets your flashcard set."), /*#__PURE__*/React.createElement("button", {
-    onClick: save,
-    disabled: !dirty,
-    className: "press",
-    style: {
-      width: "100%",
-      marginTop: 12,
-      padding: 13,
-      borderRadius: 13,
-      border: "none",
-      background: dirty ? C.primary : C.line,
-      color: dirty ? "#fff" : C.sub,
-      fontWeight: 800,
-      cursor: dirty ? "pointer" : "default",
-      fontFamily: FONT
-    }
-  }, saved ? "Saved ✓" : "Save changes")), /*#__PURE__*/React.createElement("button", {
+  }, shareMsg), history && history.length > 0 && /*#__PURE__*/React.createElement(PointsChart, {
+    history: history
+  }), /*#__PURE__*/React.createElement("button", {
     onClick: onSignOut,
     className: "press",
     style: {
@@ -7435,7 +7233,73 @@ function ProfilePage(_ref42) {
     onClose: function onClose() {
       return setPicker(false);
     }
-  }));
+  }), editModal && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) setEditModal(false); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: "90vh" }
+      },
+        /* Fixed: handle + title row */
+        /*#__PURE__*/React.createElement("div", { style: { padding: "16px 20px 14px", flexShrink: 0, borderBottom: "1px solid " + C.line } },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.4, fontFamily: FONT } }, "Edit Profile"),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setEditModal(false); }, className: "press",
+              style: { width: 32, height: 32, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub }))
+          )
+        ),
+        /* Scrollable body */
+        /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 18, flex: 1 } },
+          /* Avatar picker */
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, marginBottom: 10, fontFamily: FONT } }, "Avatar"),
+            /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 } },
+              AVATARS.map(function(a) {
+                var sel = (user && user.avatar) === a;
+                return /*#__PURE__*/React.createElement("button", {
+                  key: a,
+                  onClick: function onClick() { setUser(function(u) { return _objectSpread(_objectSpread({}, u), {}, { avatar: a }); }); },
+                  className: "press",
+                  style: { border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "flex", justifyContent: "center" }
+                }, /*#__PURE__*/React.createElement(Avatar, { seed: a, size: 48, ring: sel ? C.primary : null }));
+              })
+            )
+          ),
+          /* Name */
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Name"),
+            /*#__PURE__*/React.createElement("input", {
+              value: name,
+              onChange: function onChange(e) { return setName(e.target.value); },
+              onBlur: function onBlur(e) { return setName(cap(e.target.value)); },
+              placeholder: "Your name",
+              style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" }
+            })
+          ),
+          /* Language */
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Language"),
+            /*#__PURE__*/React.createElement(AppSelect, { value: lang, onChange: setLang, options: langOpts }),
+            langDirty && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, marginTop: 6, fontFamily: FONT } }, "Changing language resets your flashcard set.")
+          )
+        ),
+        /* Fixed bottom: save */
+        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 20px calc(28px + env(safe-area-inset-bottom))", flexShrink: 0, borderTop: "1px solid " + C.line } },
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { save(); setTimeout(function() { setEditModal(false); }, 350); },
+            disabled: !dirty,
+            className: "press",
+            style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: dirty ? C.primary : C.line, color: dirty ? "#fff" : C.sub, fontWeight: 800, fontSize: 15, cursor: dirty ? "pointer" : "default", fontFamily: FONT }
+          }, saved ? "Saved ✓" : "Save changes")
+        )
+      )
+    ),
+    document.body
+  ));
 }
 function AvatarPicker(_ref45) {
   var current = _ref45.current,
@@ -7581,6 +7445,127 @@ function AnimatedFace(_ref46) {
     ry: ry,
     fill: "rgba(0,0,0,0.72)"
   })));
+}
+/* ── EXAM COMPLETE ── */
+function ExamComplete(_ref_ec) {
+  var correct = _ref_ec.correct,
+    total = _ref_ec.total,
+    passed = _ref_ec.passed,
+    level = _ref_ec.level,
+    prevLevel = _ref_ec.prevLevel,
+    onContinue = _ref_ec.onContinue;
+  var correctCu = useCountUp(correct, "examCorrect");
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      textAlign: "center",
+      background: passed ? "linear-gradient(160deg,#EDFFF5 0%,#F5F4FB 55%)" : "linear-gradient(160deg,#FFF2F2 0%,#F5F4FB 55%)",
+      padding: "20px 24px",
+      paddingBottom: "calc(24px + env(safe-area-inset-bottom))"
+    }
+  }, passed && /*#__PURE__*/React.createElement(Confetti, null),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      textAlign: "center",
+      padding: "28px 24px 24px",
+      borderRadius: 28,
+      background: "#fff",
+      border: "1px solid " + (passed ? "#2DBF7228" : "#F0706028"),
+      boxShadow: "0 16px 56px rgba(28,26,46,0.10)",
+      width: "100%",
+      maxWidth: 320,
+      position: "relative",
+      zIndex: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 56,
+      marginBottom: 10,
+      lineHeight: 1
+    }
+  }, passed ? "\uD83C\uDFC6" : "\uD83D\uDCDA"),
+  /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: 22,
+      fontWeight: 900,
+      color: passed ? "#1A8A52" : "#D94040",
+      margin: "0 0 6px",
+      letterSpacing: -0.5
+    }
+  }, passed ? "Level Unlocked!" : "Not Quite Yet"),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "#7B779A",
+      marginBottom: 22,
+      lineHeight: 1.4
+    }
+  }, passed
+    ? (LEVEL_LABEL[level] + " is now unlocked!")
+    : ("You need 25/30 to unlock " + LEVEL_LABEL[level] + ". Keep practicing!")),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "100%",
+      background: passed ? "#EDFFF5" : "#FFF2F2",
+      border: "1px solid " + (passed ? "#2DBF7228" : "#F0706028"),
+      borderRadius: 20,
+      padding: "18px 20px",
+      marginBottom: 18
+    }
+  },
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 58,
+      fontWeight: 900,
+      color: passed ? "#1A8A52" : "#D94040",
+      letterSpacing: -2,
+      lineHeight: 1
+    }
+  }, correctCu, /*#__PURE__*/React.createElement("span", { style: { fontSize: 26, fontWeight: 700, opacity: 0.5 } }, "/" + total)),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 13, color: "#7B779A", fontWeight: 600, marginTop: 6 }
+  }, "correct answers"),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      height: 10,
+      background: passed ? "#2DBF7222" : "#F0706022",
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: Math.round(correct / total * 100) + "%",
+      height: "100%",
+      borderRadius: 8,
+      background: passed ? "#2DBF72" : "#E05050",
+      transition: "width 1s cubic-bezier(.2,.8,.2,1)"
+    }
+  })),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, color: "#7B779A", fontWeight: 600, marginTop: 5 }
+  }, "Pass mark: 25/" + total + " (83%)")
+  )),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "100%",
+      maxWidth: 320,
+      marginTop: 16,
+      zIndex: 10
+    }
+  }, /*#__PURE__*/React.createElement(PrimaryButton, {
+    onClick: onContinue,
+    style: { background: passed ? "#2DBF72" : undefined }
+  }, passed ? ("Go to " + LEVEL_LABEL[level]) : "Back to Dashboard")));
 }
 function SessionComplete(_ref47) {
   var points = _ref47.points,
