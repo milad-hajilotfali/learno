@@ -7,12 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="theme-color" content="#5A4FE3"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden}
     #root{height:100vh;height:100dvh}
+    .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
   </style>
 </head>
 <body>
@@ -349,7 +351,7 @@ var langMeta = {
   fa: {
     label: "Persian",
     sub: "Finglish",
-    flag: "🇮🇷",
+    flag: "fi fi-ir",
     color: C.fa,
     soft: C.faSoft,
     ttsLang: "fa-IR",
@@ -358,7 +360,7 @@ var langMeta = {
   de: {
     label: "German",
     sub: "Deutsch",
-    flag: "🇩🇪",
+    flag: "fi fi-de",
     color: C.de,
     soft: C.deSoft,
     ttsLang: "de-DE",
@@ -366,6 +368,14 @@ var langMeta = {
   }
 };
 var FONT = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+/* FlagIcon: renders a flag-icons CSS class as a span, sized via fontSize */
+function FlagIcon(_ref_fi) {
+  var cls = _ref_fi.cls, size = _ref_fi.size;
+  return /*#__PURE__*/React.createElement("span", {
+    className: cls,
+    style: { fontSize: size || 22, lineHeight: 1, display: "inline-block", borderRadius: 3, overflow: "hidden" }
+  });
+}
 var AVATARS = ["Milad", "Aneka", "Bella", "Leo", "Zoe", "Felix", "Mia", "Max", "Luna", "Kai", "Nova", "Remy", "Sara", "Jonas", "Niloo", "Lena", "Reza", "Mira", "Tobias", "Darya", "Oliver", "Emma", "Liam", "Sophia", "Noah", "Ava", "Ethan", "Isla", "Aria", "Jack", "Maya", "Theo", "Ivy", "Hugo", "Nora", "Finn", "Ruby", "Milo", "Cleo", "Atlas", "Vivian", "Caleb", "Hazel", "Owen", "Stella", "Jude", "Willow", "Asher", "Iris", "Ezra", "Amir", "Yasmin", "Layla", "Darius", "Shirin", "Keanu", "Freya", "Bjorn", "Hana", "Soren", "Leila", "Rafael", "Chiara", "Tariq", "Anika", "Sven", "Nadia", "Viktor", "Celine", "Hamid", "Roxana", "Florian", "Ingrid", "Cyrus", "Zara", "Matteo", "Elena"];
 var avatarURL = function avatarURL(seed) {
   return "https://api.dicebear.com/9.x/open-peeps/svg?seed=" + encodeURIComponent(seed || "Milad");
@@ -762,25 +772,33 @@ function Avatar(_ref3) {
 function PrimaryButton(_ref4) {
   var children = _ref4.children,
     onClick = _ref4.onClick,
-    disabled = _ref4.disabled;
+    disabled = _ref4.disabled,
+    glow = _ref4.glow,
+    style = _ref4.style;
+  var baseStyle = {
+    width: "100%",
+    padding: 16,
+    borderRadius: 18,
+    border: "none",
+    cursor: disabled ? "not-allowed" : "pointer",
+    background: disabled ? C.line : C.primary,
+    color: disabled ? C.sub : "#fff",
+    fontSize: 16.5,
+    fontWeight: 800,
+    fontFamily: FONT,
+    position: "relative",
+    overflow: "hidden",
+    boxShadow: (glow && !disabled) ? "none" : disabled ? "none" : "0 8px 22px " + C.primary + "44"
+  };
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
     disabled: disabled,
-    className: "press",
-    style: {
-      width: "100%",
-      padding: 16,
-      borderRadius: 18,
-      border: "none",
-      cursor: disabled ? "not-allowed" : "pointer",
-      background: disabled ? C.line : C.primary,
-      color: disabled ? C.sub : "#fff",
-      fontSize: 16.5,
-      fontWeight: 800,
-      fontFamily: FONT,
-      boxShadow: disabled ? "none" : "0 8px 22px " + C.primary + "44"
-    }
-  }, children);
+    className: "press" + (glow && !disabled ? " btn-glow-ring" : ""),
+    style: _objectSpread(baseStyle, style || {})
+  },
+  /* Shimmer sweep — only rendered when glow is on */
+  glow && !disabled && /*#__PURE__*/React.createElement("span", { className: "btn-shine", "aria-hidden": "true" }),
+  children);
 }
 function Shell(_ref5) {
   var children = _ref5.children;
@@ -1250,6 +1268,7 @@ function App() {
     cardsSubScreen = _useState38[0],
     setCardsSubScreen = _useState38[1];
   var _useState37b = useState(null), _useState38b = _slicedToArray(_useState37b, 2), openDeckType = _useState38b[0], setOpenDeckType = _useState38b[1];
+  var _useState_customDecks = useState([]), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
   var dayStreak = useMemo(function () {
     return calcStreak(history);
   }, [history]);
@@ -1359,6 +1378,10 @@ function App() {
   var mv = useRef(false);
   var act = useRef(false);
   var locked = useRef(false);
+  var sessionStartRef = useRef(null);
+  var _useState_exitConfirm = useState(false), _useState_exitConfirm2 = _slicedToArray(_useState_exitConfirm, 2), showExitConfirm = _useState_exitConfirm2[0], setShowExitConfirm = _useState_exitConfirm2[1];
+  var _useState_sessTime = useState(0), _useState_sessTime2 = _slicedToArray(_useState_sessTime, 2), sessionSeconds = _useState_sessTime2[0], setSessionSeconds = _useState_sessTime2[1];
+  var _useState_isFirstToday = useState(false), _useState_isFirstToday2 = _slicedToArray(_useState_isFirstToday, 2), isFirstSessionToday = _useState_isFirstToday2[0], setIsFirstSessionToday = _useState_isFirstToday2[1];
   var startSession = function startSession(pool) {
     if (!pool || !pool.length) return;
     setQueue(shuffle(_toConsumableArray(pool)));
@@ -1368,6 +1391,12 @@ function App() {
     setDragX(0);
     setExitDir(null);
     setHistoryStack([]);
+    sessionStartRef.current = Date.now();
+    setSessionSeconds(0);
+    /* Detect first session of today */
+    var today = new Date().toDateString();
+    var lastSession = history.length > 0 ? new Date(history[history.length - 1].date).toDateString() : null;
+    setIsFirstSessionToday(lastSession !== today);
     setScreen("deck");
   };
   var startChapter = function startChapter() {
@@ -1413,6 +1442,16 @@ function App() {
       });
       return c;
     });
+  };
+  var forceExit = function forceExit() {
+    setShowExitConfirm(false);
+    /* Commit points if any, then show the session complete page by emptying the queue */
+    if (!committed.current && roundPointsRef.current > 0) {
+      committed.current = true;
+      commitRound(roundPointsRef.current);
+    }
+    /* Empty queue → sessionDone becomes true → SessionComplete renders */
+    setQueue([]);
   };
   var exitToApp = function exitToApp() {
     if (!committed.current && roundPointsRef.current > 0) {
@@ -1492,7 +1531,7 @@ function App() {
     setDragging(false);
     setTimeout(function () {
       return commitSwipe(dir);
-    }, 320);
+    }, 520);
   };
   var onPD = function onPD(e) {
     if (exitDir) return;
@@ -1656,13 +1695,13 @@ function App() {
         flexDirection: "column",
         gap: 14
       }
-    }, ["fa", "de"].map(function (l) {
+    },
+    /* Active languages */
+    ["fa", "de"].map(function (l) {
       var m = langMeta[l];
       return /*#__PURE__*/React.createElement("button", {
         key: l,
-        onClick: function onClick() {
-          return choose(l);
-        },
+        onClick: function onClick() { return choose(l); },
         className: "press",
         style: {
           display: "flex",
@@ -1676,40 +1715,45 @@ function App() {
           border: "2px solid " + C.line,
           fontFamily: FONT
         }
-      }, /*#__PURE__*/React.createElement("div", {
+      },
+      /*#__PURE__*/React.createElement("span", { className: m.flag, style: { fontSize: 36, lineHeight: 1, flexShrink: 0 } }),
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink } }, m.label),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, fontWeight: 500 } }, m.sub, " · 5 levels")
+      ),
+      /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 16, color: C.sub }));
+    }),
+    /* Coming soon languages */
+    [
+      { code: "es", flag: "fi fi-es", label: "Spanish", sub: "Español" },
+      { code: "fr", flag: "fi fi-fr", label: "French", sub: "Français" },
+      { code: "it", flag: "fi fi-it", label: "Italian", sub: "Italiano" }
+    ].map(function(l) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: l.code,
         style: {
-          width: 52,
-          height: 52,
-          borderRadius: 16,
-          background: m.soft,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          fontSize: 26,
-          flexShrink: 0
+          gap: 16,
+          padding: 18,
+          borderRadius: 20,
+          textAlign: "left",
+          background: C.bg,
+          border: "2px solid " + C.line,
+          opacity: 0.6,
+          fontFamily: FONT
         }
-      }, m.flag), /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 18,
-          fontWeight: 800,
-          color: C.ink
-        }
-      }, m.label), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 13.5,
-          color: C.sub,
-          fontWeight: 500
-        }
-      }, m.sub, " \xB7 5 levels")), /*#__PURE__*/React.createElement(Icon, {
-        name: "chevron-right",
-        size: 16,
-        color: C.sub
-      }));
-    }))), /*#__PURE__*/React.createElement(StepDots, {
+      },
+      /*#__PURE__*/React.createElement("span", { className: l.flag, style: { fontSize: 36, lineHeight: 1, flexShrink: 0 } }),
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink } }, l.label),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, fontWeight: 500 } }, l.sub)
+      ),
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, fontWeight: 800, color: C.sub, background: C.line, borderRadius: 8, padding: "4px 8px", whiteSpace: "nowrap" }
+      }, "Coming soon"));
+    })
+    )), /*#__PURE__*/React.createElement(StepDots, {
       current: 1
     })));
   }
@@ -1884,8 +1928,8 @@ function App() {
     }).length;
     var kh = Math.max(0, Math.min(1, dragX / 110));
     var rh = Math.max(0, Math.min(1, -dragX / 110));
-    var topTf = exitDir ? "translateX(" + (exitDir === "right" ? 640 : -640) + "px) rotate(" + (exitDir === "right" ? 26 : -26) + "deg)" : "translateX(" + dragX + "px) rotate(" + dragX / 22 + "deg)";
-    var topTr = dragging ? "none" : "transform .34s cubic-bezier(.2,.8,.2,1)";
+    var topTf = exitDir ? "translateX(" + (exitDir === "right" ? 700 : -700) + "px) rotate(" + (exitDir === "right" ? 26 : -26) + "deg)" : "translateX(" + dragX + "px) rotate(" + dragX / 22 + "deg)";
+    var topTr = dragging ? "none" : exitDir ? "transform .52s cubic-bezier(.2,.8,.2,1)" : "transform .34s cubic-bezier(.2,.8,.2,1)";
     var tint = exitDir === "right" ? {
       c: C.green,
       o: 0.92,
@@ -1923,7 +1967,33 @@ function App() {
       overflow: "hidden",
       fontFamily: FONT
     };
-    return /*#__PURE__*/React.createElement(Shell, null, /*#__PURE__*/React.createElement(StyleTag, null), !sessionDone && /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement(Shell, null, /*#__PURE__*/React.createElement(StyleTag, null),
+    /* CRITICAL: Exit confirm modal via portal */
+    showExitConfirm && ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+        onClick: function onClick(e) { if (e.target === e.currentTarget) setShowExitConfirm(false); }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "20px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 6, letterSpacing: -0.4 } }, "Leave this session?"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, marginBottom: 22, lineHeight: 1.45 } }, "Your progress this round will be saved, but you'll exit the current deck."),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+            /*#__PURE__*/React.createElement(PrimaryButton, {
+              onClick: function onClick() { setShowExitConfirm(false); }
+            }, "Continue session"),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: forceExit, className: "press",
+              style: { padding: 14, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.red, fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT }
+            }, "Exit")
+          )
+        )
+      ),
+      document.body
+    ),
+    !sessionDone && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: "18px 18px 4px",
         display: "flex",
@@ -1932,7 +2002,7 @@ function App() {
         flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: exitToApp,
+      onClick: function onClick() { setShowExitConfirm(true); },
       className: "press",
       style: {
         background: C.surface,
@@ -2042,7 +2112,11 @@ function App() {
       level: curLevel,
       chapterTitle: chap === null || chap === void 0 ? void 0 : chap.title,
       onContinue: exitToApp,
-      userAvatar: user && user.avatar
+      userAvatar: user && user.avatar,
+      totalCards: (function(){ var pool = queue.concat(historyStack); return pool.length || historyStack.length; }()),
+      knownCards: historyStack.filter(function(c){ return !reviewIds.includes(c.id); }).length,
+      sessionSeconds: Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 1000),
+      isFirstSessionToday: isFirstSessionToday
     }) : /*#__PURE__*/React.createElement("div", {
       style: {
         position: "relative",
@@ -2053,12 +2127,15 @@ function App() {
       }
     }, queue.slice(1, 3).map(function (card, i) {
       var d = i + 1;
+      /* When top card is exiting, the first card behind (i=0) rises up */
+      var isRising = exitDir && i === 0;
       return /*#__PURE__*/React.createElement("div", {
         key: card.id,
         style: {
           position: "absolute",
           inset: 0,
-          transform: "translateY(" + d * 10 + "px)",
+          transform: isRising ? "translateY(0px) scale(1.015)" : "translateY(" + d * 10 + "px) scale(1)",
+          transition: isRising ? "transform .52s cubic-bezier(.2,.8,.2,1)" : "none",
           zIndex: 1
         }
       }, /*#__PURE__*/React.createElement("div", {
@@ -2347,6 +2424,9 @@ function App() {
     onStartMarked: startMarked,
     onStartLevelExam: startLevelExam,
     unlockedLevels: unlockedLevels,
+    selectedLangs: selectedLangs,
+    onSwitchLang: function(lang) { setSelectedLangs([lang]); initData([lang], curLevel); },
+    history: history,
     onOpenProfile: function onOpenProfile() {
       return _setTab("profile");
     },
@@ -2356,6 +2436,9 @@ function App() {
     initialDeckScreen: openDeckType ? { type: openDeckType } : null,
     onInitDeckScreenConsumed: function() { setOpenDeckType(null); },
     onBackToHome: function() { setOpenDeckType(null); _setTab("dashboard"); },
+    customDecks: customDecks,
+    onAddDeck: function(deck) { setCustomDecks(function(d) { return [].concat(_toConsumableArray(d), [_objectSpread(_objectSpread({}, deck), {}, { colorIdx: d.length % 8 })]); }); },
+    onDeleteDeck: function(id) { setCustomDecks(function(d) { return d.filter(function(dk) { return dk.id !== id; }); }); },
     allCards: allCards,
     learnedIds: learnedIds,
     markedIds: markedIds,
@@ -2399,6 +2482,7 @@ function App() {
     dayStreak: dayStreak,
     totalPoints: totalPoints,
     history: history,
+    unlockedLevels: unlockedLevels,
     onLangsChanged: (/*#__PURE__*/function () {
       var _ref14 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(langs) {
         return _regenerator().w(function (_context4) {
@@ -2837,7 +2921,7 @@ function TabBar(_ref19) {
   }, {
     k: "mywords",
     icon: "layer-group",
-    label: "Cards"
+    label: "Decks"
   }, {
     k: "friends",
     icon: "users",
@@ -3483,9 +3567,8 @@ function StreakDialog(_ref24) {
       });
     }
   };
-  return /*#__PURE__*/React.createElement(Sheet, {
-    onClose: onClose,
-    title: "Your streak"
+  return /*#__PURE__*/React.createElement("div", {
+    style: { padding: "16px 20px 28px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -3622,9 +3705,8 @@ function PointsDialog(_ref25) {
   var next = idx >= 0 ? REWARDS[idx] : null;
   var prevAt = idx > 0 ? REWARDS[idx - 1].at : 0;
   var pct = next ? Math.min(100, Math.round((points - prevAt) / (next.at - prevAt) * 100)) : 100;
-  return /*#__PURE__*/React.createElement(Sheet, {
-    onClose: onClose,
-    title: "Points & rewards"
+  return /*#__PURE__*/React.createElement("div", {
+    style: { padding: "16px 20px 28px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
@@ -3916,6 +3998,8 @@ function Dashboard(_ref27) {
     onStartMarked = _ref27.onStartMarked,
     onStartLevelExam = _ref27.onStartLevelExam,
     unlockedLevels = _ref27.unlockedLevels,
+    selectedLangs = _ref27.selectedLangs,
+    onSwitchLang = _ref27.onSwitchLang,
     onOpenProfile = _ref27.onOpenProfile,
     onOpenDeck = _ref27.onOpenDeck,
     scrollRef = _ref27.scrollRef;
@@ -3935,6 +4019,17 @@ function Dashboard(_ref27) {
     _useState74 = _slicedToArray(_useState73, 2),
     dlg = _useState74[0],
     setDlg = _useState74[1];
+  var _useState_langSwitcher = useState(false), _useState_langSwitcher2 = _slicedToArray(_useState_langSwitcher, 2),
+    showLangSwitcher = _useState_langSwitcher2[0], setShowLangSwitcher = _useState_langSwitcher2[1];
+  /* Points per language from history */
+  var langPoints = useMemo(function() {
+    var m = {};
+    (history || []).forEach(function(d) {
+      var l = d.lang || (selectedLangs && selectedLangs[0]) || "de";
+      m[l] = (m[l] || 0) + (d.points || 0);
+    });
+    return m;
+  }, [history, selectedLangs]);
   var reviewCount = allCards.filter(function (c) {
     return reviewIds.includes(c.id);
   }).length;
@@ -4001,57 +4096,92 @@ function Dashboard(_ref27) {
       gap: 6,
       flexShrink: 0
     }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      return setDlg("points");
-    },
+  },
+  /* Combined points+streak pill */
+  /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() { setDlg("points"); },
     className: "press",
-    style: {
-      background: C.primarySoft,
-      border: "1px solid " + C.primary + "30",
-      borderRadius: 12,
-      padding: "6px 10px",
-      display: "flex",
-      alignItems: "center",
-      gap: 5,
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "star",
-    size: 13,
-    color: C.primary
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 14,
-      fontWeight: 800,
-      color: C.primary
-    }
-  }, pts)), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      return setDlg("streak");
-    },
+    style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 14, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }
+  },
+    /*#__PURE__*/React.createElement(Icon, { name: "star", size: 13, color: C.primary }),
+    /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary } }, pts),
+    /*#__PURE__*/React.createElement("div", { style: { width: 1, height: 14, background: C.line } }),
+    /*#__PURE__*/React.createElement(Icon, { name: "fire", size: 13, color: C.amber }),
+    /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.amber } }, streak)
+  ),
+  /* Language flag button */
+  /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() { setShowLangSwitcher(true); },
     className: "press",
-    style: {
-      background: C.amber + "14",
-      border: "1px solid " + C.amber + "30",
-      borderRadius: 12,
-      padding: "6px 10px",
-      display: "flex",
-      alignItems: "center",
-      gap: 5,
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "fire",
-    size: 13,
-    color: C.amber
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 14,
-      fontWeight: 800,
-      color: C.amber
-    }
-  }, streak)))), function () {
+    style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 12, padding: "6px 9px", display: "flex", alignItems: "center", cursor: "pointer" }
+  },
+    /*#__PURE__*/React.createElement("span", {
+      className: (selectedLangs && selectedLangs[0]) === "de" ? "fi fi-de" :
+                 (selectedLangs && selectedLangs[0]) === "fa" ? "fi fi-ir" : "fi fi-un",
+      style: { fontSize: 15, lineHeight: 1, display: "inline-block", borderRadius: 3 }
+    })
+  )
+  ),
+  /* Language switcher modal */
+  showLangSwitcher && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) setShowLangSwitcher(false); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, "Languages"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setShowLangSwitcher(false); }, className: "press",
+            style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+        ),
+        /* Active languages */
+        [{ value: "de", label: "German", sub: "Deutsch", flag: "fi fi-de" }, { value: "fa", label: "Persian", sub: "Finglish", flag: "fi fi-ir" }].map(function(lang) {
+          var isActive = (selectedLangs && selectedLangs[0]) === lang.value;
+          var pts = langPoints[lang.value] || 0;
+          return /*#__PURE__*/React.createElement("button", {
+            key: lang.value,
+            onClick: function onClick() {
+              if (!isActive && onSwitchLang) { onSwitchLang(lang.value); }
+              setShowLangSwitcher(false);
+            },
+            className: "press",
+            style: { width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", marginBottom: 10, borderRadius: 16, border: "1.5px solid " + (isActive ? C.primary : C.line), background: isActive ? C.primarySoft : C.surface, cursor: "pointer", textAlign: "left", fontFamily: FONT }
+          },
+            /*#__PURE__*/React.createElement("span", { className: lang.flag, style: { fontSize: 28, lineHeight: 1, flexShrink: 0, display: "inline-block" } }),
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: isActive ? C.primary : C.ink } }, lang.label, " (", lang.sub, ")"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, marginTop: 2 } }, pts + " pts earned")
+            ),
+            isActive && /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 18, color: C.primary })
+          );
+        }),
+        /* Coming soon */
+        [{ code: "es", flag: "fi fi-es", label: "Spanish", sub: "Español" },
+         { code: "fr", flag: "fi fi-fr", label: "French", sub: "Français" },
+         { code: "it", flag: "fi fi-it", label: "Italian", sub: "Italiano" }
+        ].map(function(lang) {
+          return /*#__PURE__*/React.createElement("div", {
+            key: lang.code,
+            style: { display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", marginBottom: 10, borderRadius: 16, border: "1.5px solid " + C.line, background: C.bg, opacity: 0.55, fontFamily: FONT }
+          },
+            /*#__PURE__*/React.createElement("span", { className: lang.flag, style: { fontSize: 28, lineHeight: 1, flexShrink: 0, display: "inline-block" } }),
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, lang.label, " (", lang.sub, ")"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, marginTop: 2 } }, "Coming soon")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 800, color: C.sub, background: C.line, borderRadius: 8, padding: "3px 8px" } }, "Soon")
+          );
+        })
+      )
+    ),
+    document.body
+  )
+  ), function () {
     var lvc2 = allCards.filter(function (c) {
       return c.level === curLevel;
     });
@@ -4074,14 +4204,14 @@ function Dashboard(_ref27) {
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        padding: "22px 20px 20px"
+        padding: "16px 16px 14px"
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        marginBottom: 20
+        marginBottom: 14
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: canPrev ? function () {
@@ -4090,9 +4220,9 @@ function Dashboard(_ref27) {
       disabled: !canPrev,
       className: "press",
       style: {
-        width: 38,
-        height: 38,
-        borderRadius: 12,
+        width: 34,
+        height: 34,
+        borderRadius: 10,
         border: "1.5px solid " + C.line,
         background: C.surface,
         cursor: canPrev ? "pointer" : "default",
@@ -4114,7 +4244,7 @@ function Dashboard(_ref27) {
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 36,
+        fontSize: 28,
         fontWeight: 900,
         color: C.primary,
         letterSpacing: -2,
@@ -4122,10 +4252,10 @@ function Dashboard(_ref27) {
       }
     }, LEVEL_LABEL[curLevel]), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 12,
+        fontSize: 11.5,
         fontWeight: 600,
         color: C.sub,
-        marginTop: 4,
+        marginTop: 3,
         letterSpacing: 0.5
       }
     }, lvD, " of ", lvc2.length, " cards done")), /*#__PURE__*/React.createElement("button", {
@@ -4135,9 +4265,9 @@ function Dashboard(_ref27) {
       disabled: !canNext,
       className: "press",
       style: {
-        width: 38,
-        height: 38,
-        borderRadius: 12,
+        width: 34,
+        height: 34,
+        borderRadius: 10,
         border: "1.5px solid " + C.line,
         background: C.surface,
         cursor: canNext ? "pointer" : "default",
@@ -4153,30 +4283,30 @@ function Dashboard(_ref27) {
       color: C.ink
     }))), /*#__PURE__*/React.createElement("div", {
       style: {
-        marginBottom: 22
+        marginBottom: 14
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 8
+        marginBottom: 6
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 12,
+        fontSize: 11.5,
         fontWeight: 700,
         color: C.sub
       }
     }, "Level progress"), /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 13,
+        fontSize: 12.5,
         fontWeight: 800,
         color: C.primary
       }
     }, lvP, "%")), /*#__PURE__*/React.createElement("div", {
       style: {
-        height: 12,
+        height: 8,
         background: C.line,
         borderRadius: 8,
         overflow: "hidden"
@@ -4221,7 +4351,7 @@ function Dashboard(_ref27) {
           display: "flex",
           alignItems: "center",
           gap: 12,
-          padding: "12px 14px",
+          padding: "10px 12px",
           borderRadius: 16,
           border: "1.5px solid " + (isCur ? C.primary : C.line),
           background: isCur ? C.primarySoft : C.surface,
@@ -4321,7 +4451,7 @@ function Dashboard(_ref27) {
     }, "Take an exam to unlock level"))
     ), /*#__PURE__*/React.createElement("div", {
       style: {
-        marginTop: 18
+        marginTop: 12
       }
     }, isLevelLocked
       ? /*#__PURE__*/React.createElement(PrimaryButton, {
@@ -4329,7 +4459,8 @@ function Dashboard(_ref27) {
           style: { background: "#7C5CFA" }
         }, "Unlock Level")
       : /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: onStart
+          onClick: onStart,
+          glow: true
         }, "Continue")
     )));
   }(), /*#__PURE__*/React.createElement("div", {
@@ -4343,11 +4474,11 @@ function Dashboard(_ref27) {
         onClick: function onClick() { if (onOpenDeck) onOpenDeck("review"); },
         className: "press",
         style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
-      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 90 } },
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 82, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 82, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 68 } },
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
         /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 82, borderRadius: 15, background: C.redSoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.red + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 62, borderRadius: 15, background: C.redSoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.red + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
         },
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
             /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
@@ -4375,11 +4506,11 @@ function Dashboard(_ref27) {
         onClick: function onClick() { if (onOpenDeck) onOpenDeck("marked"); },
         className: "press",
         style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
-      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 90 } },
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 82, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 82, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 68 } },
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 62, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 62, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
         /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 82, borderRadius: 15, background: C.primarySoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.primary + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 62, borderRadius: 15, background: C.primarySoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.primary + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
         },
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
             /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
@@ -4399,18 +4530,54 @@ function Dashboard(_ref27) {
         )
       ));
     }())
-  ), dlg === "streak" && /*#__PURE__*/React.createElement(StreakDialog, {
-    history: history,
-    streak: dayStreak,
-    onClose: function onClose() {
-      return setDlg(null);
-    }
-  }), dlg === "points" && /*#__PURE__*/React.createElement(PointsDialog, {
-    points: totalPoints,
-    onClose: function onClose() {
-      return setDlg(null);
-    }
-  }));
+  ), (dlg === "streak" || dlg === "points") && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) setDlg(null); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", fontFamily: FONT, height: "72vh", display: "flex", flexDirection: "column" }
+      },
+        /* Handle + close + tabs — all fixed, never scrolls */
+        /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px 12px", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
+          /* Title row with close button */
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 } },
+            /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: -0.3 } },
+              dlg === "streak" ? "Your Streak" : "Points & Rewards"
+            ),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setDlg(null); }, className: "press",
+              style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+          ),
+          /* Segmented tabs */
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, background: C.bg, borderRadius: 14, padding: 4 } },
+            [{ k: "points", icon: "star", label: "Points", color: C.primary },
+             { k: "streak", icon: "fire", label: "Streak", color: C.amber }].map(function(tab) {
+              var on = dlg === tab.k;
+              return /*#__PURE__*/React.createElement("button", {
+                key: tab.k,
+                onClick: function onClick() { setDlg(tab.k); },
+                className: "press",
+                style: { flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: on ? C.surface : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: FONT, boxShadow: on ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all .15s" }
+              },
+                /*#__PURE__*/React.createElement(Icon, { name: tab.icon, size: 13, color: on ? tab.color : C.sub }),
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: on ? 800 : 600, color: on ? tab.color : C.sub } }, tab.label)
+              );
+            })
+          )
+        ),
+        /* Scrollable content — flex:1 fills remaining fixed height exactly */
+        /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "env(safe-area-inset-bottom)" } },
+          dlg === "streak"
+            ? /*#__PURE__*/React.createElement(StreakDialog, { history: history, streak: dayStreak, onClose: function onClose() { return setDlg(null); } })
+            : /*#__PURE__*/React.createElement(PointsDialog, { points: totalPoints, onClose: function onClose() { return setDlg(null); } })
+        )
+      )
+    ),
+    document.body
+  ));
 }
 
 /* ── STATS ── */
@@ -4972,7 +5139,10 @@ function MyFlashcardsPage(_ref31) {
     onOpenChapter = _ref31.onOpenChapter,
     initialDeckScreen = _ref31.initialDeckScreen,
     onInitDeckScreenConsumed = _ref31.onInitDeckScreenConsumed,
-    onBackToHome = _ref31.onBackToHome;
+    onBackToHome = _ref31.onBackToHome,
+    customDecks = _ref31.customDecks,
+    onAddDeck = _ref31.onAddDeck,
+    onDeleteDeck = _ref31.onDeleteDeck;
   var _useState81 = useState(initialDeckScreen || null),
     /* Track if deckScreen was seeded from home navigation */
     _useState82 = _slicedToArray(_useState81, 2),
@@ -4990,6 +5160,12 @@ function MyFlashcardsPage(_ref31) {
     _useState88 = _slicedToArray(_useState87, 2),
     adding = _useState88[0],
     setAdding = _useState88[1];
+  var _useState_addSheet = useState(false), _useState_addSheet2 = _slicedToArray(_useState_addSheet, 2),
+    showAddSheet = _useState_addSheet2[0], setShowAddSheet = _useState_addSheet2[1];
+  var _useState_addDeckModal = useState(false), _useState_addDeckModal2 = _slicedToArray(_useState_addDeckModal, 2),
+    showAddDeckModal = _useState_addDeckModal2[0], setShowAddDeckModal = _useState_addDeckModal2[1];
+  var _useState_newDeckName = useState(""), _useState_newDeckName2 = _slicedToArray(_useState_newDeckName, 2),
+    newDeckName = _useState_newDeckName2[0], setNewDeckName = _useState_newDeckName2[1];
   useEffect(function() {
     if (initialDeckScreen && onInitDeckScreenConsumed) onInitDeckScreenConsumed();
   }, []);
@@ -5165,6 +5341,16 @@ function MyFlashcardsPage(_ref31) {
   var COL_MARKED  = { bg: C.primarySoft, text: C.primary, bar: C.primary };   /* purple / primary */
   var COL_REVIEW  = { bg: C.redSoft,     text: C.red,     bar: C.red   };
   var COL_MINE    = { bg: "#FFF3CD",     text: "#B45309", bar: C.amber };      /* solid amber, no transparency */
+  var DECK_PALETTE = [
+    { bg: "#E6FFFA", text: "#0E7A6A", bar: "#20B09A" }, /* teal   */
+    { bg: "#E8F8F0", text: "#1B7A4B", bar: "#29A96A" }, /* green  */
+    { bg: "#FFF0F6", text: "#9B2053", bar: "#E0458B" }, /* pink   */
+    { bg: "#E8F4FF", text: "#1A5FA3", bar: "#3B8FE8" }, /* blue   */
+    { bg: "#FFF4E6", text: "#A0530A", bar: "#F08030" }, /* orange */
+    { bg: "#F0FFF0", text: "#2D7A2D", bar: "#48BB48" }, /* lime   */
+    { bg: "#EDE9FF", text: "#5A3FC0", bar: "#7C5CFC" }, /* violet */
+    { bg: "#FDE8FF", text: "#7A1A8A", bar: "#C048D8" }, /* purple */
+  ];
 
   /* ── SHARED DeckCard component (always compact / 2-per-row) ── */
   var DeckCard = function DeckCard(_ref32b) {
@@ -5174,21 +5360,21 @@ function MyFlashcardsPage(_ref31) {
     var pct = count > 0 ? Math.round((doneCount / count) * 100) : 0;
     var isNeutral = colorObj === LEVEL_NEUTRAL;
     var borderCol = isNeutral ? C.line : colorObj.bar + "44";
-    /* Main card height. Shadow cards share same height, rotated slightly so edges peek at top */
-    var mainH = 82;
-    var containerH = mainH + 5; /* small room for rotation overflow at top */
+    /* Main card height — sized to content: 28px icon + 7 gap + 3 bar + 11+8 padding = 57px → round to 62 */
+    var mainH = 62;
+    var containerH = mainH + 6; /* exactly enough for shadow peek, no dead space */
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick, className: "press",
       style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
     },
       /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: containerH } },
-        /* far shadow */
+        /* far shadow — peeks 4px below main card, rotated */
         /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-        /* near shadow */
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+        /* near shadow — peeks 2px below main card, slight rotation */
+        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
         /* main card */
         /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", height: mainH, borderRadius: 15, background: colorObj.bg, border: "1.5px solid " + borderCol, boxShadow: isNeutral ? "0 2px 8px rgba(0,0,0,0.07)" : "0 3px 14px " + colorObj.bar + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: mainH, borderRadius: 15, background: colorObj.bg, border: "1.5px solid " + borderCol, boxShadow: isNeutral ? "0 2px 8px rgba(0,0,0,0.07)" : "0 3px 14px " + colorObj.bar + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
         },
           /* top: icon + label + count */
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
@@ -5322,7 +5508,7 @@ function MyFlashcardsPage(_ref31) {
           ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, dsEmpty)
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
-      adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, onClose: function onClose() { return setAdding(false); }, onAdd: onAdd }),
+      adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks, onClose: function onClose() { return setAdding(false); }, onAdd: onAdd }),
       open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
     );
   }
@@ -5333,17 +5519,19 @@ function MyFlashcardsPage(_ref31) {
   },
     /* Header */
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      /*#__PURE__*/React.createElement("h1", { style: { fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5 } }, "My Flashcards"),
-      onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
-        onClick: onOpenDeckSettings, className: "press",
-        style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
+      /*#__PURE__*/React.createElement("h1", { style: { fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: -0.5 } }, "My Decks"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+        /* Add button */
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { return setShowAddSheet(true); }, className: "press",
+          style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, color: C.primary, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", gap: 5 }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), "Add"),
+        onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
+          onClick: onOpenDeckSettings, className: "press",
+          style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
+      )
     ),
-    /* Add card */
-    /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() { return setAdding(true); }, className: "press",
-      style: { padding: 13, borderRadius: 14, border: "2px dashed " + C.primary + "55", background: C.primarySoft, color: C.primary, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
-    }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), "Add a flashcard"),
     /* By Level — 2-col grid, neutral style */
     /*#__PURE__*/React.createElement("div", null,
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "By Level"),
@@ -5386,12 +5574,105 @@ function MyFlashcardsPage(_ref31) {
             doneCount: customCards.filter(function (c) { return learnedIds.includes(c.id); }).length,
             colorObj: COL_MINE, icon: "plus",
             onClick: function onClick() { setDeckScreen({ type: "mine" }); }
+          }),
+          /* Custom decks flow here, filling the grid naturally */
+          _toConsumableArray((customDecks || [])).map(function(deck) {
+            var deckCards = allCards.filter(function(c) { return c.custom && c.deckId === deck.id; });
+            var col = DECK_PALETTE[deck.colorIdx != null ? deck.colorIdx : 0];
+            return /*#__PURE__*/React.createElement(DeckCard, {
+              key: deck.id,
+              label: deck.name, sublabel: "Custom deck",
+              count: deckCards.length,
+              doneCount: deckCards.filter(function(c) { return learnedIds.includes(c.id); }).length,
+              colorObj: col, icon: "folder",
+              onClick: function onClick() { setDeckScreen({ type: "customDeck", deck: deck }); }
+            });
           })
         )
       )
     ),
+    /* Add type sheet */
+    showAddSheet && ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+        onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddSheet(false); }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 16, letterSpacing: -0.4 } }, "What do you want to add?"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setShowAddSheet(false); setAdding(true); },
+            className: "press",
+            style: { width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", marginBottom: 10, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", textAlign: "left", fontFamily: FONT }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 40, borderRadius: 12, background: C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "credit-card", size: 18, color: C.primary })
+            ),
+            /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Flashcard"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, marginTop: 1 } }, "Add a single word or phrase")
+            )
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setShowAddSheet(false); setNewDeckName(""); setShowAddDeckModal(true); },
+            className: "press",
+            style: { width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", textAlign: "left", fontFamily: FONT }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 40, borderRadius: 12, background: "#FFF3CD", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "folder", size: 18, color: "#B45309" })
+            ),
+            /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Deck"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, marginTop: 1 } }, "Create a new folder for cards")
+            )
+          )
+        )
+      ),
+      document.body
+    ),
+    /* Add deck modal */
+    showAddDeckModal && ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+        onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, "New deck"),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setShowAddDeckModal(false); }, className: "press",
+              style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+          ),
+          /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6 } }, "Deck name"),
+          /*#__PURE__*/React.createElement("input", {
+            value: newDeckName,
+            onChange: function onChange(e) { setNewDeckName(e.target.value); },
+            placeholder: "e.g. Travel phrases",
+            autoFocus: true,
+            style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 16 }
+          }),
+          /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: function onClick() {
+              if (!newDeckName.trim()) return;
+              var newDeck = { id: "deck-" + Date.now(), name: newDeckName.trim() };
+              if (onAddDeck) onAddDeck(newDeck);
+              setShowAddDeckModal(false);
+            },
+            disabled: !newDeckName.trim()
+          }, "Create deck")
+        )
+      ),
+      document.body
+    ),
     adding && /*#__PURE__*/React.createElement(AddWordModal, {
       selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter,
+      customDecks: customDecks,
       onClose: function onClose() { return setAdding(false); }, onAdd: onAdd
     }),
     open && /*#__PURE__*/React.createElement(FlashcardModal, {
@@ -5696,7 +5977,8 @@ function AddWordModal(_ref34) {
     curLevel = _ref34.curLevel,
     curChapter = _ref34.curChapter,
     onClose = _ref34.onClose,
-    onAdd = _ref34.onAdd;
+    onAdd = _ref34.onAdd,
+    customDecks = _ref34.customDecks;
   var _useState95 = useState(selectedLangs[0] || "fa"),
     _useState96 = _slicedToArray(_useState95, 2),
     lang = _useState96[0],
@@ -5896,8 +6178,8 @@ function AddWordModal(_ref34) {
     onAdd({
       id: "u" + Date.now(),
       language: lang,
-      level: tg === "mine" ? "custom" : tl,
-      chapter: tg === "mine" ? "custom" : tc,
+      level: (tg === "mine" || tg === "deck") ? "custom" : tl,
+      chapter: (tg === "mine" || tg === "deck") ? "custom" : tc,
       word: f.word.trim(),
       translation: f.translation.trim(),
       pron: f.pron.trim(),
@@ -5906,7 +6188,8 @@ function AddWordModal(_ref34) {
       note: "added by you",
       farsi: f.farsi.trim(),
       farsiExample: f.farsiExample.trim(),
-      custom: tg === "mine"
+      custom: true,
+      deckId: tg === "deck" ? tl : undefined
     });
     onClose();
   };
@@ -5932,20 +6215,15 @@ function AddWordModal(_ref34) {
   var groupOpts = [{
     value: "mine",
     label: "My Cards"
-  }].concat(_toConsumableArray(LEVELS_ORDER.flatMap(function (lv) {
-    return CHAPTERS[lv].map(function (ch) {
-      return {
-        value: lv + "|" + ch.id,
-        label: LEVEL_LABEL[lv] + " › " + ch.title
-      };
-    });
+  }].concat(_toConsumableArray((customDecks || []).map(function(d) {
+    return { value: "deck-" + d.id, label: d.name };
   })));
   var langOpts = [{
     value: "fa",
-    label: "🇮🇷 Persian (Finglish)"
+    label: "Persian (Finglish)"
   }, {
     value: "de",
-    label: "🇩🇪 German (Deutsch)"
+    label: "German (Deutsch)"
   }];
   return /*#__PURE__*/React.createElement(Sheet, {
     onClose: onClose,
@@ -6077,15 +6355,22 @@ function AddWordModal(_ref34) {
     }
   }, "Required for Persian cards")), "    ", /*#__PURE__*/React.createElement("label", {
     style: lbl
-  }, "Save to group"), /*#__PURE__*/React.createElement("div", {
+  }, "Save to deck"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 5
     }
   }, /*#__PURE__*/React.createElement(AppSelect, {
-    value: tg === "mine" ? "mine" : tl + "|" + tc,
+    value: tg === "mine" ? "mine" : tg === "deck" ? "deck-" + tl : tl + "|" + tc,
     onChange: function onChange(v) {
       if (v === "mine") {
         setTg("mine");
+        setTl("");
+        setTc("");
+      } else if (v.startsWith("deck-")) {
+        var deckId = v.slice(5);
+        setTg("deck");
+        setTl(deckId);
+        setTc("");
       } else {
         var _v$split = v.split("|"),
           _v$split2 = _slicedToArray(_v$split, 2),
@@ -6921,8 +7206,16 @@ function ProfilePage(_ref42) {
     dayStreak = _ref42.dayStreak,
     totalPoints = _ref42.totalPoints,
     history = _ref42.history,
+    unlockedLevels = _ref42.unlockedLevels,
     onLangsChanged = _ref42.onLangsChanged,
     onSignOut = _ref42.onSignOut;
+  /* Highest unlocked level */
+  var lvl = useMemo(function() {
+    if (!unlockedLevels || unlockedLevels.length === 0) return user && user.level || "A1";
+    var highest = "A1";
+    LEVELS_ORDER.forEach(function(l) { if (unlockedLevels.includes(l)) highest = l; });
+    return highest;
+  }, [unlockedLevels, user]);
   var _useState119 = useState(false),
     _useState120 = _slicedToArray(_useState119, 2),
     picker = _useState120[0],
@@ -6949,8 +7242,7 @@ function ProfilePage(_ref42) {
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
   var langDirty = lang !== (selectedLangs[0] || "fa");
-  var dirty = name.trim() !== (user && user.name || "") || langDirty;
-  var lvl = user && user.level || "A1";
+  var dirty = name.trim() !== (user && user.name || "");
   var save = /*#__PURE__*/function () {
     var _ref43 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
       return _regenerator().w(function (_context9) {
@@ -7033,10 +7325,10 @@ function ProfilePage(_ref42) {
   };
   var langOpts = [{
     value: "fa",
-    label: "🇮🇷 Persian (Finglish)"
+    label: "Persian (Finglish)"
   }, {
     value: "de",
-    label: "🇩🇪 German (Deutsch)"
+    label: "German (Deutsch)"
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7085,6 +7377,10 @@ function ProfilePage(_ref42) {
       borderRadius: 22,
       background: C.surface
     }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() { setEditModal(true); },
+    className: "press",
+    style: { border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative", borderRadius: "50%" }
   }, /*#__PURE__*/React.createElement("img", {
     src: avatarURL(user && user.avatar),
     crossOrigin: "anonymous",
@@ -7097,7 +7393,7 @@ function ProfilePage(_ref42) {
       border: "4px solid " + C.primarySoft,
       display: "block"
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 20,
       fontWeight: 800,
@@ -7257,16 +7553,18 @@ function ProfilePage(_ref42) {
           /* Avatar picker */
           /*#__PURE__*/React.createElement("div", null,
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, marginBottom: 10, fontFamily: FONT } }, "Avatar"),
-            /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 } },
-              AVATARS.map(function(a) {
-                var sel = (user && user.avatar) === a;
-                return /*#__PURE__*/React.createElement("button", {
-                  key: a,
-                  onClick: function onClick() { setUser(function(u) { return _objectSpread(_objectSpread({}, u), {}, { avatar: a }); }); },
-                  className: "press",
-                  style: { border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "flex", justifyContent: "center" }
-                }, /*#__PURE__*/React.createElement(Avatar, { seed: a, size: 48, ring: sel ? C.primary : null }));
-              })
+            /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", maxHeight: 240, borderRadius: 12, border: "1px solid " + C.line, padding: "8px 6px" } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 } },
+                AVATARS.map(function(a) {
+                  var sel = (user && user.avatar) === a;
+                  return /*#__PURE__*/React.createElement("button", {
+                    key: a,
+                    onClick: function onClick() { setUser(function(u) { return _objectSpread(_objectSpread({}, u), {}, { avatar: a }); }); },
+                    className: "press",
+                    style: { border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "flex", justifyContent: "center" }
+                  }, /*#__PURE__*/React.createElement(Avatar, { seed: a, size: 48, ring: sel ? C.primary : null }));
+                })
+              )
             )
           ),
           /* Name */
@@ -7280,12 +7578,6 @@ function ProfilePage(_ref42) {
               style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box" }
             })
           ),
-          /* Language */
-          /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Language"),
-            /*#__PURE__*/React.createElement(AppSelect, { value: lang, onChange: setLang, options: langOpts }),
-            langDirty && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, marginTop: 6, fontFamily: FONT } }, "Changing language resets your flashcard set.")
-          )
         ),
         /* Fixed bottom: save */
         /*#__PURE__*/React.createElement("div", { style: { padding: "12px 20px calc(28px + env(safe-area-inset-bottom))", flexShrink: 0, borderTop: "1px solid " + C.line } },
@@ -7574,18 +7866,21 @@ function SessionComplete(_ref47) {
     level = _ref47.level,
     chapterTitle = _ref47.chapterTitle,
     onContinue = _ref47.onContinue,
-    userAvatar = _ref47.userAvatar;
+    userAvatar = _ref47.userAvatar,
+    totalCards = _ref47.totalCards,
+    knownCards = _ref47.knownCards,
+    sessionSeconds = _ref47.sessionSeconds,
+    isFirstSessionToday = _ref47.isFirstSessionToday;
   var pts = useCountUp(points, "roundPts");
   var streakCu = useCountUp(dayStreak, "roundStreak");
-  var ptsTodayCu = useCountUp(points, "roundPtsToday");
-  var line = useMemo(function () {
-    return CHEERS[Math.floor(Math.random() * CHEERS.length)](cap(name || "friend"));
-  }, [name]);
-  var _useState135 = useState(""),
-    _useState136 = _slicedToArray(_useState135, 2),
-    shareMsg = _useState136[0],
-    setShareMsg = _useState136[1];
+  /* page: "stats" | "streak" */
+  var _useState_page = useState("stats"), _useState_page2 = _slicedToArray(_useState_page, 2), page = _useState_page2[0], setPage = _useState_page2[1];
+  var _useState_shareMsg = useState(""), _useState_shareMsg2 = _slicedToArray(_useState_shareMsg, 2), shareMsg = _useState_shareMsg2[0], setShareMsg = _useState_shareMsg2[1];
   var capRef = useRef(null);
+  var knownPct = totalCards > 0 ? Math.round(knownCards / totalCards * 100) : 0;
+  var mins = Math.floor((sessionSeconds || 0) / 60);
+  var secs = (sessionSeconds || 0) % 60;
+  var timeStr = mins > 0 ? mins + "m " + secs + "s" : secs + "s";
   var doShare = /*#__PURE__*/function () {
     var _ref48 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
       var text, r;
@@ -7593,224 +7888,108 @@ function SessionComplete(_ref47) {
         while (1) switch (_context1.n) {
           case 0:
             setShareMsg("Preparing...");
-            text = "Just finished a round in Memzy! " + points + " pts, " + dayStreak + "-day streak. memzy.app";
+            text = "Just finished a round in Memzy! " + points + " pts · " + knownPct + "% known · " + dayStreak + "-day streak. memzy.app";
             _context1.n = 1;
             return shareImage(capRef.current, text, "memzy-result.png", C.bg);
           case 1:
             r = _context1.v;
             setShareMsg(r === "shared" ? "" : r === "downloaded" ? "Image saved!" : "Could not share");
-            setTimeout(function () {
-              return setShareMsg("");
-            }, 2200);
+            setTimeout(function () { return setShareMsg(""); }, 2200);
           case 2:
             return _context1.a(2);
         }
       }, _callee1);
     }));
-    return function doShare() {
-      return _ref48.apply(this, arguments);
-    };
+    return function doShare() { return _ref48.apply(this, arguments); };
   }();
+
+  /* ── PAGE 1: Stats ── */
+  if (page === "stats") {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", background: "linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)", padding: "20px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }
+    }, /*#__PURE__*/React.createElement(Confetti, null),
+    /*#__PURE__*/React.createElement("div", {
+      ref: capRef,
+      style: { display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "24px 20px 20px", borderRadius: 28, background: C.surface, border: "1px solid " + C.line, boxShadow: "0 16px 56px rgba(28,26,46,0.10)", width: "100%", maxWidth: 320, position: "relative", zIndex: 10 }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { width: 72, height: 72, borderRadius: "50%", overflow: "hidden", border: "3px solid " + C.primarySoft, background: C.primarySoft, boxShadow: "0 0 0 3px " + C.primary + "44", marginBottom: 12, flexShrink: 0 } },
+        /*#__PURE__*/React.createElement(Avatar, { seed: userAvatar, size: 72 })
+      ),
+      /*#__PURE__*/React.createElement("h1", { style: { fontSize: 20, fontWeight: 800, color: C.ink, margin: "0 0 3px", letterSpacing: -0.5, lineHeight: 1.2 } }, "Round complete!"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, marginBottom: 16 } }, LEVEL_LABEL[level], chapterTitle ? " · " + chapterTitle : ""),
+      /* Points big display */
+      /*#__PURE__*/React.createElement("div", {
+        style: { background: "linear-gradient(135deg," + C.primary + "16," + C.primary + "06)", border: "1px solid " + C.primary + "28", borderRadius: 18, padding: "12px 24px", marginBottom: 12, width: "100%" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 52, fontWeight: 800, color: C.primary, letterSpacing: -2, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "star", size: 34, color: C.primary }), pts
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, fontWeight: 600, marginTop: 2 } }, "points this round")
+      ),
+      /* Stat pills row */
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, width: "100%" } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.greenSoft, border: "1px solid " + C.green + "28", borderRadius: 14, padding: "10px 6px", textAlign: "center" } },
+          /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 14, color: C.green }),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, marginTop: 3 } }, knownPct + "%"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, "known")
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.primarySoft, border: "1px solid " + C.primary + "28", borderRadius: 14, padding: "10px 6px", textAlign: "center" } },
+          /*#__PURE__*/React.createElement(Icon, { name: "layer-group", size: 14, color: C.primary }),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, marginTop: 3 } }, totalCards || historyStack && historyStack.length || "—"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, "cards")
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.amber + "15", border: "1px solid " + C.amber + "28", borderRadius: 14, padding: "10px 6px", textAlign: "center" } },
+          /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 14, color: C.amber }),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, marginTop: 3 } }, timeStr),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, "time")
+        )
+      )
+    ),
+    shareMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.green, fontWeight: 700, marginTop: 10, zIndex: 10 } }, shareMsg),
+    /*#__PURE__*/React.createElement("div", { style: { width: "100%", maxWidth: 320, marginTop: 16, display: "flex", flexDirection: "column", gap: 10, zIndex: 10 } },
+      /*#__PURE__*/React.createElement(PrimaryButton, {
+        onClick: function onClick() {
+          if (dayStreak > 0) { setPage("streak"); } else { onContinue(); }
+        }
+      }, "Continue"),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: doShare, className: "press",
+        style: { padding: 13, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 13, color: C.ink }), "Share result")
+    ));
+  }
+
+  /* ── PAGE 2: Streak (first session of day only) ── */
   return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      width: "100%",
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      textAlign: "center",
-      background: "linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)",
-      padding: "20px 24px",
-      paddingBottom: "calc(24px + env(safe-area-inset-bottom))"
-    }
-  }, /*#__PURE__*/React.createElement(Confetti, null), /*#__PURE__*/React.createElement("div", {
-    ref: capRef,
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      textAlign: "center",
-      padding: "24px 20px 20px",
-      borderRadius: 28,
-      background: C.surface,
-      border: "1px solid " + C.line,
-      boxShadow: "0 16px 56px rgba(28,26,46,0.10)",
-      width: "100%",
-      maxWidth: 320,
-      position: "relative",
-      zIndex: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 88,
-      height: 88,
-      borderRadius: "50%",
-      overflow: "hidden",
-      border: "4px solid " + C.primarySoft,
-      background: C.primarySoft,
-      boxShadow: "0 0 0 3px " + C.primary + "44",
-      marginBottom: 14,
-      flexShrink: 0,
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Avatar, {
-    seed: userAvatar,
-    size: 88
-  })), /*#__PURE__*/React.createElement("h1", {
-    style: {
-      fontSize: 21,
-      fontWeight: 800,
-      color: C.ink,
-      margin: "0 0 4px",
-      letterSpacing: -0.5,
-      lineHeight: 1.2
-    }
-  }, line), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.sub,
-      marginBottom: 16
-    }
-  }, LEVEL_LABEL[level], chapterTitle ? " · " + chapterTitle : ""), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "linear-gradient(135deg," + C.primary + "16," + C.primary + "06)",
-      border: "1px solid " + C.primary + "28",
-      borderRadius: 20,
-      padding: "14px 24px",
-      marginBottom: 12,
-      width: "100%"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 54,
-      fontWeight: 800,
-      color: C.primary,
-      letterSpacing: -2,
-      lineHeight: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "star",
-    size: 36,
-    color: C.primary
-  }), pts), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.sub,
-      fontWeight: 600,
-      marginTop: 3
-    }
-  }, "points this round")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      width: "100%"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      background: C.amber + "15",
-      border: "1px solid " + C.amber + "28",
-      borderRadius: 14,
-      padding: "10px 8px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "fire",
-    size: 15,
-    color: C.amber
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 18,
-      fontWeight: 800,
-      color: C.ink,
-      marginTop: 3
-    }
-  }, streakCu), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.sub,
-      fontWeight: 600,
-      marginTop: 1
-    }
-  }, "day streak")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      background: C.greenSoft,
-      border: "1px solid " + C.green + "28",
-      borderRadius: 14,
-      padding: "10px 8px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "circle-check",
-    size: 15,
-    color: C.green
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 18,
-      fontWeight: 800,
-      color: C.ink,
-      marginTop: 3
-    }
-  }, ptsTodayCu), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.sub,
-      fontWeight: 600,
-      marginTop: 1
-    }
-  }, "earned today")))), shareMsg && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: C.green,
-      fontWeight: 700,
-      marginTop: 10,
-      zIndex: 10
-    }
-  }, shareMsg), /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: "100%",
-      maxWidth: 320,
-      marginTop: 16,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10,
-      zIndex: 10
-    }
-  }, /*#__PURE__*/React.createElement(PrimaryButton, {
-    onClick: onContinue
-  }, "Continue"), /*#__PURE__*/React.createElement("button", {
-    onClick: doShare,
-    className: "press",
-    style: {
-      padding: 13,
-      borderRadius: 18,
-      border: "1.5px solid " + C.line,
-      background: C.surface,
-      color: C.ink,
-      fontSize: 14,
-      fontWeight: 800,
-      cursor: "pointer",
-      fontFamily: FONT,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "arrow-up-from-bracket",
-    size: 13,
-    color: C.ink
-  }), "Share result")));
+    style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", background: "linear-gradient(160deg,#FFF8EC 0%,#F5F4FB 55%)", padding: "20px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }
+  }, /*#__PURE__*/React.createElement(Confetti, null),
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "28px 24px 24px", borderRadius: 28, background: C.surface, border: "1px solid " + C.amber + "44", boxShadow: "0 16px 56px rgba(28,26,46,0.10)", width: "100%", maxWidth: 320, position: "relative", zIndex: 10 }
+  },
+    /* Animated fire */
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 64, lineHeight: 1, marginBottom: 10, animation: "avatarFloat 1.6s ease-in-out infinite" } }, "\uD83D\uDD25"),
+    /*#__PURE__*/React.createElement("h1", { style: { fontSize: 22, fontWeight: 900, color: C.amber, margin: "0 0 6px", letterSpacing: -0.5 } }, "Streak extended!"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, marginBottom: 22, lineHeight: 1.4 } }, "You've practiced today — keep the flame alive!"),
+    /*#__PURE__*/React.createElement("div", {
+      style: { background: C.amber + "14", border: "1px solid " + C.amber + "30", borderRadius: 20, padding: "18px 24px", marginBottom: 4, width: "100%" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 64, fontWeight: 900, color: C.amber, letterSpacing: -3, lineHeight: 1 } }, streakCu),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, fontWeight: 600, marginTop: 4 } }, "day streak")
+    )
+  ),
+  /*#__PURE__*/React.createElement("div", { style: { width: "100%", maxWidth: 320, marginTop: 16, display: "flex", flexDirection: "column", gap: 10, zIndex: 10 } },
+    /*#__PURE__*/React.createElement(PrimaryButton, {
+      onClick: onContinue,
+      style: { background: C.amber }
+    }, "Continue"),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: doShare, className: "press",
+      style: { padding: 13, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 13, color: C.ink }), "Share streak")
+  ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(34px) scale(.92);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  .card-pop{animation:cardpop .32s cubic-bezier(.2,.8,.2,1)}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(34px) scale(.92);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  .card-pop{animation:cardpop .32s cubic-bezier(.2,.8,.2,1)}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
