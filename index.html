@@ -406,22 +406,31 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
 var _primed = false;
 function primeTTS() {
   try {
-    if (_primed || !("speechSynthesis" in window)) return;
+    if (_primed) return;
     _primed = true;
-    var u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0;
-    window.speechSynthesis.speak(u);
+    /* Unlock Web Speech API */
+    if ("speechSynthesis" in window) {
+      var u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    }
+    /* Unlock Audio element for Safari iOS — must happen inside a user gesture */
+    var a = new Audio();
+    a.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+    a.volume = 0;
+    var p = a.play();
+    if (p && p.then) p.then(function() { a.pause(); }).catch(function() {});
   } catch (_) {}
 }
 if (typeof window !== "undefined") window.addEventListener("pointerdown", primeTTS, { once: true });
 
 var _au = null;
 function spNet(text, tl) {
-  /* Google Translate TTS — use tw-ob for Persian, gtx for others */
   return new Promise(function (res, rej) {
     try {
       if (_au) { try { _au.pause(); _au.src = ""; } catch (_) {} }
       _au = null;
+      /* gtx for German (natural), tw-ob for Persian Finglish */
       var client = tl === "fa" ? "tw-ob" : "gtx";
       var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=" + client + "&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
       var a = new Audio();
@@ -458,11 +467,11 @@ function speak(text, langCode) {
   spNet(text, tl).catch(function () { spSynth(text, langCode); });
 }
 var sayWordOf = function sayWordOf(c) {
-  /* For Persian: use Finglish (word field) with tl=fa — Google TTS blocks Farsi script */
+  /* Use Finglish (word field) for TTS — Google accepts it with tl=fa */
   return c.word;
 };
 var sayExOf = function sayExOf(c) {
-  return c.language === "fa" ? c.example : c.example;
+  return c.example;
 };
 function imgToDataUrl(_x5) {
   return _imgToDataUrl.apply(this, arguments);
