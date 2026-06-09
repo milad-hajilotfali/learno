@@ -91,9 +91,12 @@ function loadProgressFromDB(userId, lang, setHistoryFn) {
   supabase.from("progress").select("chapter, score")
     .eq("user_id", userId).eq("language", l).like("chapter", "__daily__%")
     .then(function(res) {
-      if (res.error || !res.data || res.data.length === 0) return;
+      /* Keep stale data only on a genuine error. An EMPTY result must still
+         zero the history — otherwise switching to a language with no progress
+         kept showing the previous language's points. */
+      if (res.error) return;
       var map = {};
-      res.data.forEach(function(row) {
+      (res.data || []).forEach(function(row) {
         var date = row.chapter.replace("__daily__", "");
         map[date] = (map[date] || 0) + (row.score || 0);
       });
@@ -368,6 +371,19 @@ var AVATARS = ["Milad", "Aneka", "Bella", "Leo", "Zoe", "Felix", "Mia", "Max", "
 var avatarURL = function avatarURL(seed) {
   return "https://api.dicebear.com/9.x/open-peeps/svg?seed=" + encodeURIComponent(seed || "Milad");
 };
+/* Create a profiles row if the user doesn't have one (deleted row, or OAuth
+   user linked to an existing auth account where the signup trigger never fired). */
+function ensureProfile(u) {
+  if (!u || !u.id) return Promise.resolve(null);
+  return supabase.from("profiles").select("id").eq("id", u.id).maybeSingle()
+    .then(function (res) {
+      if (res.data) return res.data;
+      var meta = u.user_metadata || {};
+      var dn = cap(meta.display_name || meta.full_name || meta.name || (u.email || "").split("@")[0] || "Learner");
+      return supabase.from("profiles").insert({ id: u.id, display_name: dn, avatar_emoji: randAvatar() })
+        .then(function () { return null; });
+    });
+}
 var REWARDS = [{
   at: 50,
   name: "Spark badge",
@@ -719,10 +735,9 @@ function buildHistory() {
   for (var i = TOTAL - 1; i >= 0; i--) {
     var d = new Date(now);
     d.setDate(now.getDate() - i);
-    var seed = d.getFullYear() * 372 + (d.getMonth() + 1) * 31 + d.getDate();
-    var r = Math.abs(Math.sin(seed));
-    var pts = void 0;
-    if (i === 0) pts = 0;else if (i <= 10) pts = Math.round(8 + r * 14);else pts = r > 0.32 ? Math.round(5 + r * 16) : 0;
+    /* Real data comes from loadProgressFromDB — the skeleton starts at zero.
+       (Previously generated fake seeded demo points, shown as "random points".) */
+    var pts = 0;
     out.push({
       date: d.toISOString().slice(0, 10),
       label: DAY_NAMES[d.getDay()],
@@ -1791,7 +1806,8 @@ function App() {
       if (!session) { setScreen("welcome"); return; }
       if (session) {
         var u = session.user;
-        supabase.from("profiles").select("*").eq("id", u.id).single()
+        ensureProfile(u).then(function () {
+        return supabase.from("profiles").select("*").eq("id", u.id).single()
         .then(function(prof) {
           var p = prof.data;
           var restoredUser = { id: u.id, email: u.email,
@@ -1817,6 +1833,7 @@ function App() {
             /* New user — go through onboarding */
             setScreen("language");
           }
+        });
         });
       }
     });
@@ -3145,6 +3162,7 @@ function AuthScreen(_ref16) {
         if (res.error) { setAuthError(res.error.message); setLoading(false); return; }
         if (res.data.session) {
           var u = res.data.user;
+          ensureProfile(u);
           onDone({ id: u.id, email: u.email,
             name: cap(name.trim() || u.email.split("@")[0]),
             avatar: randAvatar(), supaUser: u });
@@ -3155,12 +3173,14 @@ function AuthScreen(_ref16) {
       .then(function(res) {
         if (res.error) { setAuthError(res.error.message); setLoading(false); return; }
         var u = res.data.user;
-        supabase.from("profiles").select("*").eq("id", u.id).single()
+        ensureProfile(u).then(function () {
+        return supabase.from("profiles").select("*").eq("id", u.id).single()
         .then(function(prof) {
           onDone({ id: u.id, email: u.email,
             name: prof.data ? cap(prof.data.display_name) : cap(u.email.split("@")[0]),
             avatar: prof.data ? prof.data.avatar_emoji : randAvatar(),
             supaUser: u, _loadProgress: true });
+        });
         });
       });
     }
@@ -7319,23 +7339,39 @@ function FriendsPage(_ref37) {
       }
     }, isFr ? "Friends \u2713" : "+ Add"));
   }))), tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
-    /* Header with inline tab switcher */
-    /*#__PURE__*/React.createElement("div", { style: { padding: "10px 12px 10px", borderBottom: "1px solid " + C.line, display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } },
-        /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 13, color: C.amber }),
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.ink } }, "This week"),
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, color: C.sub, background: C.bg, borderRadius: 7, padding: "2px 7px" } }, "ends in " + weekLeft)
+    /* Header: two breathing rows — title + countdown, then a full-width switcher */
+    /*#__PURE__*/React.createElement("div", { style: { padding: "14px 14px 0", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 12 } },
+      /* Row 1: trophy + title on the left, countdown chip on the right */
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9 } },
+          /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 10, background: C.amber + "1A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+            /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 14, color: C.amber })
+          ),
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14.5, fontWeight: 800, color: C.ink, letterSpacing: -0.2, lineHeight: 1.15 } }, "This week"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, "Weekly leaderboard")
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5, background: C.bg, borderRadius: 9, padding: "5px 10px", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 10, color: C.sub }),
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: C.sub, whiteSpace: "nowrap" } }, "ends in " + weekLeft)
+        )
       ),
-      /* Friends | Worldwide pill switcher inside the card */
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", background: C.bg, borderRadius: 10, padding: 2, gap: 0 } },
+      /* Row 2: underline-style tabs (visually distinct from the page pill bar) */
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", margin: "0 -14px", padding: "0 6px" } },
         [{ k: "friends", label: "Friends", icon: "users" }, { k: "worldwide", label: "Worldwide", icon: "globe" }].map(function(lt) {
           var on = lbTab === lt.k;
           return /*#__PURE__*/React.createElement("button", {
             key: lt.k,
             onClick: function onClick() { return setLbTab(lt.k); },
             className: "press",
-            style: { padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer", background: on ? C.surface : "transparent", color: on ? C.primary : C.sub, fontWeight: 700, fontSize: 11.5, fontFamily: FONT, display: "flex", alignItems: "center", gap: 4, boxShadow: on ? "0 1px 4px rgba(90,79,227,0.12)" : "none", transition: "all .15s ease" }
-          }, /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 10, color: on ? C.primary : C.sub }), lt.label);
+            style: { flex: 1, position: "relative", padding: "5px 0 12px", border: "none", background: "transparent", cursor: "pointer", color: on ? C.primary : C.sub, fontWeight: on ? 800 : 600, fontSize: 13, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "color .15s ease" }
+          },
+            /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 11, color: on ? C.primary : C.sub }),
+            lt.label,
+            /* sliding-feel underline indicator */
+            /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: -1, left: "50%", transform: "translateX(-50%) scaleX(" + (on ? 1 : 0) + ")", width: 34, height: 3, borderRadius: 3, background: C.primary, transition: "transform .22s cubic-bezier(.16,1,.3,1)" } })
+          );
         })
       )
     ),
@@ -8724,7 +8760,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v72';
+  var CACHE_VERSION = 'memzy-v76';
 
   if (!('serviceWorker' in navigator)) return;
 
