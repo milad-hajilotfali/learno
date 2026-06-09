@@ -404,25 +404,29 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   try { window.speechSynthesis.onvoiceschanged = loadVoices; } catch (_) {}
 }
 var _primed = false;
+var _primePromise = null;
 function primeTTS() {
-  try {
-    if (_primed) return;
-    _primed = true;
-    /* Unlock Web Speech API */
-    if ("speechSynthesis" in window) {
-      var u = new SpeechSynthesisUtterance(" ");
-      u.volume = 0;
-      window.speechSynthesis.speak(u);
-    }
-    /* Unlock Audio element for Safari iOS — must happen inside a user gesture */
-    var a = new Audio();
-    a.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-    a.volume = 0;
-    var p = a.play();
-    if (p && p.then) p.then(function() { a.pause(); }).catch(function() {});
-  } catch (_) {}
+  if (_primed) return Promise.resolve();
+  if (_primePromise) return _primePromise;
+  _primePromise = new Promise(function(resolve) {
+    try {
+      if ("speechSynthesis" in window) {
+        var u = new SpeechSynthesisUtterance(" ");
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+      }
+      var a = new Audio();
+      a.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      a.volume = 0;
+      var p = a.play();
+      if (p && p.then) {
+        p.then(function() { a.pause(); _primed = true; resolve(); }).catch(function() { _primed = true; resolve(); });
+      } else { _primed = true; resolve(); }
+    } catch (_) { _primed = true; resolve(); }
+  });
+  return _primePromise;
 }
-if (typeof window !== "undefined") window.addEventListener("pointerdown", primeTTS, { once: true });
+if (typeof window !== "undefined") window.addEventListener("pointerdown", function() { primeTTS(); }, { once: true });
 
 var _au = null;
 function spNet(text, tl) {
@@ -461,10 +465,11 @@ function spSynth(text, langCode) {
   } catch (_) {}
 }
 function speak(text, langCode) {
-  primeTTS();
   if (!text || !text.trim()) return;
   var tl = langCode.startsWith("fa") ? "fa" : langCode.startsWith("de") ? "de" : langCode.slice(0, 2);
-  spNet(text, tl).catch(function () { spSynth(text, langCode); });
+  primeTTS().then(function() {
+    spNet(text, tl).catch(function() { spSynth(text, langCode); });
+  });
 }
 var sayWordOf = function sayWordOf(c) {
   /* Use Finglish (word field) for TTS — Google accepts it with tl=fa */
