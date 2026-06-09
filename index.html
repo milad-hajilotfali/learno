@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
   <title>Memzy</title>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
   <meta name="theme-color" content="#5A4FE3"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
@@ -288,6 +289,10 @@ var WORDS = [];
 /* getWordsForLevelLang removed */
 
 /* BASE_USERS removed */
+var fmtHeartTime = function fmtHeartTime(d) {
+  var dt = new Date(d);
+  return dt.toLocaleDateString([], { day: "numeric", month: "short" }) + " \u00B7 " + dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
 var cap = function cap(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 };
@@ -776,6 +781,10 @@ function Avatar(_ref3) {
     _useState4 = _slicedToArray(_useState3, 2),
     e = _useState4[0],
     setE = _useState4[1];
+  var _useStateAtt = useState(0),
+    _useStateAtt2 = _slicedToArray(_useStateAtt, 2),
+    att = _useStateAtt2[0],
+    setAtt = _useStateAtt2[1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       width: size,
@@ -790,10 +799,12 @@ function Avatar(_ref3) {
       boxShadow: ring ? "0 0 0 3px " + ring : "none"
     }
   }, !e ? /*#__PURE__*/React.createElement("img", {
-    src: avatarURL(seed),
+    src: avatarURL(seed) + (att > 0 ? "&r=" + att : ""),
     crossOrigin: "anonymous",
+    loading: "lazy",
     onError: function onError() {
-      return setE(true);
+      /* Retry transient CDN failures twice (cache-busted) before falling back */
+      if (att < 2) setAtt(att + 1); else setE(true);
     },
     alt: "",
     style: {
@@ -1325,6 +1336,29 @@ function App() {
   }, [history]);
   var committed = useRef(false);
   var roundPointsRef = useRef(0);
+
+  /* Fetch total points for ALL languages from Supabase — for language switcher display */
+  var _useState_alp = useState({}),
+    _useState_alp2 = _slicedToArray(_useState_alp, 2),
+    allLangPoints = _useState_alp2[0],
+    setAllLangPoints = _useState_alp2[1];
+
+  var fetchAllLangPoints = function fetchAllLangPoints(userId) {
+    if (!userId) return;
+    supabase.from("progress").select("language, score, chapter")
+      .eq("user_id", userId)
+      .then(function(res) {
+        if (res.error || !res.data) return;
+        var m = {};
+        res.data.forEach(function(row) {
+          /* Only count daily score entries */
+          if (row.language && row.score && row.chapter && row.chapter.indexOf("__daily__") === 0) {
+            m[row.language] = (m[row.language] || 0) + row.score;
+          }
+        });
+        setAllLangPoints(m);
+      });
+  };
   var sessionChapterRef = useRef(null); /* chapter id that the active session was started for */
   var scrollRef = useRef(null);
   var userRef = useRef(null);
@@ -1499,7 +1533,8 @@ function App() {
       supabase.from("progress").select("score").eq("user_id", currentUser.id).eq("language", lang).eq("chapter", "__daily__" + today).single()
         .then(function(res) {
           var prev = (res.data && res.data.score) || 0;
-          return supabase.from("progress").upsert({ user_id: currentUser.id, language: lang, level: "ALL", chapter: "__daily__" + today, completed: false, score: prev + pts, last_studied: new Date().toISOString() }, { onConflict: "user_id,language,chapter" });
+          return supabase.from("progress").upsert({ user_id: currentUser.id, language: lang, level: "ALL", chapter: "__daily__" + today, completed: false, score: prev + pts, last_studied: new Date().toISOString() }, { onConflict: "user_id,language,chapter" })
+            .then(function() { fetchAllLangPoints(currentUser.id); });
         });
       supabase.from("profiles").update({ last_active: today }).eq("id", currentUser.id).then(function(){});
     }
@@ -1676,7 +1711,7 @@ function App() {
           var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
-          /* Always navigate — last_active may be null for new users */
+          fetchAllLangPoints(u.id);
           if ((p && p.last_language) || localStorage.getItem("memzy_lang")) {
             /* Returning user with language set — go to app */
             initData([lang], "A1").then(function() {
@@ -1723,7 +1758,7 @@ function App() {
       if (!recvRes.error && recvRes.data) {
         hearts = recvRes.data.map(function(h) {
           var name = (h.profiles && h.profiles.display_name) ? cap(h.profiles.display_name) : h.sender_id.slice(0,8);
-          return { id: h.id, fromId: h.sender_id, from: name, sentAt: h.sent_at, time: new Date(h.sent_at).toLocaleTimeString() };
+          return { id: h.id, fromId: h.sender_id, from: name, sentAt: h.sent_at, time: fmtHeartTime(h.sent_at) };
         });
         setReceivedHearts(hearts);
         var newCount = lastSeen ? hearts.filter(function(h) { return new Date(h.sentAt) > new Date(lastSeen); }).length : hearts.length;
@@ -1746,7 +1781,7 @@ function App() {
         var h = payload.new;
         supabase.from("profiles").select("display_name").eq("id", h.sender_id).single().then(function(res) {
           var name = (res.data && res.data.display_name) ? cap(res.data.display_name) : h.sender_id.slice(0,8);
-          var newHeart = { id: h.id, fromId: h.sender_id, from: name, sentAt: h.sent_at, time: new Date(h.sent_at).toLocaleTimeString() };
+          var newHeart = { id: h.id, fromId: h.sender_id, from: name, sentAt: h.sent_at, time: fmtHeartTime(h.sent_at) };
           setReceivedHearts(function(prev) { return [newHeart].concat(prev.slice(0,49)); });
           setHeartNotifCount(function(n) { return n + 1; });
           setHasSentTo(function(prev) { var u = Object.assign({}, prev); delete u[h.sender_id]; return u; });
@@ -1887,6 +1922,7 @@ function App() {
           var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
+          fetchAllLangPoints(u.id);
           initData([lang], "A1").then(function() {
             loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
             loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
@@ -2344,7 +2380,11 @@ function App() {
       onContinue: function onContinue() {
         if (examPassed) {
           setUnlockedLevels(function (ul) {
-            return ul.includes(examMode.level) ? ul : [].concat(_toConsumableArray(ul), [examMode.level]);
+            /* Unlock the exam level AND every level before it */
+            var upTo = LEVELS_ORDER.slice(0, LEVELS_ORDER.indexOf(examMode.level) + 1);
+            var merged = _toConsumableArray(ul);
+            upTo.forEach(function (lv) { if (!merged.includes(lv)) merged.push(lv); });
+            return merged;
           });
           setCurLevel(examMode.level);
           setCurChapter(CHAPTERS[examMode.level][0].id);
@@ -2653,54 +2693,35 @@ function App() {
     totalPoints: totalPoints,
     curLevel: curLevel,
     curChapter: curChapter,
-    onLevelChapterSelect: (/*#__PURE__*/function () {
-      var _ref13 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(lv, ch) {
-        return _regenerator().w(function (_context3) {
-          while (1) switch (_context3.n) {
-            case 0:
-              if (!(lv !== curLevel)) {
-                _context3.n = 1;
-                break;
-              }
-              _context3.n = 1;
-              return initData(selectedLangs, lv).then(function() {
-                /* CRITICAL: reload progress after initData clears learnedIds/markedIds/reviewIds */
-                var u = userRef.current;
-                var lang = selectedLangsRef.current[0] || "de";
-                if (u && u.id) {
-                  loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
-                  loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
-                  loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-                }
-              });
-            case 1:
-              setCurLevel(lv);
-              setCurChapter(ch);
-            case 2:
-              return _context3.a(2);
-          }
-        }, _callee3);
-      }));
-      return function (_x11, _x12) {
-        return _ref13.apply(this, arguments);
-      };
-    }()),
+    onLevelChapterSelect: function (lv, ch) {
+      /* allCards already contains every level for the current language
+         (initData fetches by language only), so switching levels is a
+         pure UI change. Re-running initData here cleared learnedIds and
+         caused the percentage to flash a wrong value before reloading. */
+      setCurLevel(lv);
+      setCurChapter(ch);
+    },
     onStart: startChapter,
     onStartReview: startReview,
     onStartMarked: startMarked,
     onStartLevelExam: startLevelExam,
     unlockedLevels: unlockedLevels,
     selectedLangs: selectedLangs,
+    allLangPoints: allLangPoints,
+    onRefreshLangPoints: function() { fetchAllLangPoints(userRef.current && userRef.current.id); },
     onSwitchLang: function(lang) {
       setSelectedLangs([lang]);
       var u = userRef.current;
       /* Save to Supabase profile so refresh remembers the language */
       if (u && u.id) supabase.from("profiles").update({ last_language: lang }).eq("id", u.id).then(function(){});
+      /* Reload history for new language without intermediate reset */
+      if (u && u.id) loadProgressFromDB(u.id, lang, setHistory);
       initData([lang], curLevel).then(function() {
         if (u && u.id) {
           loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
           loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
           loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
+          fetchAllLangPoints(u.id);
         }
       });
     },
@@ -3785,7 +3806,7 @@ function StreakDialog(_ref24) {
   var cells = [];
   for (var i = 0; i < sw; i++) cells.push(null);
   for (var d = 1; d <= dim; d++) {
-    var ds = new Date(viewYear, viewMonth, d).toISOString().slice(0, 10);
+    var ds = viewYear + "-" + String(viewMonth + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
     cells.push({
       d: d,
       active: (map[ds] || 0) > 0,
@@ -3818,7 +3839,7 @@ function StreakDialog(_ref24) {
     }
   };
   return /*#__PURE__*/React.createElement("div", {
-    style: { padding: "16px 20px 28px" }
+    style: { padding: "16px 20px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -3956,33 +3977,35 @@ function PointsDialog(_ref25) {
   var prevAt = idx > 0 ? REWARDS[idx - 1].at : 0;
   var pct = next ? Math.min(100, Math.round((points - prevAt) / (next.at - prevAt) * 100)) : 100;
   return /*#__PURE__*/React.createElement("div", {
-    style: { padding: "16px 20px 28px" }
+    style: { padding: "16px 20px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      textAlign: "center",
-      marginBottom: 16
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 44,
-      fontWeight: 800,
-      color: C.amber,
       display: "flex",
       alignItems: "center",
-      justifyContent: "center",
-      gap: 8
+      gap: 10,
+      background: C.primary + "14",
+      border: "1px solid " + C.primary + "30",
+      borderRadius: 16,
+      padding: "12px 16px",
+      marginBottom: 16
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "star",
-    size: 32,
-    color: C.amber
-  }), points), /*#__PURE__*/React.createElement("div", {
+    size: 22,
+    color: C.primary
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 20,
+      fontWeight: 800,
+      color: C.primary
+    }
+  }, points, " points"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
       color: C.sub,
       fontWeight: 600
     }
-  }, "total points earned")), next ? /*#__PURE__*/React.createElement("div", {
+  }, "Total points earned"))), next ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.primarySoft,
       border: "1px solid " + C.primary + "33",
@@ -4249,6 +4272,8 @@ function Dashboard(_ref27) {
     onStartLevelExam = _ref27.onStartLevelExam,
     unlockedLevels = _ref27.unlockedLevels,
     selectedLangs = _ref27.selectedLangs,
+    allLangPoints = _ref27.allLangPoints || {},
+    onRefreshLangPoints = _ref27.onRefreshLangPoints,
     onSwitchLang = _ref27.onSwitchLang,
     onOpenProfile = _ref27.onOpenProfile,
     onOpenDeck = _ref27.onOpenDeck,
@@ -4280,6 +4305,7 @@ function Dashboard(_ref27) {
     });
     return m;
   }, [history, selectedLangs]);
+
   var reviewCount = allCards.filter(function (c) {
     return reviewIds.includes(c.id);
   }).length;
@@ -4362,7 +4388,7 @@ function Dashboard(_ref27) {
   ),
   /* Language flag button */
   /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() { setShowLangSwitcher(true); },
+    onClick: function onClick() { setShowLangSwitcher(true); if (onRefreshLangPoints) onRefreshLangPoints(); },
     className: "press",
     style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 12, padding: "6px 9px", display: "flex", alignItems: "center", cursor: "pointer" }
   },
@@ -4393,7 +4419,7 @@ function Dashboard(_ref27) {
         /* Active languages */
         [{ value: "de", label: "German", sub: "Deutsch", flag: "fi fi-de" }, { value: "fa", label: "Persian", sub: "Finglish", flag: "fi fi-ir" }].map(function(lang) {
           var isActive = (selectedLangs && selectedLangs[0]) === lang.value;
-          var pts = langPoints[lang.value] || 0;
+          var pts = isActive ? totalPoints : (allLangPoints[lang.value] || 0);
           return /*#__PURE__*/React.createElement("button", {
             key: lang.value,
             onClick: function onClick() {
@@ -5446,6 +5472,18 @@ function MyFlashcardsPage(_ref31) {
   useEffect(function() {
     if (initialDeckScreen && onInitDeckScreenConsumed) onInitDeckScreenConsumed();
   }, []);
+  /* iOS standalone (default status-bar style) paints the status bar / Dynamic
+     Island area with the page background. Deck sub-screens have a white header
+     at the very top, so match the bar to it while one is open. */
+  useEffect(function() {
+    var openWhite = !!deckScreen;
+    document.documentElement.style.background = openWhite ? C.surface : C.bg;
+    document.body.style.background = openWhite ? C.surface : C.bg;
+    return function() {
+      document.documentElement.style.background = C.bg;
+      document.body.style.background = C.bg;
+    };
+  }, [deckScreen]);
   /* If deckScreen was seeded from home, back should return to home not cards-home */
   var fromHome = useRef(!!initialDeckScreen);
   var handleBackFromDeck = function handleBackFromDeck() {
@@ -6738,10 +6776,10 @@ function FriendsPage(_ref37) {
 
   useEffect(function() {
     supabase.from("profiles").select("id, display_name, avatar_emoji, points")
-      .neq("id", (currentUser && currentUser.id) || "").order("points", { ascending: false }).limit(30)
+      .neq("id", (currentUser && currentUser.id) || "").order("points", { ascending: false }).limit(100)
       .then(function(res) {
         if (!res.error && res.data && res.data.length > 0) {
-          var shuffled = res.data.sort(function() { return Math.random() - 0.5; }).slice(0, 10);
+          var shuffled = shuffle(res.data).slice(0, 20);
           setSuggestedUsers(shuffled.map(function(p) { return { id: p.id, name: cap(p.display_name || p.id.slice(0,8)), avatar: p.avatar_emoji || "🐣", points: p.points || 0, weekPts: p.points || 0, streak: 0, bestDay: 0, activeDays: 0 }; }));
         }
       });
@@ -6908,7 +6946,8 @@ function FriendsPage(_ref37) {
     }
   }, "Friends"), /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
-      return setShowHearts(true); if (onClearHeartNotif) onClearHeartNotif();;
+      setShowHearts(true);
+      if (onClearHeartNotif) onClearHeartNotif();
     },
     className: "press",
     style: {
@@ -6927,7 +6966,7 @@ function FriendsPage(_ref37) {
     name: "heart",
     size: 17,
     color: C.red
-  }), receivedHearts.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }), heartNotifCount > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "absolute",
       top: -4,
@@ -6943,7 +6982,7 @@ function FriendsPage(_ref37) {
       fontWeight: 800,
       color: "#fff"
     }
-  }, receivedHearts.length > 9 ? "9+" : receivedHearts.length))), /*#__PURE__*/React.createElement("div", {
+  }, heartNotifCount > 9 ? "9+" : heartNotifCount))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       background: C.bg,
@@ -7141,6 +7180,7 @@ function FriendsPage(_ref37) {
     isFriend: friends.includes(sel.id),
     onAdd: onAdd,
     onRemove: onRemove,
+    heartAlreadySent: !!(hasSentTo && hasSentTo[sel.id]),
     onSendHeart: function onSendHeart() {
       return _onSendHeart(sel.id);
     },
@@ -8318,7 +8358,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v45';
+  var CACHE_VERSION = 'memzy-v64';
 
   if (!('serviceWorker' in navigator)) return;
 
