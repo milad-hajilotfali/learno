@@ -417,12 +417,13 @@ if (typeof window !== "undefined") window.addEventListener("pointerdown", primeT
 
 var _au = null;
 function spNet(text, tl) {
-  /* Google Translate TTS — natural quality, works for de and fa */
+  /* Google Translate TTS — use tw-ob for Persian, gtx for others */
   return new Promise(function (res, rej) {
     try {
       if (_au) { try { _au.pause(); _au.src = ""; } catch (_) {} }
       _au = null;
-      var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
+      var client = tl === "fa" ? "tw-ob" : "gtx";
+      var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=" + client + "&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
       var a = new Audio();
       a.src = url;
       _au = a;
@@ -453,15 +454,15 @@ function spSynth(text, langCode) {
 function speak(text, langCode) {
   primeTTS();
   if (!text || !text.trim()) return;
-  /* Always try Google TTS first (natural), fall back to Web Speech */
   var tl = langCode.startsWith("fa") ? "fa" : langCode.startsWith("de") ? "de" : langCode.slice(0, 2);
   spNet(text, tl).catch(function () { spSynth(text, langCode); });
 }
 var sayWordOf = function sayWordOf(c) {
-  return c.language === "fa" ? c.farsi || c.word : c.word;
+  /* For Persian: use Finglish (word field) with tl=fa — Google TTS blocks Farsi script */
+  return c.word;
 };
 var sayExOf = function sayExOf(c) {
-  return c.language === "fa" ? c.farsiExample || c.example : c.example;
+  return c.language === "fa" ? c.example : c.example;
 };
 function imgToDataUrl(_x5) {
   return _imgToDataUrl.apply(this, arguments);
@@ -1249,14 +1250,15 @@ function App() {
     return new Promise(function(resolve) {
       var lang = langs[0] || "de";
       supabase.from("words")
-        .select("id,language,level,chapter,word,pron,translation,example,example_translation,note")
+        .select("id,language,level,chapter,word,pron,translation,example,example_translation,note,farsi")
         .eq("language", lang).order("chapter", { ascending: true })
         .then(function(res) {
           if (res.error) { resolve(); return; }
           var words = (res.data || []).map(function(w) {
             return { id: w.id, language: w.language, level: w.level, chapter: w.chapter,
               word: w.word, pron: w.pron, translation: w.translation, example: w.example,
-              exampleTranslation: w.example_translation, note: w.note };
+              exampleTranslation: w.example_translation, note: w.note,
+              farsi: w.farsi || "", farsiExample: "" };
           });
           WORDS.length = 0; WORDS.push.apply(WORDS, words);
           setAllCards(words); setLearnedIds([]); setMarkedIds([]); setReviewIds([]); setQueue([]);
