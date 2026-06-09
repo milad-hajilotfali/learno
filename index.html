@@ -430,20 +430,18 @@ if (typeof window !== "undefined") window.addEventListener("pointerdown", functi
 
 var _au = null;
 function spNet(text, tl) {
-  return new Promise(function (res, rej) {
+  return new Promise(function(res, rej) {
     try {
-      if (_au) { try { _au.pause(); _au.src = ""; } catch (_) {} }
-      _au = null;
-      /* gtx for German (natural), tw-ob for Persian Finglish */
+      if (_au) { try { _au.pause(); _au.src = ""; } catch(_) {} }
       var client = tl === "fa" ? "tw-ob" : "gtx";
       var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=" + client + "&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
       var a = new Audio();
-      a.src = url;
       _au = a;
-      a.onerror = function () { return rej(new Error("audio error")); };
+      a.src = url;
+      a.onerror = function() { rej(new Error("audio error")); };
       var p = a.play();
       if (p && p.then) p.then(res).catch(rej); else res();
-    } catch (e) { rej(e); }
+    } catch(e) { rej(e); }
   });
 }
 function spSynth(text, langCode) {
@@ -466,10 +464,9 @@ function spSynth(text, langCode) {
 }
 function speak(text, langCode) {
   if (!text || !text.trim()) return;
+  primeTTS();
   var tl = langCode.startsWith("fa") ? "fa" : langCode.startsWith("de") ? "de" : langCode.slice(0, 2);
-  primeTTS().then(function() {
-    spNet(text, tl).catch(function() { spSynth(text, langCode); });
-  });
+  spNet(text, tl).catch(function() { spSynth(text, langCode); });
 }
 var sayWordOf = function sayWordOf(c) {
   /* Use Finglish (word field) for TTS — Google accepts it with tl=fa */
