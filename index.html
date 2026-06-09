@@ -1227,7 +1227,10 @@ function App() {
     _useState0 = _slicedToArray(_useState9, 2),
     tab = _useState0[0],
     _setTab = _useState0[1];
-  var _useState1 = useState([]),
+  var _useState1 = useState(function() {
+      var saved = localStorage.getItem("memzy_lang");
+      return saved ? [saved] : [];
+    }),
     _useState10 = _slicedToArray(_useState1, 2),
     selectedLangs = _useState10[0],
     setSelectedLangs = _useState10[1];
@@ -1327,7 +1330,12 @@ function App() {
   var userRef = useRef(null);
   useEffect(function() { userRef.current = user; }, [user]);
   var selectedLangsRef = useRef([]);
-  useEffect(function() { selectedLangsRef.current = selectedLangs; }, [selectedLangs]);
+  useEffect(function() {
+    selectedLangsRef.current = selectedLangs;
+    if (selectedLangs && selectedLangs.length > 0) {
+      localStorage.setItem("memzy_lang", selectedLangs[0]);
+    }
+  }, [selectedLangs]);
   var lastSeenHeartsAtRef = useRef(null);
   var initData = function initData(langs, level) {
     return new Promise(function(resolve) {
@@ -1665,17 +1673,19 @@ function App() {
             name: p ? cap(p.display_name) : cap(u.email.split("@")[0]),
             avatar: p ? p.avatar_emoji : "🐣", supaUser: u };
           setUser(restoredUser);
-          var lang = (p && p.last_language) || "de";
+          var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
           /* Always navigate — last_active may be null for new users */
-          if (p && p.last_language) {
+          if ((p && p.last_language) || localStorage.getItem("memzy_lang")) {
             /* Returning user with language set — go to app */
             initData([lang], "A1").then(function() {
               loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
               loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
               loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-              if (p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
+              if (p && p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
+              /* Save lang to profile so future loads use Supabase */
+              supabase.from("profiles").update({ last_language: lang }).eq("id", u.id).then(function(){});
               setScreen("app");
             });
           } else {
@@ -1874,7 +1884,7 @@ function App() {
       if (u._loadProgress) {
         supabase.from("profiles").select("*").eq("id", u.id).single().then(function(res) {
           var p = res.data;
-          var lang = (p && p.last_language) || "de";
+          var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
           initData([lang], "A1").then(function() {
@@ -2684,6 +2694,8 @@ function App() {
     onSwitchLang: function(lang) {
       setSelectedLangs([lang]);
       var u = userRef.current;
+      /* Save to Supabase profile so refresh remembers the language */
+      if (u && u.id) supabase.from("profiles").update({ last_language: lang }).eq("id", u.id).then(function(){});
       initData([lang], curLevel).then(function() {
         if (u && u.id) {
           loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
@@ -8306,7 +8318,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v41';
+  var CACHE_VERSION = 'memzy-v45';
 
   if (!('serviceWorker' in navigator)) return;
 
