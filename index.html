@@ -420,11 +420,11 @@ function spNet(text, tl) {
   /* Google Translate TTS — natural quality, works for de and fa */
   return new Promise(function (res, rej) {
     try {
-      if (_au) { try { _au.pause(); } catch (_) {} }
+      if (_au) { try { _au.pause(); _au.src = ""; } catch (_) {} }
       _au = null;
       var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
-      var a = new Audio(url);
-      a.crossOrigin = "anonymous";
+      var a = new Audio();
+      a.src = url;
       _au = a;
       a.onerror = function () { return rej(new Error("audio error")); };
       var p = a.play();
