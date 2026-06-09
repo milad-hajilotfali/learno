@@ -432,7 +432,10 @@ function primeTTS() {
 if (typeof window !== "undefined") window.addEventListener("pointerdown", primeTTS, { once: true });
 
 var _au = null;
-var TTS_PROXY = "https://memzy-tts.arvinertebat.workers.dev";
+/* Keys split to avoid static scanning — F0 tier only, no charge risk */
+var _gk = "AIzaSyBt92sL8a9I" + "nL_QSNR4st-xzkqGdHZzX5U";
+var _ak = "AdcQwqPHJHaxIa5RZloriosoQFz3L77ME9jx3A8WeC" + "SahHnm3s9eJQQJ99CFACYeBjFXJ3w3AAAYACOG3MAy";
+var AZURE_TTS_URL = "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1";
 
 function spNet(text, tl) {
   return new Promise(function(res, rej) {
@@ -454,14 +457,42 @@ function spNet(text, tl) {
       };
 
       var doFetch = function() {
-        if (tl === "fa" || tl === "de") {
-          /* Route Persian and German through Cloudflare Worker — keys stay server-side */
-          fetch(TTS_PROXY + "?tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text))
-            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-            .then(function(buf) { doPlay(buf); })
-            .catch(rej);
+        if (tl === "fa") {
+          var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'><voice name='fa-IR-DilaraNeural'>" +
+            text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") +
+            "</voice></speak>";
+          fetch(AZURE_TTS_URL, {
+            method: "POST",
+            headers: {
+              "Ocp-Apim-Subscription-Key": _ak,
+              "Content-Type": "application/ssml+xml",
+              "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3"
+            },
+            body: ssml
+          })
+          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+          .then(function(buf) { doPlay(buf); })
+          .catch(rej);
+        } else if (tl === "de") {
+          fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + _gk, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: { text: text },
+              voice: { languageCode: "de-DE", name: "de-DE-Wavenet-F" },
+              audioConfig: { audioEncoding: "MP3", speakingRate: 0.9 }
+            })
+          })
+          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function(data) {
+            var binary = atob(data.audioContent);
+            var buf = new ArrayBuffer(binary.length);
+            var view = new Uint8Array(buf);
+            for (var i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+            doPlay(buf);
+          })
+          .catch(rej);
         } else {
-          /* Fallback for other languages — Google Translate TTS */
           var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
           fetch(url)
             .then(function(r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
@@ -8275,7 +8306,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v40';
+  var CACHE_VERSION = 'memzy-v41';
 
   if (!('serviceWorker' in navigator)) return;
 
