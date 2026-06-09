@@ -442,9 +442,13 @@ function primeTTS() {
   if (_primed) return;
   _primed = true;
   try {
-    /* Warm up AudioContext on first user gesture — required for iOS Safari */
-    var ctx = _getAudioCtx();
-    if (ctx && ctx.state === "suspended") ctx.resume().catch(function() {});
+    /* Unlock the shared HTML audio element on first user gesture (iOS).
+       HTMLAudio plays as "media", so it works even with the silent switch on
+       (Web Audio is "ambient" and gets muted by the switch). */
+    if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
+    _au.src = SILENT_WAV;
+    var _pp = _au.play();
+    if (_pp && _pp.catch) _pp.catch(function () {});
     /* Also warm up Web Speech for fallback */
     if ("speechSynthesis" in window) {
       var u = new SpeechSynthesisUtterance(" ");
@@ -456,6 +460,7 @@ function primeTTS() {
 if (typeof window !== "undefined") window.addEventListener("pointerdown", primeTTS, { once: true });
 
 var _au = null;
+var SILENT_WAV = "data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
 /* Keys split to avoid static scanning — F0 tier only, no charge risk */
 var _gk = "AIzaSyBt92sL8a9I" + "nL_QSNR4st-xzkqGdHZzX5U";
 var _ak = "AdcQwqPHJHaxIa5RZloriosoQFz3L77ME9jx3A8WeC" + "SahHnm3s9eJQQJ99CFACYeBjFXJ3w3AAAYACOG3MAy";
@@ -467,17 +472,15 @@ function spNet(text, tl) {
       if (_audioSource) { try { _audioSource.stop(); } catch(_) {} _audioSource = null; }
       if (_au) { try { _au.pause(); _au.src = ""; } catch(_) {} _au = null; }
 
-      var ctx = _getAudioCtx();
-
       var doPlay = function(arrayBuf) {
-        ctx.decodeAudioData(arrayBuf, function(decoded) {
-          var src = ctx.createBufferSource();
-          src.buffer = decoded;
-          src.connect(ctx.destination);
-          _audioSource = src;
-          src.onended = res;
-          src.start(0);
-        }, rej);
+        var blob = new Blob([arrayBuf], { type: "audio/mpeg" });
+        var url = URL.createObjectURL(blob);
+        if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
+        _au.src = url;
+        _au.onended = function () { URL.revokeObjectURL(url); res(); };
+        _au.onerror = function (e) { URL.revokeObjectURL(url); rej(e); };
+        var pr = _au.play();
+        if (pr && pr.catch) pr.catch(rej);
       };
 
       var doFetch = function() {
@@ -525,12 +528,7 @@ function spNet(text, tl) {
         }
       };
 
-      if (ctx) {
-        if (ctx.state === "suspended") ctx.resume().then(doFetch).catch(rej);
-        else doFetch();
-      } else {
-        rej(new Error("no AudioContext"));
-      }
+      doFetch();
     } catch(e) { rej(e); }
   });
 }
@@ -7797,9 +7795,18 @@ function HeartsDialog(_ref41) {
     }, h.from), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
-        color: C.sub
+        color: C.sub,
+        whiteSpace: "nowrap"
       }
-    }, "sent you a heart \xB7 ", h.time)), (function() {
+    }, "Sent you a heart"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.sub,
+        opacity: 0.75,
+        marginTop: 1,
+        whiteSpace: "nowrap"
+      }
+    }, h.time)), (function() {
       var done = responded(h);
       return /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() { return doSendBack(h); },
@@ -7809,6 +7816,8 @@ function HeartsDialog(_ref41) {
         alignItems: "center",
         gap: 5,
         padding: "6px 10px",
+        minWidth: 102,
+        justifyContent: "center",
         borderRadius: 11,
         border: "1.5px solid " + (done ? C.green + "44" : C.red + "44"),
         background: done ? C.greenSoft : C.redSoft,
@@ -8822,7 +8831,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v78';
+  var CACHE_VERSION = 'memzy-v80';
 
   if (!('serviceWorker' in navigator)) return;
 
