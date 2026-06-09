@@ -381,7 +381,10 @@ function ensureProfile(u) {
       var meta = u.user_metadata || {};
       var dn = cap(meta.display_name || meta.full_name || meta.name || (u.email || "").split("@")[0] || "Learner");
       return supabase.from("profiles").insert({ id: u.id, display_name: dn, avatar_emoji: randAvatar() })
-        .then(function () { return null; });
+        .then(function (ins) {
+          if (ins && ins.error) console.warn("ensureProfile insert failed (check RLS insert policy on profiles):", ins.error.message);
+          return null;
+        });
     });
 }
 var REWARDS = [{
@@ -1375,6 +1378,10 @@ function App() {
     toast = _useState_toast2[0],
     setToast = _useState_toast2[1];
   var toastTRef = useRef(null);
+  var _useState_recov = useState(false),
+    _useState_recov2 = _slicedToArray(_useState_recov, 2),
+    recoveryMode = _useState_recov2[0],
+    setRecoveryMode = _useState_recov2[1];
   var showToast = function showToast(msg) {
     setToast(msg);
     if (toastTRef.current) clearTimeout(toastTRef.current);
@@ -1845,22 +1852,7 @@ function App() {
     var askNewPassword = function askNewPassword() {
       if (recoveryHandled.current) return;
       recoveryHandled.current = true;
-      var np = window.prompt("Enter your new password (min 6 characters):");
-      if (np && np.length >= 6) {
-        supabase.auth.updateUser({ password: np }).then(function (res) {
-          if (res.error) {
-            window.alert("Could not update password: " + res.error.message);
-            recoveryHandled.current = false;
-          } else {
-            window.alert("Password updated! Signing you in\u2026");
-            try { history.replaceState(null, "", window.location.pathname); } catch (e) {}
-            window.location.reload();
-          }
-        });
-      } else if (np !== null) {
-        window.alert("Password must be at least 6 characters. Open the email link again to retry.");
-        recoveryHandled.current = false;
-      }
+      setRecoveryMode(true);
     };
     var urlAll = (window.location.hash || "") + (window.location.search || "");
     if (urlAll.indexOf("type=recovery") !== -1) {
@@ -2031,6 +2023,12 @@ function App() {
       supabase.from("profiles").update({ last_heart_seen: now }).eq("id", userRef.current.id).then(function(){});
     }
   };
+
+  /* PASSWORD RECOVERY — dedicated reset screen */
+  if (recoveryMode) return /*#__PURE__*/React.createElement(Shell, null,
+    /*#__PURE__*/React.createElement(StyleTag, null),
+    /*#__PURE__*/React.createElement(ResetPasswordScreen, null)
+  );
 
   /* ONBOARDING */
   if (screen === "loading") return /*#__PURE__*/React.createElement("div", {
@@ -3001,7 +2999,71 @@ function App() {
   ));
 }
 
-/* ── WELCOME ── */
+/* ── RESET PASSWORD ── */
+function ResetPasswordScreen() {
+  var _p1 = useState(""), p1 = _p1[0], setP1 = _p1[1];
+  var _p2 = useState(""), p2 = _p2[0], setP2 = _p2[1];
+  var _sh = useState(false), show = _sh[0], setShow = _sh[1];
+  var _er = useState(""), err = _er[0], setErr = _er[1];
+  var _bu = useState(false), busy = _bu[0], setBusy = _bu[1];
+  var _dn = useState(false), done = _dn[0], setDone = _dn[1];
+  var submit = function submit() {
+    if (busy) return;
+    if (p1.length < 6) { setErr("Password must be at least 6 characters."); return; }
+    if (p1 !== p2) { setErr("Passwords don't match."); return; }
+    setErr(""); setBusy(true);
+    supabase.auth.updateUser({ password: p1 }).then(function (res) {
+      setBusy(false);
+      if (res.error) setErr(res.error.message);
+      else setDone(true);
+    });
+  };
+  var finish = function finish() {
+    try { history.replaceState(null, "", window.location.pathname); } catch (e) {}
+    window.location.reload();
+  };
+  var inp = { width: "100%", marginTop: 6, padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", background: C.surface };
+  var lbl = { fontSize: 13, fontWeight: 700, color: C.sub, display: "block" };
+  return /*#__PURE__*/React.createElement("div", {
+    style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)", padding: "20px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", overflow: "hidden" }
+  },
+  /*#__PURE__*/React.createElement(Aurora, { a: C.primary, b: "#8B73F0" }),
+  /*#__PURE__*/React.createElement("div", {
+    style: { width: "100%", maxWidth: 340, background: C.surface, borderRadius: 26, border: "1px solid " + C.line, boxShadow: "0 16px 56px rgba(28,26,46,0.10)", padding: "28px 24px 24px", textAlign: "center", zIndex: 10, animation: "riseIn .6s cubic-bezier(.16,1,.3,1) both" }
+  },
+    /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".06s", display: "flex", justifyContent: "center", marginBottom: 16 } },
+      /*#__PURE__*/React.createElement("div", {
+        style: { width: 72, height: 72, borderRadius: 22, background: done ? "linear-gradient(145deg,#3BD98A,#1CA35B)" : "linear-gradient(145deg,#6A5BFF,#5A4FE3)", boxShadow: done ? "0 12px 28px rgba(45,191,114,0.35)" : "0 12px 28px rgba(90,79,227,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: done ? "check" : "lock", size: 28, color: "#fff" }))
+    ),
+    done
+      ? /*#__PURE__*/React.createElement(React.Fragment, null,
+          /*#__PURE__*/React.createElement("h1", { style: { fontSize: 21, fontWeight: 900, color: C.ink, margin: "0 0 6px", letterSpacing: -0.5 } }, "Password updated!"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.5, marginBottom: 22 } }, "You're signed in with your new password."),
+          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: finish }, "Continue to Memzy")
+        )
+      : /*#__PURE__*/React.createElement(React.Fragment, null,
+          /*#__PURE__*/React.createElement("h1", { style: { fontSize: 21, fontWeight: 900, color: C.ink, margin: "0 0 6px", letterSpacing: -0.5 } }, "Set a new password"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, lineHeight: 1.5, marginBottom: 20 } }, "Choose a password with at least 6 characters."),
+          /*#__PURE__*/React.createElement("div", { style: { textAlign: "left", marginBottom: 14, position: "relative" } },
+            /*#__PURE__*/React.createElement("label", { style: lbl }, "New password"),
+            /*#__PURE__*/React.createElement("input", { type: show ? "text" : "password", value: p1, onChange: function (e) { setP1(e.target.value); }, placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022", style: inp }),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function () { setShow(!show); },
+              style: { position: "absolute", right: 12, bottom: 12, background: "none", border: "none", cursor: "pointer", padding: 2 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: show ? "eye-slash" : "eye", size: 14, color: C.sub }))
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { textAlign: "left", marginBottom: 18 } },
+            /*#__PURE__*/React.createElement("label", { style: lbl }, "Confirm password"),
+            /*#__PURE__*/React.createElement("input", { type: show ? "text" : "password", value: p2, onChange: function (e) { setP2(e.target.value); }, placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022", style: inp })
+          ),
+          err && /*#__PURE__*/React.createElement("div", { style: { color: "#e03", fontSize: 12.5, fontWeight: 600, textAlign: "center", marginBottom: 12, padding: "8px 12px", background: "#fff0f0", borderRadius: 10 } }, err),
+          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: submit, disabled: busy }, busy ? "Updating\u2026" : "Update password")
+        )
+  ));
+}
+
+/* \u2500\u2500 WELCOME \u2500\u2500 */
 function Welcome(_ref15) {
   var onStart = _ref15.onStart,
     onSignIn = _ref15.onSignIn;
@@ -3186,7 +3248,7 @@ function AuthScreen(_ref16) {
     }
   };
   var google = function google() {
-    supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname } });
+    supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: "select_account" } } });
   };
   var forgot = function forgot() {
     if (!email.includes("@")) { setAuthMsg(""); setAuthError("Enter your email above first."); return; }
@@ -8760,7 +8822,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v76';
+  var CACHE_VERSION = 'memzy-v78';
 
   if (!('serviceWorker' in navigator)) return;
 
