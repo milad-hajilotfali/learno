@@ -359,6 +359,41 @@ var langMeta = {
   }
 };
 var FONT = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+/* ── Offline indicator — plain DOM so it overlays every screen (deck, onboarding, app) ── */
+(function () {
+  if (typeof window === "undefined") return;
+  var el = null;
+  function ensure() {
+    if (el) return el;
+    el = document.createElement("div");
+    el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%) translateY(-8px);top:calc(10px + env(safe-area-inset-top));background:#1C1A2E;color:#fff;font:700 12.5px " + FONT + ";padding:8px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(28,26,46,.35);z-index:600;display:flex;align-items:center;gap:7px;opacity:0;transition:opacity .25s ease,transform .25s ease;pointer-events:none";
+    document.body.appendChild(el);
+    return el;
+  }
+  function setContent(dotColor, text) {
+    ensure().innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:' + dotColor + ';display:inline-block;flex-shrink:0"></span><span>' + text + "</span>";
+  }
+  var hideT = null;
+  function show() {
+    if (hideT) { clearTimeout(hideT); hideT = null; }
+    setContent("#FF6B6B", "You're offline");
+    var e = ensure();
+    e.style.opacity = "1";
+    e.style.transform = "translateX(-50%) translateY(0)";
+  }
+  function hide() {
+    if (!el) return;
+    el.style.opacity = "0";
+    el.style.transform = "translateX(-50%) translateY(-8px)";
+  }
+  window.addEventListener("offline", show);
+  window.addEventListener("online", function () {
+    if (!el || el.style.opacity === "0") return;
+    setContent("#3BD98A", "Back online");
+    hideT = setTimeout(hide, 1600);
+  });
+  if (navigator.onLine === false) setTimeout(show, 400);
+})();
 /* FlagIcon: renders a flag-icons CSS class as a span, sized via fontSize */
 function FlagIcon(_ref_fi) {
   var cls = _ref_fi.cls, size = _ref_fi.size;
@@ -1360,7 +1395,12 @@ function App() {
     cardsSubScreen = _useState38[0],
     setCardsSubScreen = _useState38[1];
   var _useState37b = useState(null), _useState38b = _slicedToArray(_useState37b, 2), openDeckType = _useState38b[0], setOpenDeckType = _useState38b[1];
-  var _useState_customDecks = useState([]), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
+  var _useState_customDecks = useState(function () {
+    try { return JSON.parse(localStorage.getItem("memzy_custom_decks") || "[]"); } catch (e) { return []; }
+  }), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
+  useEffect(function () {
+    try { localStorage.setItem("memzy_custom_decks", JSON.stringify(customDecks)); } catch (e) {}
+  }, [customDecks]);
   var dayStreak = useMemo(function () {
     return calcStreak(history);
   }, [history]);
@@ -2875,8 +2915,11 @@ function App() {
     initialDeckScreen: openDeckType ? { type: openDeckType } : null,
     onInitDeckScreenConsumed: function() { setOpenDeckType(null); },
     onBackToHome: function() { setOpenDeckType(null); _setTab("dashboard"); },
-    customDecks: customDecks,
-    onAddDeck: function(deck) { setCustomDecks(function(d) { return [].concat(_toConsumableArray(d), [_objectSpread(_objectSpread({}, deck), {}, { colorIdx: d.length % 8 })]); }); },
+    customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }),
+    onAddDeck: function(deck) {
+      var lang = (selectedLangsRef.current && selectedLangsRef.current[0]) || "de";
+      setCustomDecks(function(d) { return [].concat(_toConsumableArray(d), [_objectSpread(_objectSpread({}, deck), {}, { colorIdx: d.length % 8, lang: lang })]); });
+    },
     onDeleteDeck: function(id) { setCustomDecks(function(d) { return d.filter(function(dk) { return dk.id !== id; }); }); },
     allCards: allCards,
     learnedIds: learnedIds,
@@ -5957,11 +6000,11 @@ function MyFlashcardsPage(_ref31) {
       /* Fills the Dynamic Island / status bar area with the same white background */
       /*#__PURE__*/React.createElement("div", { style: { height: "env(safe-area-inset-top)", background: C.surface } }),
       /*#__PURE__*/React.createElement("div", {
-        style: { padding: "12px 16px 14px", display: "flex", alignItems: "center", gap: 10 }
+        style: { padding: "20px 16px 14px", display: "flex", alignItems: "center", gap: 8 }
       },
       /*#__PURE__*/React.createElement("button", {
         onClick: onBack, className: "press",
-        style: { width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.line, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+        style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
       }, /*#__PURE__*/React.createElement(Icon, { name: "chevron-left", size: 13, color: C.ink })),
       iconEl,
       /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
@@ -5971,8 +6014,8 @@ function MyFlashcardsPage(_ref31) {
       rightEl || null,
       onOpenDeckSettings && /*#__PURE__*/React.createElement("button", {
         onClick: onOpenDeckSettings, className: "press",
-        style: { width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 15, color: C.sub }))
+        style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
       ) /* close inner content div */
     ); /* close outer wrapper div */
   };
@@ -6060,8 +6103,8 @@ function MyFlashcardsPage(_ref31) {
           sub: cdCards.length + " cards",
           rightEl: /*#__PURE__*/React.createElement("button", {
             onClick: function onClick() { openAddModal(cdDeck.id); }, className: "press",
-            style: { height: 34, padding: "0 12px", borderRadius: 10, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
-          }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add"))
+            style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add"))
         }),
         SearchBar,
         /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
@@ -6069,7 +6112,7 @@ function MyFlashcardsPage(_ref31) {
             ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, "No cards yet. Tap + to add one.")
             : cdFiltered.map(function(c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
         ),
-        adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks, preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
+        adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
         open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
       );
     }
@@ -6082,8 +6125,8 @@ function MyFlashcardsPage(_ref31) {
     var dsAddBtn = ds.type === "mine"
       ? /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { openAddModal(null); }, className: "press",
-          style: { height: 34, padding: "0 12px", borderRadius: 10, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
-        }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add"))
+          style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add"))
       : null;
     return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
       /*#__PURE__*/React.createElement(SubHeader, {
@@ -6099,7 +6142,7 @@ function MyFlashcardsPage(_ref31) {
           ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, dsEmpty)
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
-      adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks, preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
+      adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
       open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
     );
   }
@@ -6263,7 +6306,7 @@ function MyFlashcardsPage(_ref31) {
     ),
     adding && /*#__PURE__*/React.createElement(AddWordModal, {
       selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter,
-      customDecks: customDecks,
+      customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }),
       onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd
     }),
     open && /*#__PURE__*/React.createElement(FlashcardModal, {
@@ -7008,6 +7051,7 @@ function FriendsPage(_ref37) {
   var _useState_lb = useState([]), _useState_lb2 = _slicedToArray(_useState_lb, 2), lbUsers = _useState_lb2[0], setLbUsers = _useState_lb2[1];
   var _useState_suggested = useState([]), _useState_suggested2 = _slicedToArray(_useState_suggested, 2), suggestedUsers = _useState_suggested2[0], setSuggestedUsers = _useState_suggested2[1];
   var _useState_fp = useState([]), _useState_fp2 = _slicedToArray(_useState_fp, 2), friendProfiles = _useState_fp2[0], setFriendProfiles = _useState_fp2[1];
+  var _useState_allFr = useState(false), _useState_allFr2 = _slicedToArray(_useState_allFr, 2), showAllFriends = _useState_allFr2[0], setShowAllFriends = _useState_allFr2[1];
   /* Ticking clock for the weekly-reset countdown */
   var _useState_nowTs = useState(Date.now()), _useState_nowTs2 = _slicedToArray(_useState_nowTs, 2), nowTs = _useState_nowTs2[0], setNowTs = _useState_nowTs2[1];
   useEffect(function () {
@@ -7313,18 +7357,50 @@ function FriendsPage(_ref37) {
       textTransform: "uppercase",
       letterSpacing: 0.5
     }
-  }, "My Friends"), filteredFriends.map(function (u) {
-    return /*#__PURE__*/React.createElement(UserRow, {
-      key: u.id,
-      u: u,
-      isFriend: true,
-      onAdd: onAdd,
-      onRemove: onRemove,
-      onTap: function onTap() {
-        return setSel(u);
-      }
-    });
-  })), filteredFriends.length === 0 && !q && /*#__PURE__*/React.createElement("div", {
+  }, "My Friends"), (function () {
+    /* Order by when they were added (friends array order), newest first */
+    var byId = {};
+    myFriends.forEach(function (p) { byId[p.id] = p; });
+    var ordered = friends.map(function (id) { return byId[id]; }).filter(Boolean);
+    if (ordered.length === 0) ordered = myFriends;
+    var newestFirst = ordered.slice().reverse();
+    var shown = q ? filteredFriends : newestFirst.slice(0, 6);
+    var row = function row(u, isLast) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: u.id,
+        onClick: function onClick() { setShowAllFriends(false); setSel(u); },
+        style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", borderBottom: isLast ? "none" : "1px solid " + C.line, cursor: "pointer" }
+      },
+        /*#__PURE__*/React.createElement(Avatar, { seed: u.avatar, size: 32 }),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, u.name),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "fire", size: 11, color: C.amber }), u.streak || 0,
+          " \u00B7 ",
+          /*#__PURE__*/React.createElement(Icon, { name: "star", size: 11, color: C.amber }), u.points || 0
+        )
+      );
+    };
+    var hasMore = !q && newestFirst.length > 6;
+    return /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
+        shown.map(function (u, i) { return row(u, !hasMore && i === shown.length - 1); }),
+        /* "See all" lives inside the list as its final row */
+        hasMore && /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setShowAllFriends(true); },
+          className: "press",
+          style: { width: "100%", padding: "11px 13px", border: "none", borderTop: "1px solid " + C.line, background: "transparent", color: C.primary, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }
+        }, "See all " + newestFirst.length + " friends", /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 11, color: C.primary }))
+      ),
+      showAllFriends && /*#__PURE__*/React.createElement(Sheet, {
+        onClose: function onClose() { return setShowAllFriends(false); },
+        title: "My Friends (" + newestFirst.length + ")"
+      },
+        /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
+          newestFirst.map(function (u, i) { return row(u, i === newestFirst.length - 1); })
+        )
+      )
+    );
+  })()), filteredFriends.length === 0 && !q && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.primarySoft,
       border: "1px solid " + C.primary + "22",
@@ -7399,38 +7475,23 @@ function FriendsPage(_ref37) {
       }
     }, isFr ? "Friends \u2713" : "+ Add"));
   }))), tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
-    /* Header: two breathing rows — title + countdown, then a full-width switcher */
-    /*#__PURE__*/React.createElement("div", { style: { padding: "14px 14px 0", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 12 } },
-      /* Row 1: trophy + title on the left, countdown chip on the right */
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9 } },
-          /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 10, background: C.amber + "1A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-            /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 14, color: C.amber })
-          ),
-          /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14.5, fontWeight: 800, color: C.ink, letterSpacing: -0.2, lineHeight: 1.15 } }, "This week"),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, "Weekly leaderboard")
-          )
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5, background: C.bg, borderRadius: 9, padding: "5px 10px", flexShrink: 0 } },
-          /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 10, color: C.sub }),
-          /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: C.sub, whiteSpace: "nowrap" } }, "ends in " + weekLeft)
-        )
+    /* Airy header: calm title row, then unmistakable chip tabs */
+    /*#__PURE__*/React.createElement("div", { style: { padding: "16px 16px", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 13 } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between" } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 800, color: C.ink, letterSpacing: -0.3 } }, "This week"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.sub, whiteSpace: "nowrap" } }, "Ends in " + weekLeft)
       ),
-      /* Row 2: underline-style tabs (visually distinct from the page pill bar) */
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", margin: "0 -14px", padding: "0 6px" } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", background: C.bg, borderRadius: 12, padding: 3 } },
         [{ k: "friends", label: "Friends", icon: "users" }, { k: "worldwide", label: "Worldwide", icon: "globe" }].map(function(lt) {
           var on = lbTab === lt.k;
           return /*#__PURE__*/React.createElement("button", {
             key: lt.k,
             onClick: function onClick() { return setLbTab(lt.k); },
             className: "press",
-            style: { flex: 1, position: "relative", padding: "5px 0 12px", border: "none", background: "transparent", cursor: "pointer", color: on ? C.primary : C.sub, fontWeight: on ? 800 : 600, fontSize: 13, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "color .15s ease" }
+            style: { flex: 1, padding: "8px 0", borderRadius: 9, border: "none", background: on ? C.surface : "transparent", color: on ? C.primary : C.sub, fontSize: 13, fontWeight: on ? 800 : 600, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: on ? "0 1px 4px rgba(28,26,46,.08)" : "none", transition: "all .15s ease" }
           },
             /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 11, color: on ? C.primary : C.sub }),
-            lt.label,
-            /* sliding-feel underline indicator */
-            /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: -1, left: "50%", transform: "translateX(-50%) scaleX(" + (on ? 1 : 0) + ")", width: 34, height: 3, borderRadius: 3, background: C.primary, transition: "transform .22s cubic-bezier(.16,1,.3,1)" } })
+            lt.label
           );
         })
       )
@@ -8407,7 +8468,7 @@ function Burst(_refB) {
         size: 4 + Math.random() * 5,
         ribbon: ribbon,
         color: colors[i % colors.length],
-        dur: 1.5 + Math.random() * 0.9,
+        dur: 1.9 + Math.random() * 1.1,
         delay: 0.55 + Math.random() * 0.3
       });
     }
@@ -8823,7 +8884,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0}10%{opacity:1}55%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1}100%{transform:translate(calc(var(--tx)*1.12),calc(var(--ty) + 150px)) rotate(calc(var(--rot)*1.5)) scale(.85);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
@@ -8831,7 +8892,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v80';
+  var CACHE_VERSION = 'memzy-v91';
 
   if (!('serviceWorker' in navigator)) return;
 
