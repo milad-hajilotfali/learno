@@ -254,6 +254,10 @@ var CRACK_LEARNED_PCT = 0.8;
 var CRACK_EXPIRED_PCT = 0.5;
 /* Path layouts: a chapter unlocks once the PREVIOUS chapter reaches this pct */
 var CHAPTER_UNLOCK_PCT = 0.8;
+/* Every chapter is served in exactly this many rounds; the round size is
+   derived from the chapter (45 cards → 3 rounds of 15) */
+var ROUNDS_PER_CHAPTER = 3;
+function roundSizeFor(total) { return Math.max(1, Math.ceil(total / ROUNDS_PER_CHAPTER)); }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function wordExpired(v) {
   var dateStr = laDate(v);
@@ -1185,13 +1189,16 @@ function PrimaryButton(_ref4) {
    When the keyboard closes, restores the window scroll iOS performed to reveal
    the input — that pan is what left the tab bar "jumped up" after closing. */
 function useKeyboardInset() {
-  var _ki = useState(0), _ki2 = _slicedToArray(_ki, 2), inset = _ki2[0], setInset = _ki2[1];
+  /* Returns { inset, open, vh }.
+     inset — px the keyboard overlaps the CURRENT layout viewport (0 when iOS
+     already shrank the layout itself; padding on top of that caused the gap).
+     open — keyboard up at all (measured against a pre-keyboard baseline).
+     vh — visible viewport height, for capping sheet height. */
+  var _ki = useState({ inset: 0, open: false, vh: 0 }),
+    _ki2 = _slicedToArray(_ki, 2), kb = _ki2[0], setKb = _ki2[1];
   useEffect(function () {
     var vv = window.visualViewport;
     if (!vv) return;
-    /* iOS standalone can shrink window.innerHeight together with the keyboard,
-       making (innerHeight - vv.height) compute 0. Capture the full height as a
-       baseline before the keyboard exists and measure against that instead. */
     var base = vv.height + vv.offsetTop;
     var restore = function restore() {
       window.scrollTo(0, 0);
@@ -1200,14 +1207,16 @@ function useKeyboardInset() {
     };
     var onR = function onR() {
       base = Math.max(base, vv.height + vv.offsetTop);
-      var k = Math.max(0, base - vv.height - vv.offsetTop);
-      setInset(k);
-      if (k < 1) { restore(); setTimeout(restore, 80); setTimeout(restore, 280); }
+      var open = base - (vv.height + vv.offsetTop) > 60;
+      var inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKb({ inset: inset, open: open, vh: Math.round(vv.height) });
+      if (!open) { restore(); setTimeout(restore, 80); setTimeout(restore, 280); }
     };
     var onBlur = function onBlur() { setTimeout(restore, 60); setTimeout(restore, 300); };
     vv.addEventListener("resize", onR);
     vv.addEventListener("scroll", onR);
     window.addEventListener("focusout", onBlur);
+    onR();
     return function () {
       vv.removeEventListener("resize", onR);
       vv.removeEventListener("scroll", onR);
@@ -1215,7 +1224,7 @@ function useKeyboardInset() {
       restore(); setTimeout(restore, 80); setTimeout(restore, 280);
     };
   }, []);
-  return inset;
+  return kb;
 }
 function TopInset(_refTI) {
   return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
@@ -1415,7 +1424,7 @@ function Sheet(_ref1) {
     noHeader = _ref1.noHeader,
     footer = _ref1.footer;
   /* iOS keyboard: lift the sheet, cap its height so the header stays on screen */
-  var kbInset = useKeyboardInset();
+  var kb = useKeyboardInset();
   /* Animated close: slide the panel down + fade the backdrop, THEN unmount */
   var _useState_closing = useState(false),
     _useState_closing2 = _slicedToArray(_useState_closing, 2),
@@ -1436,7 +1445,7 @@ function Sheet(_ref1) {
       alignItems: "flex-end",
       justifyContent: "center",
       zIndex: 300,
-      paddingBottom: kbInset,
+      paddingBottom: kb.inset,
       boxSizing: "border-box",
       animation: closing ? "fadeOut .22s ease both" : "fadeIn .2s ease both"
     }
@@ -1450,7 +1459,7 @@ function Sheet(_ref1) {
       maxWidth: 440,
       background: C.surface,
       borderRadius: "26px 26px 0 0",
-      maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "88vh",
+      maxHeight: kb.open ? Math.max(260, kb.vh - 56) + "px" : "88vh",
       display: "flex",
       flexDirection: "column",
       fontFamily: FONT,
@@ -1521,7 +1530,7 @@ function Sheet(_ref1) {
       paddingBottom: footer ? 16 : "calc(24px + env(safe-area-inset-bottom))"
     }
   }, children), footer && /*#__PURE__*/React.createElement("div", {
-    style: { flexShrink: 0, padding: kbInset > 0 ? "12px 22px 12px" : "12px 22px calc(20px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface }
+    style: { flexShrink: 0, padding: kb.open ? "12px 22px 12px" : "12px 22px calc(20px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface }
   }, footer))));
 }
 function Toggle(_ref10) {
@@ -1725,16 +1734,6 @@ function App() {
     _useState24 = _slicedToArray(_useState23, 2),
     history = _useState24[0],
     setHistory = _useState24[1];
-  /* DEV: home layout variant A/B/C for comparison — remove switcher once decided */
-  var _useState_hl = useState(function () {
-    try { return localStorage.getItem("memzy_home_layout") || "A"; } catch (e) { return "A"; }
-  }),
-    _useState_hl2 = _slicedToArray(_useState_hl, 2),
-    homeLayout = _useState_hl2[0],
-    setHomeLayout = _useState_hl2[1];
-  useEffect(function () {
-    try { localStorage.setItem("memzy_home_layout", homeLayout); } catch (e) {}
-  }, [homeLayout]);
   /* Shared-streak history: __daily__ activity merged across ALL languages */
   var _useState_gh = useState(function () { return buildHistory(); }),
     _useState_gh2 = _slicedToArray(_useState_gh, 2),
@@ -1955,6 +1954,24 @@ function App() {
   };
   var sessionChapterRef = useRef(null); /* chapter id that the active session was started for */
   var scrollRef = useRef(null);
+  /* The page itself must NEVER scroll (html/body are overflow hidden); iOS
+     still pans the window to reveal focused inputs and sometimes leaves that
+     pan behind, which shows up as the tab bar "jumped up". Snap it back on
+     any window scroll while no input is focused. */
+  useEffect(function () {
+    var guard = function guard() {
+      var ae = document.activeElement;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
+      if (window.pageYOffset !== 0 || document.documentElement.scrollTop !== 0 || document.body.scrollTop !== 0) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+    };
+    window.addEventListener("scroll", guard, true);
+    var iv = setInterval(guard, 600);
+    return function () { window.removeEventListener("scroll", guard, true); clearInterval(iv); };
+  }, []);
   /* New page = start at the top: the single shared scroll container would
      otherwise carry the previous page's scroll position over. (Must live HERE,
      unconditionally before App's early returns — hooks after conditional
@@ -2144,11 +2161,28 @@ function App() {
         levelPctBefore: lvCards.length ? lvDone / lvCards.length : 0
       };
     })();
-    /* Show streak page only on this user's first session of the day */
+    /* Show streak page on the first session of the day. The localStorage
+       flag alone can go stale (e.g. test-data resets), so also trust the
+       data: if today isn't an active day yet, this round extends the streak. */
     var alreadyShownToday = false;
     try { alreadyShownToday = localStorage.getItem(streakShownKey(userRef.current && userRef.current.id)) === "1"; } catch (e) {}
-    setIsFirstSessionToday(!alreadyShownToday);
+    var todayActive = isActiveDay(globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null);
+    setIsFirstSessionToday(!alreadyShownToday || !todayActive);
     setScreen("deck");
+  };
+  /* Start a round of a SPECIFIC chapter — the path bubble uses this so that
+     peeking at chapters never moves the user's place; only starting does. */
+  var startChapterAt = function startChapterAt(lv, chId) {
+    setCurLevel(lv);
+    setCurChapter(chId);
+    var cards = allCards.filter(function (c) { return c.chapter === chId; });
+    var pool = deckSettings.onlyUnknown
+      ? cards.filter(function (c) { return !learnedIds.includes(c.id) || wordExpired(learnedAt[c.id]); })
+      : cards;
+    if (!pool.length) pool = cards;
+    if (!pool.length) { showToast("This chapter has no cards yet"); return; }
+    pool = shuffle(_toConsumableArray(pool)).slice(0, roundSizeFor(cards.length));
+    startSession(pool);
   };
   var startChapter = function startChapter() {
     /* "Only unknown" includes everything that still pays: unlearned words
@@ -2165,6 +2199,9 @@ function App() {
       showToast("This chapter has no cards yet");
       return;
     }
+    /* Bite-size rounds: a chapter session is one of its ROUNDS_PER_CHAPTER
+       rounds — frequent finish lines instead of one 35-card slog */
+    pool = shuffle(_toConsumableArray(pool)).slice(0, roundSizeFor(chapterCards.length));
     startSession(pool);
   };
   var startReview = function startReview() {
@@ -2184,7 +2221,7 @@ function App() {
     var idSet = {};
     rechargeInfo.ids.forEach(function (id) { idSet[id] = true; });
     var pool = allCards.filter(function (c) { return idSet[c.id]; });
-    if (!pool.length) { showToast("All your words are fresh!"); return; }
+    if (!pool.length) { showToast("All your cards are fresh!"); return; }
     pool.sort(function (a, b) {
       return String(laDate(learnedAt[a.id]) || "").localeCompare(String(laDate(learnedAt[b.id]) || ""));
     });
@@ -2243,6 +2280,12 @@ function App() {
     if (!committed.current && (roundPointsRef.current > 0 || hadActivityRef.current)) {
       committed.current = true;
       commitRound(roundPointsRef.current);
+    }
+    /* Leaving an EXAM always shows the result screen (passed / not passed):
+       emptying the queue flips sessionDone → ExamComplete renders */
+    if (examMode) {
+      setQueue([]);
+      return;
     }
     /* No points earned → skip the end screens, go straight home */
     if (roundPointsRef.current === 0) {
@@ -2447,7 +2490,7 @@ function App() {
               applyLearnedState(u.id, lang);
               loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
               loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-              if (p && p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
+              /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("memzy_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
               restorePosition(u.id, lang);
               /* Save lang to profile so future loads use Supabase */
               supabase.from("profiles").update({ last_language: lang }).eq("id", u.id).then(function(){});
@@ -2618,6 +2661,7 @@ function App() {
   /* Auto-save unlockedLevels */
   useEffect(function() {
     if (userRef.current && userRef.current.id && unlockedLevels && unlockedLevels.length > 0) {
+      try { localStorage.setItem("memzy_exam_levels", JSON.stringify(unlockedLevels)); } catch (e) {}
       supabase.from("profiles").update({ unlocked_levels: JSON.stringify(unlockedLevels) }).eq("id", userRef.current.id).then(function(){});
     }
   }, [unlockedLevels]);
@@ -2738,7 +2782,7 @@ function App() {
             applyLearnedState(u.id, lang);
             loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
             loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-            if (p && p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
+            /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("memzy_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
             loadPosition(u.id, lang, function(pos) { setCurLevel(pos.lv); setCurChapter(pos.ch); });
             setScreen("app");
           });
@@ -3544,6 +3588,7 @@ function App() {
     className: "page-in",
     style: { height: "100%" }
   }, tab === "dashboard" && /*#__PURE__*/React.createElement(Dashboard, {
+    scrollRef: scrollRef,
     user: user,
     allCards: allCards,
     learnedIds: learnedIds,
@@ -3552,8 +3597,6 @@ function App() {
     dayStreak: dayStreak,
     history: history,
     globalHistory: globalHistory,
-    homeLayout: homeLayout,
-    setHomeLayout: setHomeLayout,
     totalPoints: totalPoints,
     curLevel: curLevel,
     curChapter: curChapter,
@@ -3566,6 +3609,7 @@ function App() {
       setCurChapter(ch);
     },
     onStart: startChapter,
+    onStartChapterAt: startChapterAt,
     onStartReview: startReview,
     onStartMarked: startMarked,
     onStartLevelExam: startLevelExam,
@@ -5209,13 +5253,13 @@ function Dashboard(_ref27) {
     dayStreak = _ref27.dayStreak,
     history = _ref27.history,
     globalHistory = _ref27.globalHistory || _ref27.history,
-    homeLayout = _ref27.homeLayout || "A",
-    setHomeLayout = _ref27.setHomeLayout,
+    pageScrollRef = _ref27.scrollRef,
     totalPoints = _ref27.totalPoints,
     curLevel = _ref27.curLevel,
     curChapter = _ref27.curChapter,
     onLevelChapterSelect = _ref27.onLevelChapterSelect,
     onStart = _ref27.onStart,
+    onStartChapterAt = _ref27.onStartChapterAt,
     onStartReview = _ref27.onStartReview,
     onStartMarked = _ref27.onStartMarked,
     onStartLevelExam = _ref27.onStartLevelExam,
@@ -5267,8 +5311,8 @@ function Dashboard(_ref27) {
   };
   /* When the selection jumps (e.g. via the faded banner), bring the selected
      chapter into view; block:"nearest" makes it a no-op when already visible */
-  var HL = homeLayout;
-  /* Path layout (C): which chapter's info bubble is open */
+  /* Path layout: which chapter's info bubble is open */
+  /* (closePathBubble defined after state below) */
   var _useState_poc = useState(null),
     _useState_poc2 = _slicedToArray(_useState_poc, 2),
     pathOpenCh = _useState_poc2[0],
@@ -5276,12 +5320,28 @@ function Dashboard(_ref27) {
   /* Path layouts: is the current chapter's node on screen? Drives the
      floating "jump back to where I am" pill. */
   var curPathNodeRef = useRef(null);
+
   var _useState_cnv = useState(true),
     _useState_cnv2 = _slicedToArray(_useState_cnv, 2),
     curNodeVisible = _useState_cnv2[0],
     setCurNodeVisible = _useState_cnv2[1];
+  var closePathBubble = function closePathBubble() {
+    setPathOpenCh(null);
+  };
+  /* Tap-away WITHOUT an overlay: a transparent full-screen overlay ate touch
+     events and made scrolling janky while a bubble was open. A capture-phase
+     pointerdown listener closes the bubble instead, and scrolling stays native. */
   useEffect(function () {
-    if (HL !== "C" && HL !== "D" && HL !== "E") { setCurNodeVisible(true); return; }
+    if (!pathOpenCh) return;
+    var onPD = function onPD(e) {
+      var t = e.target;
+      if (t && t.closest && t.closest("[data-path-keep]")) return;
+      closePathBubble();
+    };
+    document.addEventListener("pointerdown", onPD, true);
+    return function () { document.removeEventListener("pointerdown", onPD, true); };
+  }, [pathOpenCh]);
+  useEffect(function () {
     var el = curPathNodeRef.current;
     if (!el || typeof IntersectionObserver === "undefined") { setCurNodeVisible(true); return; }
     var obs = new IntersectionObserver(function (entries) {
@@ -5289,25 +5349,64 @@ function Dashboard(_ref27) {
     }, { threshold: 0 });
     obs.observe(el);
     return function () { obs.disconnect(); };
-  }, [HL, curLevel, curChapter]);
-  var curChapterRowRef = useRef(null);
-  var levelCardRef = useRef(null);
-  /* Set by the faded banner: instead of nudging the chapter row into view,
-     scroll so the page begins from the level card */
+  }, [curLevel, curChapter]);
+  /* Entering Home lands on the current chapter's node, centered — a B2
+     learner shouldn't scroll six levels every visit. Re-centers when the
+     selection changes (incl. the auto-advance below). */
+  useEffect(function () {
+    var t = setTimeout(function () {
+      var el = curPathNodeRef.current;
+      if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) {} }
+    }, 60);
+    return function () { clearTimeout(t); };
+  }, [curLevel, curChapter]);
+  /* AUTO-ADVANCE: if the selected chapter is 100% learned, move the selection
+     to the frontier (deepest reachable chapter that isn't finished). Keeps the
+     rescue banner, jump tile, and home centering pointed at real work. */
+  useEffect(function () {
+    if (!allCards.length) return;
+    var curCards = allCards.filter(function (c) { return c.chapter === curChapter; });
+    if (!curCards.length) return;
+    var curDone = curCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+    if (curDone < curCards.length) return; /* still unfinished — stay */
+    var maxExamIdx = 0;
+    LEVELS_ORDER.forEach(function (lv2, i2) {
+      if (unlockedLevels && unlockedLevels.includes(lv2)) maxExamIdx = Math.max(maxExamIdx, i2);
+    });
+    var prevLast = 100, target = null;
+    for (var li = 0; li < LEVELS_ORDER.length; li++) {
+      var lv = LEVELS_ORDER[li];
+      var chs = CHAPTERS[lv] || [];
+      var prevPct = -1, lastPct = 0;
+      for (var ci = 0; ci < chs.length; ci++) {
+        var cc = allCards.filter(function (c) { return c.chapter === chs[ci].id; });
+        var pct = cc.length ? cc.filter(function (c) { return learnedIds.includes(c.id); }).length / cc.length * 100 : 0;
+        var lockedNode = li < maxExamIdx ? false
+          : ci > 0 ? prevPct < CHAPTER_UNLOCK_PCT * 100
+          : li === 0 ? false
+          : !(li <= maxExamIdx || prevLast >= CHAPTER_UNLOCK_PCT * 100);
+        if (!lockedNode && pct < 100) target = { lv: lv, id: chs[ci].id }; /* keep scanning: deepest wins */
+        prevPct = pct; lastPct = pct;
+      }
+      prevLast = lastPct;
+    }
+    if (target && (target.lv !== curLevel || target.id !== curChapter)) {
+      onLevelChapterSelect(target.lv, target.id);
+    }
+  }, [allCards, learnedIds, curChapter, curLevel, unlockedLevels]);
+  /* Set by the faded banner: scroll the path so the selected chapter's node
+     lands centered on screen */
   var scrollToCardRef = useRef(false);
   useEffect(function () {
-    if (scrollToCardRef.current) {
-      scrollToCardRef.current = false;
-      var card = levelCardRef.current;
-      if (card && card.scrollIntoView) {
-        try { card.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
+    if (!scrollToCardRef.current) return;
+    scrollToCardRef.current = false;
+    /* node ref re-attaches on this render; scroll on the next frame */
+    setTimeout(function () {
+      var el = curPathNodeRef.current;
+      if (el && el.scrollIntoView) {
+        try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
       }
-      return;
-    }
-    var el = curChapterRowRef.current;
-    if (el && el.scrollIntoView) {
-      try { el.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
-    }
+    }, 60);
   }, [curChapter, curLevel]);
   /* ────────────────────────────────────────────────────────────────────
      HOME LAYOUT ALTERNATIVES (dev) — computed per level, shared by B & C
@@ -5333,124 +5432,74 @@ function Dashboard(_ref27) {
     return { cards: cards, done: done, pct: pct, expired: expired, earn: expired + (cards.length - done), cracked: cracked };
   };
 
-  /* ── Variant B: every level stacked on one scrolling page ── */
-  var renderHomeListAll = function renderHomeListAll() {
-    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
-      LEVELS_ORDER.map(function (lv) {
-        var st = levelStats(lv);
-        var hasCur = lv === curLevel;
-        return /*#__PURE__*/React.createElement("div", {
-          key: lv,
-          style: { background: C.surface, borderRadius: 24, border: "1px solid " + C.line, overflow: "hidden", boxShadow: "0 4px 24px rgba(28,26,46,0.07)" }
-        },
-          /* Level header */
-          /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px 12px", borderBottom: "1px solid " + C.line } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between" } },
-              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } },
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 20, fontWeight: 900, color: st.locked ? C.sub : C.primary, letterSpacing: -0.5 } }, lv),
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub } }, LEVEL_LABEL[lv])
-              ),
-              st.locked
-                ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 13, color: C.sub })
-                : /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.primary } }, st.pct, "%")
-            ),
-            !st.locked && /*#__PURE__*/React.createElement("div", { style: { height: 5, background: "rgba(90,79,227,0.14)", borderRadius: 3, overflow: "hidden", marginTop: 9 } },
-              /*#__PURE__*/React.createElement("div", { style: { width: st.pct + "%", height: "100%", borderRadius: 3, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)" } })
-            )
-          ),
-          st.locked
-            ? /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px 16px" } },
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, fontWeight: 600, marginBottom: 10, lineHeight: 1.5 } },
-                  "Reach 80% in " + (LEVELS_ORDER[LEVELS_ORDER.indexOf(lv) - 1] || "") + " \u2014 or jump here with an exam."),
-                /*#__PURE__*/React.createElement("button", {
-                  onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(lv); },
-                  className: "press",
-                  style: { width: "100%", padding: "12px 14px", borderRadius: 14, border: "1.5px solid " + C.primary, background: "transparent", color: C.primary, fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
-                }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: C.primary }), "Jump here with an exam")
-              )
-            : /*#__PURE__*/React.createElement("div", { style: { padding: "12px 12px 14px", display: "flex", flexDirection: "column", gap: 8 } },
-                st.chs.map(function (ch) {
-                  var cs = chapStats(ch);
-                  var isCur = hasCur && ch.id === curChapter;
-                  var amber = cs.cracked && isCur;
-                  return /*#__PURE__*/React.createElement("button", {
-                    key: ch.id,
-                    onClick: function onClick() { onLevelChapterSelect(lv, ch.id); },
-                    className: "press",
-                    style: { display: "flex", alignItems: "center", gap: 11, padding: "11px 12px", borderRadius: 16, border: "1.5px solid " + (amber ? C.amber : isCur ? C.primary : C.line), background: amber ? "#FFEFCB" : isCur ? C.primarySoft : C.surface, cursor: "pointer", fontFamily: FONT, textAlign: "left", width: "100%", boxSizing: "border-box" }
-                  },
-                    /*#__PURE__*/React.createElement("div", { style: { position: "relative", flexShrink: 0 } },
-                      /*#__PURE__*/React.createElement("div", { style: { width: 34, height: 34, borderRadius: 11, background: amber ? C.amber : isCur ? C.primary : C.line, display: "flex", alignItems: "center", justifyContent: "center" } },
-                        /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 14, color: amber || isCur ? "#fff" : C.sub })),
-                      cs.cracked && /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -4, right: -4, width: 14, height: 14, borderRadius: "50%", background: C.amber, border: "2px solid " + (amber ? "#FFEFCB" : isCur ? C.primarySoft : C.surface), display: "flex", alignItems: "center", justifyContent: "center" } },
-                        /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 6, color: "#fff" }))
-                    ),
-                    /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, fontWeight: 800, color: amber ? "#B45309" : isCur ? C.primary : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
-                      /*#__PURE__*/React.createElement("div", { style: { height: 4, background: amber ? C.amber + "30" : isCur ? "rgba(90,79,227,0.18)" : C.line, borderRadius: 3, overflow: "hidden", marginTop: 6 } },
-                        /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: amber ? C.amber : isCur ? C.primary : "#C4BFF0" } }))
-                    ),
-                    /*#__PURE__*/React.createElement("span", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
-                      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: amber ? "#B45309" : C.sub } }, cs.pct, "%"),
-                      cs.cracked && !isCur && /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 800, color: C.amber, marginTop: 1, whiteSpace: "nowrap" } }, "+" + cs.earn + " pts")
-                    )
-                  );
-                }),
-                hasCur && (function () {
-                  var ccs = chapStats({ id: curChapter });
-                  return /*#__PURE__*/React.createElement(PrimaryButton, {
-                    onClick: onStart, glow: true, amber: ccs.cracked,
-                    style: _objectSpread({ marginTop: 6 }, ccs.cracked ? { background: C.amber } : {})
-                  }, ccs.cracked ? "Rewind  \u00b7  +" + ccs.earn + " pts" : ccs.pct === 0 ? "Start" : "Continue");
-                })()
-              )
-        );
-      })
-    );
-  };
-
-  /* ── Path layouts C/D/E: shared concept (sections, sequential chapter
-     unlocking, overlay bubbles, exam jump), three aesthetics. ── */
-  var PATH_OFF = [0, -58, -84, -58, 0, 58, 84, 58];
+  /* ── HOME PATH (final layout): wide sticker tiles on a winding path.
+     Chapters unlock SEQUENTIALLY across the whole journey (Duolingo-style):
+     chapter N needs chapter N-1 at >= CHAPTER_UNLOCK_PCT; the first chapter
+     of a level needs the previous level's last chapter at that pct — or a
+     passed level exam ("Jump here?"). ── */
   var TILE_OFF = [0, -34, -50, -34, 0, 34, 50, 34];
-  var nodeRing = function nodeRing(pct, color, child) {
-    return /*#__PURE__*/React.createElement("div", {
-      style: { width: 72, height: 72, borderRadius: "50%", padding: 4, boxSizing: "border-box", background: pct > 0 ? "conic-gradient(" + color + " " + pct * 3.6 + "deg, " + C.line + " 0)" : C.line, display: "flex", alignItems: "center", justifyContent: "center" }
-    }, child);
-  };
-  /* Overlay bubble: absolutely positioned so the path never shifts */
-  var bubbleWrap = function bubbleWrap(arrowLeft, inner) {
-    return /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: "calc(100% + 9px)", left: 0, right: 0, zIndex: 96, animation: "riseIn .25s cubic-bezier(.16,1,.3,1) both" } },
-      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: arrowLeft, width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: inner.props["data-bubblebg"], borderRadius: 3 } }),
+  var bubbleWrap = function bubbleWrap(arrowLeft, bg, inner) {
+    return /*#__PURE__*/React.createElement("div", { "data-path-keep": "1", style: { position: "absolute", top: "calc(100% + 9px)", left: 0, right: 0, zIndex: 96, animation: "riseIn .25s cubic-bezier(.16,1,.3,1) both" } },
+      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: arrowLeft, width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: bg, borderRadius: 3 } }),
       inner
     );
   };
-  var renderBubble = function renderBubble(ch, cs, arrowLeft) {
+  var bubbleClose = /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() { closePathBubble(); },
+    className: "press", "aria-label": "Close",
+    style: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+  }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#fff" }));
+  var renderBubble = function renderBubble(lv, ch, cs, arrowLeft) {
     var bg = cs.cracked ? C.amber : C.primary;
-    return bubbleWrap(arrowLeft, /*#__PURE__*/React.createElement("div", { "data-bubblebg": bg, style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + bg + "55", position: "relative" } },
-      /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() { setPathOpenCh(null); },
-        className: "press", "aria-label": "Close",
-        style: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#fff" })),
+    return bubbleWrap(arrowLeft, bg, /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + bg + "55", position: "relative" } },
+      bubbleClose,
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3, paddingRight: 30 } }, ch.title),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4 } },
-        cs.cracked
-          ? cs.expired + " words faded \u00b7 recover +" + cs.earn + " pts"
-          : cs.done + " of " + cs.cards.length + " words \u00b7 " + cs.pct + "%"),
+        (function () {
+          if (cs.cracked) return cs.expired + " cards faded \u00b7 recover +" + cs.earn + " pts";
+          var total = cs.cards.length;
+          var rs = roundSizeFor(total);
+          var nR = Math.max(1, Math.ceil(total / rs));
+          var curR = Math.min(Math.floor(cs.done / rs) + 1, nR);
+          return "Round " + curR + " of " + nR + " \u00b7 " + cs.done + " of " + total + " cards";
+        })()),
+      cs.cracked && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.92)", marginTop: 7, lineHeight: 1.5, background: "rgba(255,255,255,0.14)", borderRadius: 10, padding: "8px 10px" } },
+        "Memory fades with time \u2014 that's why this chapter turned amber. Rewind it to refresh the cards and earn their points again."),
       /*#__PURE__*/React.createElement("button", {
-        onClick: onStart,
+        onClick: function onClick() { setPathOpenCh(null); if (onStartChapterAt) onStartChapterAt(lv, ch.id); else onStart(); },
         className: "press",
         style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: cs.cracked ? "#B45309" : C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
-      }, cs.cracked ? "Rewind  \u00b7  +" + cs.earn + " pts" : cs.pct === 0 ? "Start" : "Continue")
+      }, (function () {
+        if (cs.cracked) {
+          var perRound = Math.max(1, Math.min(roundSizeFor(cs.cards.length), cs.earn));
+          return "Rewind  \u00b7  +" + perRound + " pts";
+        }
+        var next = Math.max(1, Math.min(roundSizeFor(cs.cards.length), cs.cards.length - cs.done));
+        return (cs.pct === 0 ? "Start" : "Continue") + "  \u00b7  " + next + " card" + (next === 1 ? "" : "s");
+      })())
     ));
   };
-  /* Exam bubble for the "Jump here?" node at the head of a locked level */
+  /* Locked chapter: same dialog, but informative + disabled action */
+  var renderLockedBubble = function renderLockedBubble(ch, msg, arrowLeft) {
+    return bubbleWrap(arrowLeft, "#8D89A8", /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: "linear-gradient(135deg,#8D89A8,#A6A2BF)", boxShadow: "0 10px 26px rgba(28,26,46,0.25)", position: "relative" } },
+      bubbleClose,
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, paddingRight: 30 } },
+        /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 13, color: "rgba(255,255,255,0.9)" }),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3 } }, ch.title)
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 5, lineHeight: 1.5 } }, msg),
+      /*#__PURE__*/React.createElement("button", {
+        disabled: true,
+        style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.35)", color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: 800, fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 12, color: "rgba(255,255,255,0.8)" }), "Locked")
+    ));
+  };
   var renderExamBubble = function renderExamBubble(lv, arrowLeft) {
-    return bubbleWrap(arrowLeft, /*#__PURE__*/React.createElement("div", { "data-bubblebg": C.primary, style: { borderRadius: 18, padding: "15px 16px", background: "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + C.primary + "55", position: "relative" } },
+    var prevLv = LEVELS_ORDER[Math.max(0, LEVELS_ORDER.indexOf(lv) - 1)];
+    return bubbleWrap(arrowLeft, C.primary, /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + C.primary + "55", position: "relative" } },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3 } }, "Unlock " + lv + " \u00b7 " + LEVEL_LABEL[lv]),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4, lineHeight: 1.5 } },
-        "Pass this exam and you unlock everything up to here."),
+        "Take the " + prevLv + " \u00b7 " + LEVEL_LABEL[prevLv] + " exam to unlock everything up to here."),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
         /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { setPathOpenCh(null); if (onStartLevelExam) onStartLevelExam(lv); },
@@ -5465,27 +5514,29 @@ function Dashboard(_ref27) {
       )
     ));
   };
-  var sectionBanner = function sectionBanner(lv, st) {
-    return /*#__PURE__*/React.createElement("div", {
-      style: { borderRadius: 20, padding: "14px 16px", marginBottom: 16, background: st.locked ? "linear-gradient(135deg,#B9B5CC,#A39FBC)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: st.locked ? "none" : "0 6px 18px " + C.primary + "33" }
-    },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -0.4 } }, lv, " \u00b7 ", LEVEL_LABEL[lv]),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 3 } },
-            st.locked ? "Locked" : st.done + " of " + st.total + " words")
-        ),
-        st.locked
-          ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
-          : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
-      )
-    );
+  /* Progress bar split into round segments — each segment is one ~10-card round */
+  var segBar = function segBar(done, total, fillColor, trackColor, mt) {
+    var rs = roundSizeFor(total);
+    var nSeg = Math.max(1, Math.ceil(total / rs));
+    var segs = [];
+    for (var i = 0; i < nSeg; i++) {
+      var segLen = Math.min(rs, total - i * rs);
+      if (segLen <= 0) continue;
+      var fill = Math.max(0, Math.min(1, (done - i * rs) / segLen));
+      segs.push(/*#__PURE__*/React.createElement("span", {
+        key: i,
+        style: { display: "block", flex: segLen, height: "100%", borderRadius: 3, background: trackColor, overflow: "hidden" }
+      }, /*#__PURE__*/React.createElement("span", { style: { display: "block", width: fill * 100 + "%", height: "100%", background: fillColor } })));
+    }
+    return /*#__PURE__*/React.createElement("span", { style: { display: "flex", gap: 2.5, height: 4, marginTop: mt == null ? 6 : mt } }, segs);
   };
   var nodeColors = function nodeColors(lockedNode, cs) {
     if (lockedNode) return { bg: "#EFEEF6", border: C.line, icon: "#B9B5CC" };
     if (cs.cracked) return { bg: "#FFF8EC", border: C.amber, icon: "#B45309" };
     if (cs.pct === 100) return { bg: C.primary, border: C.primary, icon: "#fff" };
-    if (cs.pct > 0) return { bg: C.surface, border: C.primary + "77", icon: C.primary };
+    /* One consistent stroke for all regular tiles — only current/frontier
+       (primary) and cracked (amber) stand out */
+    if (cs.pct > 0) return { bg: C.surface, border: C.line, icon: C.primary };
     return { bg: C.surface, border: C.line, icon: C.sub };
   };
   var nodeBadges = function nodeBadges(lockedNode, cs) {
@@ -5498,148 +5549,111 @@ function Dashboard(_ref27) {
         /*#__PURE__*/React.createElement(Icon, { name: "check", size: 8, color: "#fff" }))
     ];
   };
-  var renderHomePath = function renderHomePath(variant) {
-    var content = LEVELS_ORDER.map(function (lv) {
+  var renderHomePath = function renderHomePath() {
+    /* Pass 1: chain availability for every level.
+       Unlocking a level (exam pass or onboarding placement) opens EVERYTHING
+       below it — "everything up to here" — then the chain continues inside. */
+    var maxExamIdx = 0;
+    LEVELS_ORDER.forEach(function (lv2, i2) {
+      if (unlockedLevels && unlockedLevels.includes(lv2)) maxExamIdx = Math.max(maxExamIdx, i2);
+    });
+    var prevLevelLastPct = 100; /* nothing before A1 */
+    var levelData = LEVELS_ORDER.map(function (lv, lvIdx) {
       var st = levelStats(lv);
-      /* Sequential unlock chain: chapter i needs chapter i-1 at >= CHAPTER_UNLOCK_PCT */
       var csList = st.chs.map(function (ch) { return chapStats(ch); });
+      var examUnlocked = lvIdx <= maxExamIdx;
       var chainLocked = st.chs.map(function (ch, i) {
-        if (st.locked) return true;
-        if (i === 0) return false;
-        return csList[i - 1].pct < CHAPTER_UNLOCK_PCT * 100;
+        if (lvIdx < maxExamIdx) return false; /* fully open: below the unlocked frontier */
+        if (i > 0) return csList[i - 1].pct < CHAPTER_UNLOCK_PCT * 100;
+        if (lvIdx === 0) return false;
+        return !(examUnlocked || prevLevelLastPct >= CHAPTER_UNLOCK_PCT * 100);
       });
+      for (var k = 1; k < chainLocked.length; k++) {
+        if (chainLocked[k - 1]) chainLocked[k] = true;
+      }
+      prevLevelLastPct = csList.length ? csList[csList.length - 1].pct : 0;
+      return { lv: lv, lvIdx: lvIdx, st: st, csList: csList, chainLocked: chainLocked, headLocked: chainLocked[0] };
+    });
+    /* The FRONTIER: the deepest unlocked chapter on the journey — it glows */
+    var frontierId = null;
+    levelData.forEach(function (ld) {
+      ld.chainLocked.forEach(function (locked, i) {
+        if (!locked) frontierId = ld.st.chs[i].id;
+      });
+    });
+    var content = levelData.map(function (ld) {
+      var lv = ld.lv, lvIdx = ld.lvIdx, st = ld.st, csList = ld.csList, chainLocked = ld.chainLocked, headLocked = ld.headLocked;
       var examOpen = pathOpenCh === "exam:" + lv;
-      var examNode = st.locked && /*#__PURE__*/React.createElement("div", { key: "exam", style: { position: "relative", marginBottom: 16, zIndex: examOpen ? 97 : 1 } },
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
-          /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { setPathOpenCh(examOpen ? null : "exam:" + lv); },
-            className: "press",
-            style: { display: "flex", alignItems: "center", gap: 10, padding: "13px 20px", borderRadius: 18, border: "2px dashed " + C.primary + "88", background: C.primarySoft, cursor: "pointer", fontFamily: FONT, boxShadow: "0 3px 12px " + C.primary + "22" }
-          },
-            /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 10, background: C.primary, display: "flex", alignItems: "center", justifyContent: "center" } },
-              /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 13, color: "#fff" })),
-            /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 800, color: C.primary } }, "Jump here?")
-          )
+      var nodes = st.chs.map(function (ch, ci) {
+        var cs = csList[ci];
+        var lockedNode = chainLocked[ci];
+        var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
+        var isFrontier = ch.id === frontierId;
+        var off = TILE_OFF[ci % TILE_OFF.length];
+        var col = nodeColors(lockedNode, cs);
+        var openHere = pathOpenCh === ch.id;
+        var lockMsg = ci === 0
+          ? "Pass the level exam above \u2014 or finish " + (lvIdx > 0 ? LEVELS_ORDER[lvIdx - 1] : "") + " \u2014 to unlock this chapter."
+          : "Reach " + Math.round(CHAPTER_UNLOCK_PCT * 100) + "% in \u201C" + st.chs[ci - 1].title + "\u201D to unlock this chapter.";
+        return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+            /*#__PURE__*/React.createElement("button", {
+              ref: isCur ? curPathNodeRef : null,
+              "data-path-keep": "1",
+              onClick: function onClick() {
+                /* Peeking only opens the bubble — it NEVER moves the user's
+                   place. Selection commits inside startChapterAt on Start. */
+                setPathOpenCh(openHere ? null : ch.id);
+              },
+              className: isFrontier ? "press " + (cs.cracked ? "btn-glow-ring-amber" : "btn-glow-ring") : "press",
+              style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "2px solid " + (openHere || isFrontier ? (cs.cracked ? C.amber : C.primary) : col.border), background: col.bg, cursor: "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + off + "px) rotate(" + (ci % 2 === 0 ? -1.6 : 1.6) + "deg)", boxShadow: openHere && !isFrontier ? "0 0 0 4px " + (cs.cracked ? C.amber + "30" : C.primarySoft) + ", 0 4px 14px rgba(28,26,46,0.08)" : isFrontier ? undefined : "0 3px 10px rgba(28,26,46,0.06)" }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 13, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.22)" : lockedNode ? "#E3E1EE" : cs.cracked ? C.amber + "22" : C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: col.icon })),
+              /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
+                segBar(cs.done, cs.cards.length,
+                  lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary,
+                  cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.3)" : C.line)
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.sub } }, cs.pct, "%"),
+                !lockedNode && cs.cracked && /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: C.amber, marginTop: 2, whiteSpace: "nowrap" } }, "+" + cs.earn + " pts")
+              ),
+              nodeBadges(lockedNode, cs)
+            )
+          ),
+          openHere && (lockedNode ? renderLockedBubble(ch, lockMsg, "calc(50% + " + off + "px)") : renderBubble(lv, ch, cs, "calc(50% + " + off + "px)"))
+        );
+      });
+      var banner = /*#__PURE__*/React.createElement("div", {
+        style: { position: "relative", zIndex: examOpen ? 97 : 1, marginBottom: 16 }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: { borderRadius: 20, padding: "14px 16px", background: headLocked ? "linear-gradient(135deg,#B9B5CC,#A39FBC)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: headLocked ? "none" : "0 6px 18px " + C.primary + "33" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -0.4 } }, lv, " \u00b7 ", LEVEL_LABEL[lv]),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 3 } },
+              headLocked ? "Locked" : st.done + " of " + st.total + " cards")
+          ),
+          headLocked
+            ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
+            : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
         ),
+        /* Unlock-by-exam lives inside the locked level box */
+        headLocked && /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setPathOpenCh(examOpen ? null : "exam:" + lv); },
+          "data-path-keep": "1",
+          className: "press",
+          style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.94)", color: "#6B66A0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: "#6B66A0" }), "Unlock")
+      ),
         examOpen && renderExamBubble(lv, "50%")
       );
-      var nodes;
-      if (variant === "D") {
-        /* D: wide sticker tiles — room for the bar, pct, and +pts */
-        nodes = st.chs.map(function (ch, ci) {
-          var cs = csList[ci];
-          var lockedNode = chainLocked[ci];
-          var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
-          var off = TILE_OFF[ci % TILE_OFF.length];
-          var col = nodeColors(lockedNode, cs);
-          var openHere = pathOpenCh === ch.id && !lockedNode;
-          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
-              /*#__PURE__*/React.createElement("button", {
-                ref: isCur ? curPathNodeRef : null,
-                onClick: function onClick() {
-                  if (lockedNode) return;
-                  setPathOpenCh(openHere ? null : ch.id);
-                  onLevelChapterSelect(lv, ch.id);
-                },
-                className: "press",
-                style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "2px solid " + (isCur ? (cs.cracked ? C.amber : C.primary) : col.border), background: col.bg, cursor: lockedNode ? "default" : "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + off + "px) rotate(" + (ci % 2 === 0 ? -1.6 : 1.6) + "deg)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "30" : C.primarySoft) + ", 0 4px 14px rgba(28,26,46,0.08)" : "0 3px 10px rgba(28,26,46,0.06)" }
-              },
-                /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 13, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.22)" : lockedNode ? "#E3E1EE" : cs.cracked ? C.amber + "22" : C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: col.icon })),
-                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
-                  /*#__PURE__*/React.createElement("div", { style: { height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.3)" : C.line, overflow: "hidden", marginTop: 6 } },
-                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } }))
-                ),
-                /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.sub } }, cs.pct, "%"),
-                  !lockedNode && cs.cracked && /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: C.amber, marginTop: 2, whiteSpace: "nowrap" } }, "+" + cs.earn + " pts")
-                ),
-                nodeBadges(lockedNode, cs)
-              )
-            ),
-            openHere && renderBubble(ch, cs, "calc(50% + " + off + "px)")
-          );
-        });
-      } else if (variant === "E") {
-        var pairs = [];
-        for (var pi = 0; pi < st.chs.length; pi += 2) pairs.push(st.chs.slice(pi, pi + 2));
-        nodes = pairs.map(function (pair, ri) {
-          var openIn = pair.filter(function (c) { return pathOpenCh === c.id; })[0];
-          var openIdx = openIn ? st.chs.indexOf(openIn) : -1;
-          var openOk = openIn && !chainLocked[openIdx];
-          return /*#__PURE__*/React.createElement("div", { key: "r" + ri, style: { position: "relative", marginBottom: 36, zIndex: openOk ? 97 : 1 } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12 } },
-              pair.map(function (ch, ci2) {
-                var gi = ri * 2 + ci2;
-                var cs = csList[gi];
-                var lockedNode = chainLocked[gi];
-                var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
-                var col = nodeColors(lockedNode, cs);
-                return /*#__PURE__*/React.createElement("button", {
-                  key: ch.id,
-                  ref: isCur ? curPathNodeRef : null,
-                  onClick: function onClick() {
-                    if (lockedNode) return;
-                    setPathOpenCh(pathOpenCh === ch.id ? null : ch.id);
-                    onLevelChapterSelect(lv, ch.id);
-                  },
-                  className: "press",
-                  style: { position: "relative", flex: 1, minWidth: 0, borderRadius: 22, border: "2.5px solid " + col.border, background: col.bg, cursor: lockedNode ? "default" : "pointer", padding: "16px 12px 13px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: FONT, transform: "translateY(" + (ci2 === 1 ? 22 : 0) + "px)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 2px 10px rgba(28,26,46,0.05)" }
-                },
-                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 24, color: col.icon }),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
-                  /*#__PURE__*/React.createElement("div", { style: { width: "70%", height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
-                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
-                  nodeBadges(lockedNode, cs)
-                );
-              })
-            ),
-            openOk && renderBubble(openIn, csList[openIdx], pair.indexOf(openIn) === 0 ? "25%" : "75%")
-          );
-        });
-      } else {
-        nodes = st.chs.map(function (ch, ci) {
-          var cs = csList[ci];
-          var lockedNode = chainLocked[ci];
-          var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
-          var off = PATH_OFF[ci % PATH_OFF.length];
-          var col = nodeColors(lockedNode, cs);
-          var openHere = pathOpenCh === ch.id && !lockedNode;
-          var ringColor = lockedNode ? "#C9C5DD" : cs.cracked ? C.amber : C.primary;
-          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 16, zIndex: openHere ? 97 : 1 } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
-              /*#__PURE__*/React.createElement("div", { style: { transform: "translateX(" + off + "px)", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 96 } },
-                nodeRing(lockedNode ? 0 : cs.pct, ringColor, /*#__PURE__*/React.createElement("button", {
-                  ref: isCur ? curPathNodeRef : null,
-                  onClick: function onClick() {
-                    if (lockedNode) return;
-                    setPathOpenCh(openHere ? null : ch.id);
-                    onLevelChapterSelect(lv, ch.id);
-                  },
-                  className: "press",
-                  style: { position: "relative", width: "100%", height: "100%", borderRadius: "50%", border: "none", background: col.bg, cursor: lockedNode ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "none" }
-                },
-                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 21, color: col.icon }),
-                  nodeBadges(lockedNode, cs)
-                )),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: lockedNode ? "#B9B5CC" : isCur ? C.primary : C.sub, textAlign: "center", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title)
-              )
-            ),
-            openHere && renderBubble(ch, cs, "calc(50% + " + off + "px)")
-          );
-        });
-      }
-      return /*#__PURE__*/React.createElement("div", { key: lv }, sectionBanner(lv, st), examNode, nodes);
+      return /*#__PURE__*/React.createElement("div", { key: lv }, banner, nodes);
     });
-    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } },
-      pathOpenCh && /*#__PURE__*/React.createElement("div", {
-        onClick: function onClick() { setPathOpenCh(null); },
-        style: { position: "fixed", inset: 0, zIndex: 80, background: "transparent" }
-      }),
-      content
-    );
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } }, content);
   };
   /* Has today's streak been earned yet? (any-language activity counts) */
   var todayDone = isActiveDay(globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null);
@@ -5689,6 +5703,25 @@ function Dashboard(_ref27) {
 
   /* scroll animation disabled */
   var headerRef = useRef(null);
+  /* Smart-deck strip: hide while scrolling down, reappear on scroll up */
+  var _useState_sh = useState(false),
+    _useState_sh2 = _slicedToArray(_useState_sh, 2),
+    stripHidden = _useState_sh2[0],
+    setStripHidden = _useState_sh2[1];
+  useEffect(function () {
+    var el = pageScrollRef && pageScrollRef.current;
+    if (!el) return;
+    var lastY = el.scrollTop;
+    var onS = function onS() {
+      var y = el.scrollTop;
+      var d = y - lastY;
+      if (d > 8 && y > 40) setStripHidden(true);
+      else if (d < -8 || y <= 40) setStripHidden(false);
+      lastY = y;
+    };
+    el.addEventListener("scroll", onS, { passive: true });
+    return function () { el.removeEventListener("scroll", onS); };
+  }, []);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "20px 20px 28px",
@@ -5897,559 +5930,75 @@ function Dashboard(_ref27) {
     ),
     document.body
   ),
-  /* Faded-chapter banner — finds the FIRST cracked chapter across ALL
-     unlocked levels (not just the one on screen). Tapping it selects that
-     level + chapter on the dashboard; the user then just hits Continue.
-     Dismissible per day. */
-  (function () {
-    if (rechargeIntroSeen) return null;
-    var firstCracked = null;
-    LEVELS_ORDER.some(function (lv) {
-      if (unlockedLevels && !unlockedLevels.includes(lv)) return false;
-      return (CHAPTERS[lv] || []).some(function (ch) {
-        var cc = allCards.filter(function (c) { return c.chapter === ch.id; });
-        if (!cc.length) return false;
-        var dn = cc.filter(function (c) { return learnedIds.includes(c.id); }).length;
-        var ex = expiredByChapter[ch.id] || 0;
-        if ((dn / cc.length) >= CRACK_LEARNED_PCT && (ex / cc.length) >= CRACK_EXPIRED_PCT) {
-          firstCracked = { lv: lv, ch: ch, earn: ex + (cc.length - dn) };
-          return true;
-        }
-        return false;
-      });
-    });
-    if (!firstCracked) return null;
-    return /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "center", gap: 12, background: "#FFFBF2", border: "1px solid " + C.amber + "44", borderRadius: 18, padding: "13px 14px", fontFamily: FONT, animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both", position: "sticky", top: "calc(64px + env(safe-area-inset-top))", zIndex: 40, boxShadow: "0 4px 16px rgba(232,160,32,0.18)" }
-    },
-      /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() {
-          /* first tap selects the faded chapter; second tap starts it */
-          if (curLevel === firstCracked.lv && curChapter === firstCracked.ch.id) { onStart(); return; }
-          scrollToCardRef.current = true;
-          onLevelChapterSelect(firstCracked.lv, firstCracked.ch.id);
-        },
+  /* Floating jump-back tile: a full-width replica of the current chapter's
+     tile, fixed above the tab bar when its node scrolls off-screen.
+     (No transform here — riseIn's transform animation would override it,
+     which is what pushed the old pill half off-screen.) */
+  /* Smart decks — compact strip up top where it's always seen (the old
+     full-size cards lived below the whole path and were never reached) */
+  /*#__PURE__*/React.createElement("div", { style: { position: "sticky", top: "calc(71px + env(safe-area-inset-top))", zIndex: 45, margin: "0 -20px", padding: "8px 20px 9px", background: "#F5F4FB", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, transform: stripHidden ? "translateY(-130%)" : "translateY(0)", opacity: stripHidden ? 0 : 1, pointerEvents: stripHidden ? "none" : "auto", transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .22s ease" } },
+    [{ k: "recharge", icon: "hourglass-half", label: "Rewind", count: rechargeCount, fg: "#B45309", bg: "linear-gradient(135deg,#FFF8EA,#FFF3DD)", bd: C.amber + "55" },
+     { k: "review", icon: "rotate-left", label: "Review", count: reviewCount, fg: C.red, bg: C.surface, bd: C.red + "44" },
+     { k: "marked", icon: "bookmark", label: "Saved", count: markedCount, fg: C.primary, bg: C.surface, bd: C.line }].map(function (d) {
+      return /*#__PURE__*/React.createElement("button", {
+        key: d.k,
+        onClick: function onClick() { if (onOpenDeck) onOpenDeck(d.k); },
         className: "press",
-        style: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "left", fontFamily: FONT }
+        style: { border: "1.5px solid " + d.bd, background: d.bg, borderRadius: 13, padding: "7px 6px", cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, position: "relative", minWidth: 0 }
       },
-        /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 36, borderRadius: 11, background: C.amber + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-          /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 15, color: "#B45309" })
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, fontWeight: 800, color: "#B45309", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-            "Time to rewind \u201C" + firstCracked.ch.title + "\u201D"),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 3, lineHeight: 1.45 } },
-            LEVEL_LABEL[firstCracked.lv] + " \u00b7 review it to earn +" + firstCracked.earn + " pts again")
-        )
-      ),
-      /*#__PURE__*/React.createElement("button", {
-        onClick: dismissRechargeIntro, className: "press", "aria-label": "Dismiss",
-        style: { width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(180,83,9,0.10)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 10, color: "#B45309" }))
-    );
-  })(),
-  /* DEV: home layout switcher — remove once a layout wins */
-  /*#__PURE__*/React.createElement("div", {
-    style: { background: C.surface, border: "1.5px dashed " + C.line, borderRadius: 14, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8 }
-  },
-    /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0 } }, "Home layout"),
-    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, flex: 1, justifyContent: "flex-end" } },
-      ["A", "B", "C", "D", "E"].map(function (v) {
-        var on = HL === v;
-        return /*#__PURE__*/React.createElement("button", {
-          key: v,
-          onClick: function onClick() { if (setHomeLayout) setHomeLayout(v); setPathOpenCh(null); },
-          className: "press",
-          style: { width: 30, height: 30, borderRadius: 9, border: "1.5px solid " + (on ? C.primary : C.line), background: on ? C.primary : C.bg, color: on ? "#fff" : C.sub, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }
-        }, v);
-      })
-    )
+        d.count > 0 && /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: d.fg, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: "2px solid #F5F4FB" } }, d.count > 99 ? "99+" : d.count),
+        /*#__PURE__*/React.createElement(Icon, { name: d.icon, size: 13, color: d.fg }),
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: d.fg } }, d.label)
+      );
+    })
   ),
-  /* Floating jump-back pill: appears when the current node scrolls off-screen */
-  (HL === "C" || HL === "D" || HL === "E") && !curNodeVisible && ReactDOM.createPortal(
-    /*#__PURE__*/React.createElement("button", {
+  /* Bottom-slot priority: the streak-rescue banner (time-critical, dismissible)
+     owns the slot above the tab bar; the jump tile yields while it's visible */
+  !curNodeVisible && !showRescue && ReactDOM.createPortal((function () {
+    var ch = (CHAPTERS[curLevel] || []).filter(function (c2) { return c2.id === curChapter; })[0];
+    if (!ch) return null;
+    var cards = allCards.filter(function (c) { return c.chapter === ch.id; });
+    var done = cards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+    var pct = cards.length ? Math.round(done / cards.length * 100) : 0;
+    var expired = (expiredByChapter && expiredByChapter[ch.id]) || 0;
+    var cracked = cards.length > 0 && (done / cards.length) >= CRACK_LEARNED_PCT && (expired / cards.length) >= CRACK_EXPIRED_PCT;
+    var grad = cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)";
+    return /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
         var el = curPathNodeRef.current;
         if (el && el.scrollIntoView) { try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {} }
         setPathOpenCh(curChapter);
       },
-      className: "press",
-      style: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 8, padding: "9px 16px 9px 9px", borderRadius: 999, border: "1.5px solid " + C.primary + "44", background: C.surface, color: C.primary, fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer", boxShadow: "0 8px 24px rgba(28,26,46,0.18)", whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+      className: cracked ? "press btn-glow-ring-amber" : "press btn-glow-ring",
+      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, fontFamily: FONT, cursor: "pointer", textAlign: "left", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
     },
-      /*#__PURE__*/React.createElement("span", { style: { width: 26, height: 26, borderRadius: "50%", background: C.primary, display: "flex", alignItems: "center", justifyContent: "center" } },
-        /*#__PURE__*/React.createElement(Icon, { name: "location-arrow", size: 11, color: "#fff" })),
-      "Continue"
-    ), document.body),
-  HL === "B" ? renderHomeListAll() : (HL === "C" || HL === "D" || HL === "E") ? renderHomePath(HL) : function () {
-    var lvc2 = allCards.filter(function (c) {
-      return c.level === curLevel;
-    });
-    var lvD = lvc2.filter(function (c) {
-      return learnedIds.includes(c.id);
-    }).length;
-    var lvP = lvc2.length ? Math.round(lvD / lvc2.length * 100) : 0;
-    var li = LEVELS_ORDER.indexOf(curLevel);
-    var canPrev = li > 0;
-    var canNext = li < LEVELS_ORDER.length - 1;
-    /* CRITICAL: level lock check */
-    var isLevelLocked = unlockedLevels ? !unlockedLevels.includes(curLevel) : false;
-    return /*#__PURE__*/React.createElement("div", {
-      ref: levelCardRef,
-      style: {
-        background: C.surface,
-        borderRadius: 24,
-        border: "1px solid " + C.line,
-        overflow: "hidden",
-        boxShadow: "0 4px 24px rgba(28,26,46,0.07)",
-        scrollMarginTop: "calc(78px + env(safe-area-inset-top))"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: "16px 16px 14px"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 14
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: canPrev ? function () {
-        return onLevelChapterSelect(LEVELS_ORDER[li - 1], CHAPTERS[LEVELS_ORDER[li - 1]][0].id);
-      } : undefined,
-      disabled: !canPrev,
-      className: "press",
-      style: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        border: "1.5px solid " + C.line,
-        background: C.surface,
-        cursor: canPrev ? "pointer" : "default",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: canPrev ? 1 : 0.25,
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: "chevron-left",
-      size: 15,
-      color: C.ink
-    })), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        textAlign: "center",
-        padding: "0 12px"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 28,
-        fontWeight: 900,
-        color: C.primary,
-        letterSpacing: -1,
-        lineHeight: 1
-      }
-    }, LEVEL_LABEL[curLevel]), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11.5,
-        fontWeight: 600,
-        color: C.sub,
-        marginTop: 3,
-        letterSpacing: 0.5
-      }
-    }, lvD, " of ", lvc2.length, " cards done")), /*#__PURE__*/React.createElement("button", {
-      onClick: canNext ? function () {
-        return onLevelChapterSelect(LEVELS_ORDER[li + 1], CHAPTERS[LEVELS_ORDER[li + 1]][0].id);
-      } : undefined,
-      disabled: !canNext,
-      className: "press",
-      style: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        border: "1.5px solid " + C.line,
-        background: C.surface,
-        cursor: canNext ? "pointer" : "default",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: canNext ? 1 : 0.25,
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: "chevron-right",
-      size: 15,
-      color: C.ink
-    }))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginBottom: 14
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 6
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11.5,
-        fontWeight: 700,
-        color: C.sub
-      }
-    }, "Level progress"), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 12.5,
-        fontWeight: 800,
-        color: C.primary
-      }
-    }, lvP, "%")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        height: 8,
-        background: C.line,
-        borderRadius: 8,
-        overflow: "hidden"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: lvP + "%",
-        height: "100%",
-        borderRadius: 8,
-        background: "linear-gradient(90deg," + C.primary + ",#8B73F0)",
-        transition: "width .8s cubic-bezier(.2,.8,.2,1)"
-      }
-    }))), /*#__PURE__*/React.createElement("div", {
-      style: { position: "relative" }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        filter: isLevelLocked ? "blur(3px)" : "none",
-        pointerEvents: isLevelLocked ? "none" : "auto",
-        userSelect: isLevelLocked ? "none" : "auto",
-        transition: "filter .3s"
-      }
-    }, CHAPTERS[curLevel].map(function (ch, i) {
-      var isCur = !isLevelLocked && ch.id === curChapter;
-      var chCards = allCards.filter(function (c) {
-        return c.chapter === ch.id;
-      });
-      var chDone = chCards.filter(function (c) {
-        return learnedIds.includes(c.id);
-      }).length;
-      var chPct = chCards.length ? Math.round(chDone / chCards.length * 100) : 0;
-      var icon = CHAPTER_ICONS[ch.id] || "book";
-      /* CRACKED: chapter mostly learned AND at least half of it has expired.
-         Cracking ONLY changes point-earnability + this visual — progress stays
-         100%, levels stay unlocked, exams stay passed. */
-      var chExpired = expiredByChapter[ch.id] || 0;
-      /* Earnable = faded words + never-learned words: exactly what a session
-         of this chapter pays, and exactly how many cards it will contain */
-      var chEarn = chExpired + (chCards.length - chDone);
-      var cracked = chCards.length > 0 &&
-        (chDone / chCards.length) >= CRACK_LEARNED_PCT &&
-        (chExpired / chCards.length) >= CRACK_EXPIRED_PCT;
-      /* Cracked styling: quiet when unselected (icon dot + small "+N pts"),
-         full amber treatment + pill only on the selected chapter — so amber
-         is a focused invitation tied to the Rewind CTA, not wallpaper. */
-      var amberRow = cracked && isCur;
-      var quietHint = cracked && !isCur;
-      return /*#__PURE__*/React.createElement("button", {
-        key: ch.id,
-        onClick: function onClick() {
-          /* second tap on the already-selected chapter starts it */
-          if (isCur) { onStart(); return; }
-          onLevelChapterSelect(curLevel, ch.id);
-        },
-        className: "press",
-        ref: isCur ? curChapterRowRef : null,
-        style: {
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "10px 12px",
-          borderRadius: 16,
-          border: "1.5px solid " + (amberRow ? (isCur ? C.amber : C.amber + "66") : isCur ? C.primary : C.line),
-          background: amberRow ? (isCur ? "#FFEFCB" : "#FFFDF6") : isCur ? C.primarySoft : C.surface,
-          boxShadow: amberRow && isCur ? "0 2px 12px " + C.amber + "44" : isCur ? "0 2px 12px " + C.primary + "22" : amberRow ? "0 2px 10px " + C.amber + "1F" : "none",
-          cursor: "pointer",
-          textAlign: "left",
-          fontFamily: FONT,
-          transition: "all .2s"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          width: 34,
-          height: 34,
-          borderRadius: 10,
-          background: amberRow ? (isCur ? C.amber : C.amber + "22") : isCur ? C.primary : C.line,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          position: "relative"
-        }
-      }, /*#__PURE__*/React.createElement(Icon, {
-        name: icon,
-        size: 15,
-        color: amberRow ? (isCur ? "#fff" : "#B45309") : isCur ? "#fff" : C.sub
-      }), cracked && /*#__PURE__*/React.createElement("div", {
-        style: { position: "absolute", top: -5, right: -5, width: 16, height: 16, borderRadius: "50%", background: amberRow ? (isCur ? "#B45309" : C.amber) : C.amber, border: "2px solid " + (amberRow ? (isCur ? "#FFEFCB" : "#FFFDF6") : isCur ? C.primarySoft : C.surface), display: "flex", alignItems: "center", justifyContent: "center" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 8, color: "#fff" }))), /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1,
-          minWidth: 0
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 13.5,
-          fontWeight: isCur ? 800 : 600,
-          color: amberRow ? "#B45309" : isCur ? C.primary : C.ink,
-          marginBottom: 6,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap"
-        }
-      }, ch.title, isCur && /*#__PURE__*/React.createElement("span", {
-        style: { fontWeight: 700, fontSize: 11.5, color: amberRow ? C.amber : C.primary + "AA", marginLeft: 6 }
-      }, "\u00b7 " + chPct + "%")), /*#__PURE__*/React.createElement("div", {
-        style: {
-          height: 4,
-          background: amberRow ? C.amber + "30" : isCur ? "rgba(90,79,227,0.18)" : C.line,
-          borderRadius: 3,
-          overflow: "hidden"
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          width: chPct + "%",
-          height: "100%",
-          borderRadius: 3,
-          background: amberRow ? C.amber : isCur ? C.primary : "#C4BFF0",
-          transition: "width .8s cubic-bezier(.2,.8,.2,1)"
-        }
-      }))),
-      /* right slot: percentage as before — swapped for a chevron circle on
-         the selected chapter (tap again to start) */
-      isCur ? /*#__PURE__*/React.createElement("span", {
-        style: { width: 26, height: 26, borderRadius: "50%", background: amberRow ? C.amber : C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 8px " + (amberRow ? C.amber : C.primary) + "55" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 11, color: "#fff" })) : /*#__PURE__*/React.createElement("span", {
-        style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }
-      },
-        /*#__PURE__*/React.createElement("span", {
-          style: { fontSize: 12, fontWeight: 800, color: amberRow ? "#B45309" : C.sub }
-        }, chPct, "%"),
-        quietHint && /*#__PURE__*/React.createElement("span", {
-          style: { fontSize: 9, fontWeight: 800, color: C.amber, marginTop: 1, whiteSpace: "nowrap" }
-        }, "+" + chEarn + " pts")
-      ),
-      /* floating Rewind pill on the top-right border — bar stays full-length */
-      amberRow && /*#__PURE__*/React.createElement("span", {
-        style: {
-          position: "absolute",
-          top: -5,
-          right: 10,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          fontSize: 9.5,
-          fontWeight: 800,
-          color: isCur ? "#fff" : "#B45309",
-          background: isCur ? C.amber : "#FFF3DD",
-          border: isCur ? "1px solid " + C.amber : "1px solid " + C.amber + "66",
-          borderRadius: 8,
-          padding: "2px 7px",
-          whiteSpace: "nowrap",
-          zIndex: 1
-        }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 7, color: isCur ? "#fff" : "#B45309" }), "Rewind \u00b7 +" + chEarn + " pts"));
-    })),
-    /* CRITICAL: Lock overlay — single blurred box covering all chapters */
-    isLevelLocked && /*#__PURE__*/React.createElement("div", {
-      style: {
-        position: "absolute",
-        inset: 0,
-        borderRadius: 16,
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
-        background: "rgba(245,244,251,0.65)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        border: "1.5px solid #D8D4F5",
-        zIndex: 2,
-        padding: "16px"
-      }
-    }, (function() {
-      var prevLv = LEVELS_ORDER[LEVELS_ORDER.indexOf(curLevel) - 1];
-      var prevCards = allCards.filter(function(c) { return c.level === prevLv; });
-      var prevDone = prevCards.filter(function(c) { return learnedIds.includes(c.id); }).length;
-      var prevPct = prevCards.length ? Math.round(prevDone / prevCards.length * 100) : 0;
-      return /*#__PURE__*/React.createElement("div", {
-        style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }
-      },
-        /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 22, color: C.primary }),
-        /* Progress bar of previous level */
-        /*#__PURE__*/React.createElement("div", { style: { width: "100%", display: "flex", flexDirection: "column", gap: 4 } },
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, color: C.sub } },
-            /*#__PURE__*/React.createElement("span", null, LEVEL_LABEL[prevLv]),
-            /*#__PURE__*/React.createElement("span", { style: { color: C.primary } }, prevPct + "%")
-          ),
-          /*#__PURE__*/React.createElement("div", { style: { height: 6, background: C.line, borderRadius: 4, overflow: "hidden" } },
-            /*#__PURE__*/React.createElement("div", { style: {
-              width: Math.min(prevPct, 100) + "%",
-              height: "100%",
-              borderRadius: 4,
-              background: "linear-gradient(90deg," + C.primary + ",#8B73F0)",
-              transition: "width .8s cubic-bezier(.2,.8,.2,1)"
-            }})
-          )
-        ),
-        /*#__PURE__*/React.createElement("div", {
-          style: { fontSize: 14, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.45, padding: "0 8px", whiteSpace: "nowrap" }
-        }, "Unlock at 80% " + LEVEL_LABEL[prevLv]),
-        /* Back to previous level — primary */
-        /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: function() { onLevelChapterSelect(prevLv, CHAPTERS[prevLv][0].id); },
-          glow: true,
-          style: { marginTop: 2 }
-        }, "Back to " + LEVEL_LABEL[prevLv])
-      );
-    })())
-    ), /*#__PURE__*/React.createElement("div", {
-      style: { marginTop: 12 }
-    }, isLevelLocked
-      ? /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(curLevel); },
-          className: "press",
-          style: {
-            width: "100%", padding: "14px 16px", borderRadius: 18,
-            border: "1.5px solid " + C.primary, background: "transparent",
-            color: C.primary, fontSize: 15, fontWeight: 800, fontFamily: FONT, cursor: "pointer"
+      /*#__PURE__*/React.createElement("span", { style: { width: 38, height: 38, borderRadius: 13, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+        /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: "#fff" })),
+      /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0 } },
+        /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13.5, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+          "Jump to \u201C" + ch.title + "\u201D"),
+        (function () {
+          var rs2 = roundSizeFor(cards.length);
+          var nSeg = Math.max(1, Math.ceil(cards.length / rs2));
+          var segs = [];
+          for (var i = 0; i < nSeg; i++) {
+            var segLen = Math.min(rs2, cards.length - i * rs2);
+            if (segLen <= 0) continue;
+            var fill = Math.max(0, Math.min(1, (done - i * rs2) / segLen));
+            segs.push(/*#__PURE__*/React.createElement("span", { key: i, style: { display: "block", flex: segLen, height: "100%", borderRadius: 3, background: "rgba(255,255,255,0.3)", overflow: "hidden" } },
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", width: fill * 100 + "%", height: "100%", background: "#fff" } })));
           }
-        }, "Take an exam to unlock")
-      : /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: onStart,
-          glow: true,
-          amber: curCracked,
-          style: curCracked ? { background: C.amber } : undefined
-        }, curCracked ? "Rewind  \u00b7  +" + curEarn + " pts" : pct === 0 ? "Start" : "Continue")
-    )));
-  }(),
-  /* Recharge deck — full-width stacked card, same family as Review/Bookmarked
-     below. Only appears once words have faded (30+ days); tapping starts a
-     Recharge session immediately */
-  (function() {
-    var fresh = rechargeCount === 0;
-    var borderCol = C.amber + "55";
-    return /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() { if (onOpenDeck) onOpenDeck("recharge"); },
-      className: "press",
-      style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
-    }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 74 } },
-      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-2deg)", width: "94%", height: 68, borderRadius: 14, background: "#FFF3DD", border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-0.8deg)", width: "97%", height: 68, borderRadius: 14, background: "#FFF3DD", border: "1.5px solid " + borderCol, opacity: 0.7 } }),
-      /*#__PURE__*/React.createElement("div", {
-        style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 68, borderRadius: 15, background: "linear-gradient(135deg,#FFF8EA,#FFF3DD)", border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.amber + "26", padding: "12px 13px 10px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8 }
-      },
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 } },
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, minWidth: 0 } },
-            /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 9, background: C.amber + "26", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-              /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 13, color: "#B45309" })
-            ),
-            /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#B45309", letterSpacing: -0.2, lineHeight: 1.15 } }, "Rewind"),
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#B45309" + "99", fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-                fresh
-                  ? "All words fresh \u2014 they return when due"
-                  : rechargeCount + " word" + (rechargeCount === 1 ? " has" : "s have") + " faded \u2014 due for review")
-            )
-          ),
-          fresh
-            ? /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.greenSoft, color: C.green, borderRadius: 9, padding: "4px 9px", fontSize: 11, fontWeight: 800, flexShrink: 0 } },
-                /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 10, color: C.green }), "Fresh"
-              )
-            : /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", background: C.amber, color: "#fff", borderRadius: 9, padding: "4px 9px", fontSize: 11, fontWeight: 800, flexShrink: 0 } },
-                "+" + rechargeCount + " pts"
-              )
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.amber + "28", overflow: "hidden" } },
-          /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: "100%", borderRadius: 3, background: "repeating-linear-gradient(90deg," + C.amber + " 0 8px," + C.amber + "55 8px 14px)" } })
-        )
+          return /*#__PURE__*/React.createElement("span", { style: { display: "flex", gap: 2.5, height: 4, marginTop: 6 } }, segs);
+        })()
+      ),
+      /*#__PURE__*/React.createElement("span", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#fff" } }, pct, "%"),
+        cracked && /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,0.85)", marginTop: 2 } }, "+" + (expired + (cards.length - done)) + " pts")
       )
-    ));
-  })(), /*#__PURE__*/React.createElement("div", {
-    style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }
-  },
-    /* Review deck card */
-    (function() {
-      var pct = 0;
-      var borderCol = C.red + "44";
-      return /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() { if (onOpenDeck) onOpenDeck("review"); },
-        className: "press",
-        style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
-      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 68 } },
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
-        /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 62, borderRadius: 15, background: C.redSoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.red + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
-        },
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
-              /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: C.red + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-                /*#__PURE__*/React.createElement(Icon, { name: "rotate-left", size: 12, color: C.red })
-              ),
-              /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: C.red, letterSpacing: -0.2, lineHeight: 1.15 } }, "Review"),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.red + "99", fontWeight: 600, marginTop: 1 } }, "To revisit")
-              )
-            ),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: C.red + "BB", flexShrink: 0, paddingTop: 1 } }, reviewCount)
-          ),
-          /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.red + "28", overflow: "hidden" } },
-            /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: pct + "%", borderRadius: 3, background: C.red } })
-          )
-        )
-      ));
-    }()),
-    /* Marked deck card */
-    (function() {
-      var pct = 0;
-      var borderCol = C.primary + "44";
-      return /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() { if (onOpenDeck) onOpenDeck("marked"); },
-        className: "press",
-        style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
-      }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 68 } },
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 62, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.45 } }),
-        /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 62, borderRadius: 14, background: C.primarySoft, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
-        /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 62, borderRadius: 15, background: C.primarySoft, border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.primary + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
-        },
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
-              /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: C.primary + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-                /*#__PURE__*/React.createElement(Icon, { name: "bookmark", size: 12, color: C.primary })
-              ),
-              /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: C.primary, letterSpacing: -0.2, lineHeight: 1.15 } }, "Bookmarked"),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.primary + "99", fontWeight: 600, marginTop: 1 } }, "Saved cards")
-              )
-            ),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: C.primary + "BB", flexShrink: 0, paddingTop: 1 } }, markedCount)
-          ),
-          /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.primary + "28", overflow: "hidden" } },
-            /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: pct + "%", borderRadius: 3, background: C.primary } })
-          )
-        )
-      ));
-    }())
-  ), (dlg === "streak" || dlg === "points") && ReactDOM.createPortal(
+    );
+  })(), document.body),
+  renderHomePath(),
+ (dlg === "streak" || dlg === "points") && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
       style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
       onClick: function onClick(e) { if (e.target === e.currentTarget) setDlg(null); }
@@ -7106,11 +6655,11 @@ function EmptyDeckState(_refED) {
           }, isRecharge ? "\u2728" : "\uD83D\uDC46")
     ),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 } },
-      isRecharge ? "All your words are fresh!" : isReview ? "Nothing to review yet" : type === "customDeck" ? "This deck is empty" : isMine ? "No custom cards yet" : "No bookmarks yet"
+      isRecharge ? "All your cards are fresh!" : isReview ? "Nothing to review yet" : type === "customDeck" ? "This deck is empty" : isMine ? "No custom cards yet" : "No bookmarks yet"
     ),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, lineHeight: 1.55, maxWidth: 250, margin: "0 auto" } },
       isRecharge
-        ? "Words return here when they're due for review \u2014 first after " + REWIND_LADDER[0] + " days, then at growing intervals. Each rewind locks them deeper into memory and earns their point again."
+        ? "Cards return here when they're due for review \u2014 first after " + REWIND_LADDER[0] + " days, then at growing intervals. Each rewind locks them deeper into memory and earns their point again."
         : isReview
         ? "During a session, swipe a card LEFT (or tap \u2715) when you don't know it \u2014 it lands here so you can practice it again."
         : type === "customDeck"
@@ -7163,7 +6712,7 @@ function MyFlashcardsPage(_ref31) {
     deckScreen = _useState82[0],
     setDeckScreen = _useState82[1];
   var pageScrollRef = _ref31.scrollRef;
-  var kbInset = useKeyboardInset();
+  var kb = useKeyboardInset();
   /* Opening a deck (or going back) starts that view at the top */
   useEffect(function () {
     if (pageScrollRef && pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
@@ -7595,11 +7144,11 @@ function MyFlashcardsPage(_ref31) {
         /* Deck options: menu / rename / delete */
         deckAction && ReactDOM.createPortal(
           /*#__PURE__*/React.createElement("div", {
-            style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
+            style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
             onClick: function onClick(e) { if (e.target === e.currentTarget) setDeckAction(null); }
           },
             /*#__PURE__*/React.createElement("div", {
-              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
             },
               /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -7673,7 +7222,7 @@ function MyFlashcardsPage(_ref31) {
     var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : ds.type === "recharge" ? COL_RECHARGE : COL_MINE;
     var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "\u21ba" : ds.type === "recharge" ? "hourglass-half" : "plus";
     var dsLabel = ds.type === "marked" ? "Marked" : ds.type === "review" ? "Review" : ds.type === "recharge" ? "Rewind" : "My Cards";
-    var dsEmpty = ds.type === "marked" ? "Bookmark cards during sessions." : ds.type === "review" ? "Cards you swipe left appear here." : ds.type === "recharge" ? "All your words are fresh! Words return here when they're due for review." : "No custom cards yet.";
+    var dsEmpty = ds.type === "marked" ? "Bookmark cards during sessions." : ds.type === "review" ? "Cards you swipe left appear here." : ds.type === "recharge" ? "All your cards are fresh! Cards return here when they're due for review." : "No custom cards yet.";
     var dsSessionN = ds.type === "recharge" ? Math.min(dsCards.length, 30) : dsCards.length;
     var filteredDs = fc(dsCards);
     var dsAddBtn = ds.type === "mine"
@@ -7794,7 +7343,7 @@ function MyFlashcardsPage(_ref31) {
         ),
         /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
           /*#__PURE__*/React.createElement(DeckCard, {
-            label: "Rewind", sublabel: "Faded words",
+            label: "Rewind", sublabel: "Faded cards",
             count: rechargeCards.length, doneCount: 0,
             colorObj: COL_RECHARGE, icon: "hourglass-half",
             onClick: function onClick() { setDeckScreen({ type: "recharge" }); }
@@ -7872,11 +7421,11 @@ function MyFlashcardsPage(_ref31) {
     /* Add deck modal */
     showAddDeckModal && ReactDOM.createPortal(
       /*#__PURE__*/React.createElement("div", {
-        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -9893,7 +9442,7 @@ function ProfilePage(_ref42) {
     editModal = _useState128c[0],
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
-  var kbInset = useKeyboardInset();
+  var kb = useKeyboardInset();
   /* Avatar selection is STAGED: picking in the edit modal only updates
      pendAvatar — nothing applies to the user or Supabase until Save. */
   var _useState_origAv = useState(user && user.avatar),
@@ -10019,16 +9568,11 @@ function ProfilePage(_ref42) {
       boxShadow: "0 8px 24px rgba(28,26,46,0.05)"
     }
   },
-    /* Share button — top-left */
+    /* Share — top-right; editing lives on the avatar itself */
     /*#__PURE__*/React.createElement("button", {
       onClick: share, className: "press",
-      style: { position: "absolute", top: 12, left: 12, zIndex: 2, width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 13, color: C.primary })),
-    /* Edit button — top-right */
-    /*#__PURE__*/React.createElement("button", {
-      onClick: openEdit, className: "press",
       style: { position: "absolute", top: 12, right: 12, zIndex: 2, width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-    }, /*#__PURE__*/React.createElement(Icon, { name: "pen", size: 13, color: C.primary })), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 13, color: C.primary })), /*#__PURE__*/React.createElement("div", {
     ref: cardRef,
     style: {
       padding: "28px 20px 22px",
@@ -10039,37 +9583,42 @@ function ProfilePage(_ref42) {
       borderRadius: 22,
       background: C.surface
     }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: openEdit,
-    className: "press",
-    style: { border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative", borderRadius: "50%" }
-  }, /*#__PURE__*/React.createElement("img", {
-    src: avatarURL(user && user.avatar),
-    crossOrigin: "anonymous",
-    alt: "",
-    style: {
-      width: 88,
-      height: 88,
-      borderRadius: "50%",
-      objectFit: "cover",
-      border: "4px solid " + C.primarySoft,
-      display: "block"
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 20,
-      fontWeight: 800,
-      color: C.ink
-    }
-  }, cap(user && user.name || "You")),
-  /* Badge chip — current milestone */
-  (function () {
-    var b = badgeFor(allPoints);
-    if (!b) return null;
-    return /*#__PURE__*/React.createElement("div", {
-      style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px", marginTop: -4 }
-    }, /*#__PURE__*/React.createElement(Icon, { name: b.icon, size: 11, color: "#B45309" }), b.name);
-  })(),
+  }, /* Identity row: avatar on the left, name + badge stacked beside it */
+  /*#__PURE__*/React.createElement("div", { style: { width: "100%", display: "flex", alignItems: "center", gap: 14 } },
+    /*#__PURE__*/React.createElement("button", {
+      onClick: openEdit,
+      className: "press",
+      style: { border: "none", background: "transparent", padding: 0, cursor: "pointer", position: "relative", borderRadius: "50%", flexShrink: 0 }
+    }, /*#__PURE__*/React.createElement("img", {
+      src: avatarURL(user && user.avatar),
+      crossOrigin: "anonymous",
+      alt: "",
+      style: {
+        width: 76,
+        height: 76,
+        borderRadius: "50%",
+        objectFit: "cover",
+        border: "4px solid " + C.primarySoft,
+        display: "block"
+      }
+    }),
+    /* Pen badge: the avatar IS the edit button */
+    /*#__PURE__*/React.createElement("span", {
+      style: { position: "absolute", bottom: 0, right: 0, width: 25, height: 25, borderRadius: "50%", background: C.primary, border: "2.5px solid " + C.surface, display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "pen", size: 10, color: "#fff" }))),
+    /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8, paddingRight: 4 } },
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 21, fontWeight: 800, color: C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }
+      }, cap(user && user.name || "You")),
+      (function () {
+        var b = badgeFor(allPoints);
+        if (!b) return null;
+        return /*#__PURE__*/React.createElement("div", {
+          style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: b.icon, size: 11, color: "#B45309" }), b.name);
+      })()
+    )
+  ),
   /* HERO — points this week (the leaderboard metric) */
   /*#__PURE__*/React.createElement("div", {
     style: { width: "100%", boxSizing: "border-box", background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", borderRadius: 20, padding: "15px 18px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 10px 26px " + C.primary + "40", position: "relative", overflow: "hidden" }
@@ -10152,11 +9701,11 @@ function ProfilePage(_ref42) {
     }
   }), editModal && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
       onClick: function onClick(e) { if (e.target === e.currentTarget) setEditModal(false); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "90vh" }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: kb.open ? Math.max(280, kb.vh - 56) + "px" : "90vh" }
       },
         /* Fixed: handle + title row */
         /*#__PURE__*/React.createElement("div", { style: { padding: "16px 20px 14px", flexShrink: 0, borderBottom: "1px solid " + C.line } },
@@ -11130,7 +10679,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v140';
+  var CACHE_VERSION = 'memzy-v151';
 
   if (!('serviceWorker' in navigator)) return;
 
