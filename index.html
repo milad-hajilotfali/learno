@@ -14,7 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
-    html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden}
+    html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden;overscroll-behavior:none}
     @keyframes spin{to{transform:rotate(360deg)}}
     #root{height:100vh;height:100dvh}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
@@ -1178,6 +1178,30 @@ function PrimaryButton(_ref4) {
 /* Paints the status-bar / Dynamic Island area with a color matching the
    current screen. Fixed + portaled to body so no transform/scroll context can
    displace it. z 250: above sticky headers (200), below modal backdrops (300+). */
+/* iOS keyboard handling for bottom sheets: returns the keyboard overlap in px
+   (via visualViewport) so sheets can translate up instead of being covered.
+   When the keyboard closes, restores the window scroll iOS performed to reveal
+   the input — that pan is what left the tab bar "jumped up" after closing. */
+function useKeyboardInset() {
+  var _ki = useState(0), _ki2 = _slicedToArray(_ki, 2), inset = _ki2[0], setInset = _ki2[1];
+  useEffect(function () {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var onR = function onR() {
+      var k = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setInset(k);
+      if (k < 1) { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }
+    };
+    vv.addEventListener("resize", onR);
+    vv.addEventListener("scroll", onR);
+    return function () {
+      vv.removeEventListener("resize", onR);
+      vv.removeEventListener("scroll", onR);
+      window.scrollTo(0, 0);
+    };
+  }, []);
+  return inset;
+}
 function TopInset(_refTI) {
   return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
     style: { position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top)", background: _refTI.color || C.surface, zIndex: 250, pointerEvents: "none" }
@@ -1373,7 +1397,10 @@ function Sheet(_ref1) {
   var children = _ref1.children,
     onClose = _ref1.onClose,
     title = _ref1.title,
-    noHeader = _ref1.noHeader;
+    noHeader = _ref1.noHeader,
+    footer = _ref1.footer;
+  /* iOS keyboard: lift the sheet, cap its height so the header stays on screen */
+  var kbInset = useKeyboardInset();
   /* Animated close: slide the panel down + fade the backdrop, THEN unmount */
   var _useState_closing = useState(false),
     _useState_closing2 = _slicedToArray(_useState_closing, 2),
@@ -1406,11 +1433,13 @@ function Sheet(_ref1) {
       maxWidth: 440,
       background: C.surface,
       borderRadius: "26px 26px 0 0",
-      maxHeight: "88vh",
+      maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "88vh",
       display: "flex",
       flexDirection: "column",
       fontFamily: FONT,
-      zIndex: 400
+      zIndex: 400,
+      transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined,
+      transition: "transform .2s ease"
     }
   }, !noHeader && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1470,11 +1499,15 @@ function Sheet(_ref1) {
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
+      minHeight: 0,
       overflowY: "auto",
+      overscrollBehaviorY: "none",
       padding: "16px 22px",
-      paddingBottom: "calc(24px + env(safe-area-inset-bottom))"
+      paddingBottom: footer ? 16 : "calc(24px + env(safe-area-inset-bottom))"
     }
-  }, children))));
+  }, children), footer && /*#__PURE__*/React.createElement("div", {
+    style: { flexShrink: 0, padding: kbInset > 0 ? "12px 22px 12px" : "12px 22px calc(20px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface }
+  }, footer))));
 }
 function Toggle(_ref10) {
   var on = _ref10.on,
@@ -3486,7 +3519,8 @@ function App() {
     ref: scrollRef,
     style: {
       flex: 1,
-      overflowY: tab === "profile" ? "hidden" : "auto",
+      overflowY: tab === "profile" || tab === "friends" ? "hidden" : "auto",
+      overscrollBehaviorY: "none",
       WebkitOverflowScrolling: "touch",
       minHeight: 0
     }
@@ -3999,7 +4033,9 @@ function AuthScreen(_ref16) {
     style: {
       flex: 1,
       overflowY: "auto",
-      padding: "40px 24px 0"
+      overscrollBehaviorY: "none",
+      padding: "40px 24px 0",
+      paddingTop: "calc(40px + env(safe-area-inset-top))"
     }
   }, /*#__PURE__*/React.createElement("h1", {
     style: {
@@ -5222,6 +5258,23 @@ function Dashboard(_ref27) {
     _useState_poc2 = _slicedToArray(_useState_poc, 2),
     pathOpenCh = _useState_poc2[0],
     setPathOpenCh = _useState_poc2[1];
+  /* Path layouts: is the current chapter's node on screen? Drives the
+     floating "jump back to where I am" pill. */
+  var curPathNodeRef = useRef(null);
+  var _useState_cnv = useState(true),
+    _useState_cnv2 = _slicedToArray(_useState_cnv, 2),
+    curNodeVisible = _useState_cnv2[0],
+    setCurNodeVisible = _useState_cnv2[1];
+  useEffect(function () {
+    if (HL !== "C" && HL !== "D" && HL !== "E") { setCurNodeVisible(true); return; }
+    var el = curPathNodeRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setCurNodeVisible(true); return; }
+    var obs = new IntersectionObserver(function (entries) {
+      setCurNodeVisible(entries[0] ? entries[0].isIntersecting : true);
+    }, { threshold: 0 });
+    obs.observe(el);
+    return function () { obs.disconnect(); };
+  }, [HL, curLevel, curChapter]);
   var curChapterRowRef = useRef(null);
   var levelCardRef = useRef(null);
   /* Set by the faded banner: instead of nudging the chapter row into view,
@@ -5341,86 +5394,176 @@ function Dashboard(_ref27) {
     );
   };
 
-  /* ── Variant C: Duolingo-style icon path with anchored info bubbles ── */
+  /* ── Path layouts C/D/E: shared concept (sections, nodes, anchored bubble,
+     exam jump), three different aesthetics. ── */
   var PATH_OFF = [0, -58, -84, -58, 0, 58, 84, 58];
-  var renderHomePath = function renderHomePath() {
-    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      LEVELS_ORDER.map(function (lv) {
-        var st = levelStats(lv);
-        return /*#__PURE__*/React.createElement("div", { key: lv },
-          /* Section banner */
-          /*#__PURE__*/React.createElement("div", {
-            style: { borderRadius: 20, padding: "14px 16px", marginBottom: 16, background: st.locked ? "linear-gradient(135deg,#B9B5CC,#A39FBC)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: st.locked ? "none" : "0 6px 18px " + C.primary + "33" }
-          },
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-              /*#__PURE__*/React.createElement("div", null,
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -0.4 } }, lv, " \u00b7 ", LEVEL_LABEL[lv]),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 3 } },
-                  st.locked ? "Locked" : st.done + " of " + st.total + " words")
-              ),
-              st.locked
-                ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
-                : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
-            ),
-            st.locked && /*#__PURE__*/React.createElement("button", {
-              onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(lv); },
-              className: "press",
-              style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.94)", color: "#6B66A0", fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
-            }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: "#6B66A0" }), "Jump here with an exam")
-          ),
-          /* Nodes */
-          st.chs.map(function (ch, ci) {
-            var cs = chapStats(ch);
-            var isCur = !st.locked && lv === curLevel && ch.id === curChapter;
-            var off = PATH_OFF[ci % PATH_OFF.length];
-            var nodeBg, nodeBorder, iconColor;
-            if (st.locked) { nodeBg = "#EFEEF6"; nodeBorder = C.line; iconColor = "#B9B5CC"; }
-            else if (cs.cracked) { nodeBg = "#FFF8EC"; nodeBorder = C.amber; iconColor = "#B45309"; }
-            else if (cs.pct === 100) { nodeBg = C.primary; nodeBorder = C.primary; iconColor = "#fff"; }
-            else if (cs.pct > 0) { nodeBg = C.surface; nodeBorder = C.primary + "77"; iconColor = C.primary; }
-            else { nodeBg = C.surface; nodeBorder = C.line; iconColor = C.sub; }
-            var openHere = pathOpenCh === ch.id && !st.locked;
-            return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { marginBottom: 16 } },
-              /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
-                /*#__PURE__*/React.createElement("div", { style: { transform: "translateX(" + off + "px)", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 96 } },
-                  /*#__PURE__*/React.createElement("button", {
-                    onClick: function onClick() {
-                      if (st.locked) return;
-                      setPathOpenCh(openHere ? null : ch.id);
-                      onLevelChapterSelect(lv, ch.id);
-                    },
-                    className: "press",
-                    style: { position: "relative", width: 62, height: 62, borderRadius: "50%", border: "3px solid " + nodeBorder, background: nodeBg, cursor: st.locked ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : cs.pct === 100 && !cs.cracked ? "0 4px 12px " + C.primary + "44" : "0 2px 8px rgba(28,26,46,0.06)" }
+  /* Conic progress ring wrapper (C): shows partial completion around the node */
+  var nodeRing = function nodeRing(pct, color, child) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { width: 72, height: 72, borderRadius: "50%", padding: 4, boxSizing: "border-box", background: pct > 0 ? "conic-gradient(" + color + " " + pct * 3.6 + "deg, " + C.line + " 0)" : C.line, display: "flex", alignItems: "center", justifyContent: "center" }
+    }, child);
+  };
+  /* Shared anchored info bubble with close button */
+  var renderBubble = function renderBubble(ch, cs, arrowLeft) {
+    return /*#__PURE__*/React.createElement("div", { style: { position: "relative", marginTop: 13, zIndex: 95, animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" } },
+      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: arrowLeft, width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: cs.cracked ? C.amber : C.primary, borderRadius: 3 } }),
+      /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 8px 22px " + (cs.cracked ? C.amber : C.primary) + "44", position: "relative" } },
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setPathOpenCh(null); },
+          className: "press", "aria-label": "Close",
+          style: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#fff" })),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3, paddingRight: 30 } }, ch.title),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4 } },
+          cs.cracked
+            ? cs.expired + " words faded \u00b7 recover +" + cs.earn + " pts"
+            : cs.done + " of " + cs.cards.length + " words \u00b7 " + cs.pct + "%"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: onStart,
+          className: "press",
+          style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: cs.cracked ? "#B45309" : C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
+        }, cs.cracked ? "Rewind  \u00b7  +" + cs.earn + " pts" : cs.pct === 0 ? "Start" : "Continue")
+      )
+    );
+  };
+  var sectionBanner = function sectionBanner(lv, st) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { borderRadius: 20, padding: "14px 16px", marginBottom: 16, background: st.locked ? "linear-gradient(135deg,#B9B5CC,#A39FBC)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: st.locked ? "none" : "0 6px 18px " + C.primary + "33" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -0.4 } }, lv, " \u00b7 ", LEVEL_LABEL[lv]),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 3 } },
+            st.locked ? "Locked" : st.done + " of " + st.total + " words")
+        ),
+        st.locked
+          ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
+          : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
+      ),
+      st.locked && /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(lv); },
+        className: "press",
+        style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.94)", color: "#6B66A0", fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: "#6B66A0" }), "Jump here with an exam")
+    );
+  };
+  var nodeColors = function nodeColors(st, cs) {
+    if (st.locked) return { bg: "#EFEEF6", border: C.line, icon: "#B9B5CC" };
+    if (cs.cracked) return { bg: "#FFF8EC", border: C.amber, icon: "#B45309" };
+    if (cs.pct === 100) return { bg: C.primary, border: C.primary, icon: "#fff" };
+    if (cs.pct > 0) return { bg: C.surface, border: C.primary + "77", icon: C.primary };
+    return { bg: C.surface, border: C.line, icon: C.sub };
+  };
+  var nodeBadges = function nodeBadges(st, cs) {
+    return [
+      cs.cracked && /*#__PURE__*/React.createElement("div", { key: "h", style: { position: "absolute", top: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.amber, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
+        /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 8, color: "#fff" })),
+      cs.pct === 100 && !cs.cracked && !st.locked && /*#__PURE__*/React.createElement("div", { key: "c", style: { position: "absolute", bottom: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.green, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
+        /*#__PURE__*/React.createElement(Icon, { name: "check", size: 8, color: "#fff" }))
+    ];
+  };
+  var renderHomePath = function renderHomePath(variant) {
+    var content = LEVELS_ORDER.map(function (lv) {
+      var st = levelStats(lv);
+      var nodes;
+      if (variant === "E") {
+        /* E: staggered two-column tile grid */
+        var pairs = [];
+        for (var pi = 0; pi < st.chs.length; pi += 2) pairs.push(st.chs.slice(pi, pi + 2));
+        nodes = pairs.map(function (pair, ri) {
+          var openIn = pair.filter(function (c) { return pathOpenCh === c.id && !st.locked; })[0];
+          var openCs = openIn ? chapStats(openIn) : null;
+          return /*#__PURE__*/React.createElement("div", { key: "r" + ri, style: { marginBottom: 14 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12 } },
+              pair.map(function (ch, ci2) {
+                var cs = chapStats(ch);
+                var isCur = !st.locked && lv === curLevel && ch.id === curChapter;
+                var col = nodeColors(st, cs);
+                return /*#__PURE__*/React.createElement("button", {
+                  key: ch.id,
+                  ref: isCur ? curPathNodeRef : null,
+                  onClick: function onClick() {
+                    if (st.locked) return;
+                    setPathOpenCh(pathOpenCh === ch.id ? null : ch.id);
+                    onLevelChapterSelect(lv, ch.id);
                   },
-                    /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 21, color: iconColor }),
-                    cs.cracked && /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.amber, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
-                      /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 8, color: "#fff" })),
-                    cs.pct === 100 && !cs.cracked && !st.locked && /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.green, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
-                      /*#__PURE__*/React.createElement(Icon, { name: "check", size: 8, color: "#fff" }))
-                  ),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: st.locked ? "#B9B5CC" : isCur ? C.primary : C.sub, textAlign: "center", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title)
-                )
-              ),
-              /* Anchored info bubble */
-              openHere && /*#__PURE__*/React.createElement("div", { style: { position: "relative", marginTop: 13, animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" } },
-                /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: "calc(50% + " + off + "px)", width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: cs.cracked ? C.amber : C.primary, borderRadius: 3 } }),
-                /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 8px 22px " + (cs.cracked ? C.amber : C.primary) + "44" } },
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3 } }, ch.title),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4 } },
-                    cs.cracked
-                      ? cs.expired + " words faded \u00b7 recover +" + cs.earn + " pts"
-                      : cs.done + " of " + cs.cards.length + " words \u00b7 " + cs.pct + "%"),
-                  /*#__PURE__*/React.createElement("button", {
-                    onClick: onStart,
-                    className: "press",
-                    style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: cs.cracked ? "#B45309" : C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
-                  }, cs.cracked ? "Rewind  \u00b7  +" + cs.earn + " pts" : cs.pct === 0 ? "Start" : "Continue")
-                )
-              )
+                  className: "press",
+                  style: { position: "relative", flex: 1, minWidth: 0, borderRadius: 22, border: "2.5px solid " + col.border, background: col.bg, cursor: st.locked ? "default" : "pointer", padding: "16px 12px 13px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: FONT, transform: "translateY(" + (ci2 === 1 ? 22 : 0) + "px)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 2px 10px rgba(28,26,46,0.05)" }
+                },
+                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 24, color: col.icon }),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: st.locked ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
+                  /*#__PURE__*/React.createElement("div", { style: { width: "70%", height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !st.locked ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
+                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: st.locked ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
+                  nodeBadges(st, cs)
+                );
+              })
+            ),
+            openIn && /*#__PURE__*/React.createElement("div", { style: { transform: "translateY(" + (pair.indexOf(openIn) === 1 ? 22 : 0) + "px)" } },
+              renderBubble(openIn, openCs, pair.indexOf(openIn) === 0 ? "25%" : "75%")),
+            ri === pairs.length - 1 && /*#__PURE__*/React.createElement("div", { style: { height: 22 } })
+          );
+        });
+      } else {
+        /* C: circular nodes with progress ring · D: tilted sticker tiles */
+        nodes = st.chs.map(function (ch, ci) {
+          var cs = chapStats(ch);
+          var isCur = !st.locked && lv === curLevel && ch.id === curChapter;
+          var off = PATH_OFF[ci % PATH_OFF.length];
+          var col = nodeColors(st, cs);
+          var openHere = pathOpenCh === ch.id && !st.locked;
+          var ringColor = st.locked ? "#C9C5DD" : cs.cracked ? C.amber : C.primary;
+          var nodeBtn;
+          if (variant === "D") {
+            nodeBtn = /*#__PURE__*/React.createElement("button", {
+              ref: isCur ? curPathNodeRef : null,
+              onClick: function onClick() {
+                if (st.locked) return;
+                setPathOpenCh(openHere ? null : ch.id);
+                onLevelChapterSelect(lv, ch.id);
+              },
+              className: "press",
+              style: { position: "relative", width: 68, height: 68, borderRadius: 21, border: "2.5px solid " + col.border, background: col.bg, cursor: st.locked ? "default" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, transform: "rotate(" + (ci % 2 === 0 ? -3 : 3) + "deg)", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 3px 10px rgba(28,26,46,0.08)" }
+            },
+              /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 22, color: col.icon }),
+              /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !st.locked ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
+                /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", background: st.locked ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
+              nodeBadges(st, cs)
             );
-          })
-        );
-      })
+          } else {
+            nodeBtn = nodeRing(st.locked ? 0 : cs.pct, ringColor, /*#__PURE__*/React.createElement("button", {
+              ref: isCur ? curPathNodeRef : null,
+              onClick: function onClick() {
+                if (st.locked) return;
+                setPathOpenCh(openHere ? null : ch.id);
+                onLevelChapterSelect(lv, ch.id);
+              },
+              className: "press",
+              style: { position: "relative", width: "100%", height: "100%", borderRadius: "50%", border: "none", background: col.bg, cursor: st.locked ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "none" }
+            },
+              /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 21, color: col.icon }),
+              nodeBadges(st, cs)
+            ));
+          }
+          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { marginBottom: 16 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+              /*#__PURE__*/React.createElement("div", { style: { transform: "translateX(" + off + "px)", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 96 } },
+                nodeBtn,
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: st.locked ? "#B9B5CC" : isCur ? C.primary : C.sub, textAlign: "center", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title)
+              )
+            ),
+            openHere && renderBubble(ch, cs, "calc(50% + " + off + "px)")
+          );
+        });
+      }
+      return /*#__PURE__*/React.createElement("div", { key: lv }, sectionBanner(lv, st), nodes);
+    });
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } },
+      /* Tap-away: invisible overlay closes the open bubble */
+      pathOpenCh && /*#__PURE__*/React.createElement("div", {
+        onClick: function onClick() { setPathOpenCh(null); },
+        style: { position: "fixed", inset: 0, zIndex: 80, background: "transparent" }
+      }),
+      content
     );
   };
   /* Has today's streak been earned yet? (any-language activity counts) */
@@ -5736,7 +5879,7 @@ function Dashboard(_ref27) {
   },
     /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0 } }, "Home layout"),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, flex: 1, justifyContent: "flex-end" } },
-      ["A", "B", "C"].map(function (v) {
+      ["A", "B", "C", "D", "E"].map(function (v) {
         var on = HL === v;
         return /*#__PURE__*/React.createElement("button", {
           key: v,
@@ -5747,7 +5890,21 @@ function Dashboard(_ref27) {
       })
     )
   ),
-  HL === "B" ? renderHomeListAll() : HL === "C" ? renderHomePath() : function () {
+  /* Floating jump-back pill: appears when the current node scrolls off-screen */
+  (HL === "C" || HL === "D" || HL === "E") && !curNodeVisible && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        var el = curPathNodeRef.current;
+        if (el && el.scrollIntoView) { try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {} }
+        setPathOpenCh(curChapter);
+      },
+      className: "press",
+      style: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(86px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderRadius: 999, border: "none", background: "linear-gradient(135deg," + C.primary + ",#7C6CFF)", color: "#fff", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", boxShadow: "0 8px 24px " + C.primary + "55", whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+    },
+      /*#__PURE__*/React.createElement(Icon, { name: "location-arrow", size: 12, color: "#fff" }),
+      "Continue"
+    ), document.body),
+  HL === "B" ? renderHomeListAll() : (HL === "C" || HL === "D" || HL === "E") ? renderHomePath(HL) : function () {
     var lvc2 = allCards.filter(function (c) {
       return c.level === curLevel;
     });
@@ -6930,6 +7087,7 @@ function MyFlashcardsPage(_ref31) {
     deckScreen = _useState82[0],
     setDeckScreen = _useState82[1];
   var pageScrollRef = _ref31.scrollRef;
+  var kbInset = useKeyboardInset();
   /* Opening a deck (or going back) starts that view at the top */
   useEffect(function () {
     if (pageScrollRef && pageScrollRef.current) pageScrollRef.current.scrollTop = 0;
@@ -7365,7 +7523,7 @@ function MyFlashcardsPage(_ref31) {
             onClick: function onClick(e) { if (e.target === e.currentTarget) setDeckAction(null); }
           },
             /*#__PURE__*/React.createElement("div", {
-              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
             },
               /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -7380,7 +7538,6 @@ function MyFlashcardsPage(_ref31) {
                 /*#__PURE__*/React.createElement("input", {
                   value: renameVal,
                   onChange: function onChange(e) { setRenameVal(e.target.value); },
-                  autoFocus: true,
                   maxLength: 30,
                   style: { width: "100%", padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 14 }
                 }),
@@ -7643,7 +7800,7 @@ function MyFlashcardsPage(_ref31) {
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -7658,7 +7815,6 @@ function MyFlashcardsPage(_ref31) {
             value: newDeckName,
             onChange: function onChange(e) { setNewDeckName(e.target.value); },
             placeholder: "e.g. Travel phrases",
-            autoFocus: true,
             style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 16 }
           }),
           /*#__PURE__*/React.createElement(PrimaryButton, {
@@ -8232,7 +8388,11 @@ function AddWordModal(_ref34) {
   }];
   return /*#__PURE__*/React.createElement(Sheet, {
     onClose: onClose,
-    title: "Add a flashcard"
+    title: "Add a flashcard",
+    footer: /*#__PURE__*/React.createElement(PrimaryButton, {
+      onClick: add,
+      disabled: !canAdd
+    }, "Add to my flashcards")
   }, /*#__PURE__*/React.createElement("p", {
     style: {
       color: C.sub,
@@ -8388,14 +8548,7 @@ function AddWordModal(_ref34) {
     },
     options: groupOpts,
     openUp: true
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 16
-    }
-  }, /*#__PURE__*/React.createElement(PrimaryButton, {
-    onClick: add,
-    disabled: !canAdd
-  }, "Add to my flashcards")));
+  })));
 }
 
 /* ── FRIENDS ── */
@@ -8725,17 +8878,19 @@ function FriendsPage(_ref37) {
     setLbTab = _useState116[1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "24px 20px 28px",
+      padding: "0 20px",
       display: "flex",
       flexDirection: "column",
-      gap: 12
+      gap: 0,
+      height: "100%",
+      boxSizing: "border-box",
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      position: "sticky",
-      top: 0,
+      flexShrink: 0,
       zIndex: 50,
-      margin: "-24px -20px -2px",
+      margin: "0 -20px",
       padding: "18px 20px 12px",
       paddingTop: "calc(18px + env(safe-area-inset-top))",
       background: C.surface,
@@ -8835,7 +8990,7 @@ function FriendsPage(_ref37) {
       size: 12,
       color: on ? C.primary : C.sub
     }), t.label);
-  }))), tab === "discover" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", { style: { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "none", display: "flex", flexDirection: "column", gap: 12, margin: "0 -20px", padding: "14px 20px 10px" } }, tab === "discover" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative"
     }
@@ -8985,7 +9140,50 @@ function FriendsPage(_ref37) {
       /*#__PURE__*/React.createElement(Icon, { name: "users", size: 11, color: C.primary }),
       /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: C.primary } }, "Find learners below")
     )
-  ), /*#__PURE__*/React.createElement("div", {
+  )),
+  tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
+    /* Airy header: calm title row, then unmistakable chip tabs */
+    /*#__PURE__*/React.createElement("div", { style: { padding: "16px 16px", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 13 } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: C.ink } },
+            lbTab === "friends" ? "Friends ranking" : "Worldwide ranking"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4 } },
+            /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 9, color: C.sub }),
+            "Ends in " + weekLeft)
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", background: C.surface, border: "1px solid " + C.line, borderRadius: 11, padding: 2, gap: 2 } },
+          [{ k: "friends", icon: "users", label: "Friends" }, { k: "worldwide", icon: "globe", label: "Worldwide" }].map(function(lt) {
+            var on = lbTab === lt.k;
+            return /*#__PURE__*/React.createElement("button", {
+              key: lt.k,
+              onClick: function onClick() { return setLbTab(lt.k); },
+              className: "press",
+              "aria-label": lt.label,
+              title: lt.label,
+              style: { width: 36, height: 30, borderRadius: 9, border: "none", background: on ? C.primarySoft : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }
+            },
+              /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 13, color: on ? C.primary : "#B6B2CE" })
+            );
+          })
+        )
+      )
+    ),
+    lbTab === "worldwide" && everyoneBoard.map(function(u, i) {
+      return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: everyoneBoard.length });
+    }),
+    lbTab === "friends" && (friendsBoard.length === 0
+      ? /*#__PURE__*/React.createElement("div", { style: { padding: "24px 16px", textAlign: "center", color: C.sub, fontSize: 13 } }, "Follow friends to compare scores.")
+      : friendsBoard.map(function(u, i) {
+          return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: friendsBoard.length });
+        })
+    )
+  
+  )
+  ),
+  /* Pinned above the tab bar: suggestions always visible at a glance */
+  tab === "discover" && /*#__PURE__*/React.createElement("div", { style: { flexShrink: 0, display: "flex", flexDirection: "column", gap: 10, margin: "0 -20px", padding: "10px 20px calc(10px + 0px)", borderTop: "1px solid " + C.line, background: C.surface } },
+  /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       fontWeight: 800,
@@ -9047,43 +9245,7 @@ function FriendsPage(_ref37) {
         fontFamily: FONT
       }
     }, isFr ? "Following \u2713" : (followers.includes(u.id) ? "Follow back" : "Follow")));
-  }))), tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
-    /* Airy header: calm title row, then unmistakable chip tabs */
-    /*#__PURE__*/React.createElement("div", { style: { padding: "16px 16px", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 13 } },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: C.ink } },
-            lbTab === "friends" ? "Friends ranking" : "Worldwide ranking"),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4 } },
-            /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 9, color: C.sub }),
-            "Ends in " + weekLeft)
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", background: C.surface, border: "1px solid " + C.line, borderRadius: 11, padding: 2, gap: 2 } },
-          [{ k: "friends", icon: "users", label: "Friends" }, { k: "worldwide", icon: "globe", label: "Worldwide" }].map(function(lt) {
-            var on = lbTab === lt.k;
-            return /*#__PURE__*/React.createElement("button", {
-              key: lt.k,
-              onClick: function onClick() { return setLbTab(lt.k); },
-              className: "press",
-              "aria-label": lt.label,
-              title: lt.label,
-              style: { width: 36, height: 30, borderRadius: 9, border: "none", background: on ? C.primarySoft : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }
-            },
-              /*#__PURE__*/React.createElement(Icon, { name: lt.icon, size: 13, color: on ? C.primary : "#B6B2CE" })
-            );
-          })
-        )
-      )
-    ),
-    lbTab === "worldwide" && everyoneBoard.map(function(u, i) {
-      return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: everyoneBoard.length });
-    }),
-    lbTab === "friends" && (friendsBoard.length === 0
-      ? /*#__PURE__*/React.createElement("div", { style: { padding: "24px 16px", textAlign: "center", color: C.sub, fontSize: 13 } }, "Follow friends to compare scores.")
-      : friendsBoard.map(function(u, i) {
-          return /*#__PURE__*/React.createElement(LeaderRow, { key: u.id, u: u, i: i, total: friendsBoard.length });
-        })
-    )
+  }))
   ), sel && /*#__PURE__*/React.createElement(FriendDetailDialog, {
     user: sel,
     isSelf: !!(sel._isMe || (currentUser && sel.id === currentUser.id)),
@@ -9655,6 +9817,7 @@ function ProfilePage(_ref42) {
     editModal = _useState128c[0],
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
+  var kbInset = useKeyboardInset();
   /* Avatar selection is STAGED: picking in the edit modal only updates
      pendAvatar — nothing applies to the user or Supabase until Save. */
   var _useState_origAv = useState(user && user.avatar),
@@ -9750,7 +9913,8 @@ function ProfilePage(_ref42) {
       gap: 14,
       height: "100%",
       boxSizing: "border-box",
-      overflowY: "auto"
+      overflowY: "auto",
+      overscrollBehaviorY: "none"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9916,7 +10080,7 @@ function ProfilePage(_ref42) {
       onClick: function onClick(e) { if (e.target === e.currentTarget) setEditModal(false); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: "90vh" }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "90vh", transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
       },
         /* Fixed: handle + title row */
         /*#__PURE__*/React.createElement("div", { style: { padding: "16px 20px 14px", flexShrink: 0, borderBottom: "1px solid " + C.line } },
@@ -10886,7 +11050,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v138';
+  var CACHE_VERSION = 'memzy-v139';
 
   if (!('serviceWorker' in navigator)) return;
 
