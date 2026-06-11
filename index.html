@@ -252,6 +252,8 @@ var RECHARGE_DEMO_DAYS = 31;
    AND at least CRACK_EXPIRED_PCT of its cards have expired */
 var CRACK_LEARNED_PCT = 0.8;
 var CRACK_EXPIRED_PCT = 0.5;
+/* Path layouts: a chapter unlocks once the PREVIOUS chapter reaches this pct */
+var CHAPTER_UNLOCK_PCT = 0.8;
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function wordExpired(v) {
   var dateStr = laDate(v);
@@ -1187,17 +1189,30 @@ function useKeyboardInset() {
   useEffect(function () {
     var vv = window.visualViewport;
     if (!vv) return;
-    var onR = function onR() {
-      var k = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setInset(k);
-      if (k < 1) { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }
+    /* iOS standalone can shrink window.innerHeight together with the keyboard,
+       making (innerHeight - vv.height) compute 0. Capture the full height as a
+       baseline before the keyboard exists and measure against that instead. */
+    var base = vv.height + vv.offsetTop;
+    var restore = function restore() {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
     };
+    var onR = function onR() {
+      base = Math.max(base, vv.height + vv.offsetTop);
+      var k = Math.max(0, base - vv.height - vv.offsetTop);
+      setInset(k);
+      if (k < 1) { restore(); setTimeout(restore, 80); setTimeout(restore, 280); }
+    };
+    var onBlur = function onBlur() { setTimeout(restore, 60); setTimeout(restore, 300); };
     vv.addEventListener("resize", onR);
     vv.addEventListener("scroll", onR);
+    window.addEventListener("focusout", onBlur);
     return function () {
       vv.removeEventListener("resize", onR);
       vv.removeEventListener("scroll", onR);
-      window.scrollTo(0, 0);
+      window.removeEventListener("focusout", onBlur);
+      restore(); setTimeout(restore, 80); setTimeout(restore, 280);
     };
   }, []);
   return inset;
@@ -1421,6 +1436,8 @@ function Sheet(_ref1) {
       alignItems: "flex-end",
       justifyContent: "center",
       zIndex: 300,
+      paddingBottom: kbInset,
+      boxSizing: "border-box",
       animation: closing ? "fadeOut .22s ease both" : "fadeIn .2s ease both"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -1437,9 +1454,7 @@ function Sheet(_ref1) {
       display: "flex",
       flexDirection: "column",
       fontFamily: FONT,
-      zIndex: 400,
-      transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined,
-      transition: "transform .2s ease"
+      zIndex: 400
     }
   }, !noHeader && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5394,37 +5409,61 @@ function Dashboard(_ref27) {
     );
   };
 
-  /* ── Path layouts C/D/E: shared concept (sections, nodes, anchored bubble,
-     exam jump), three different aesthetics. ── */
+  /* ── Path layouts C/D/E: shared concept (sections, sequential chapter
+     unlocking, overlay bubbles, exam jump), three aesthetics. ── */
   var PATH_OFF = [0, -58, -84, -58, 0, 58, 84, 58];
-  /* Conic progress ring wrapper (C): shows partial completion around the node */
+  var TILE_OFF = [0, -34, -50, -34, 0, 34, 50, 34];
   var nodeRing = function nodeRing(pct, color, child) {
     return /*#__PURE__*/React.createElement("div", {
       style: { width: 72, height: 72, borderRadius: "50%", padding: 4, boxSizing: "border-box", background: pct > 0 ? "conic-gradient(" + color + " " + pct * 3.6 + "deg, " + C.line + " 0)" : C.line, display: "flex", alignItems: "center", justifyContent: "center" }
     }, child);
   };
-  /* Shared anchored info bubble with close button */
+  /* Overlay bubble: absolutely positioned so the path never shifts */
+  var bubbleWrap = function bubbleWrap(arrowLeft, inner) {
+    return /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: "calc(100% + 9px)", left: 0, right: 0, zIndex: 96, animation: "riseIn .25s cubic-bezier(.16,1,.3,1) both" } },
+      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: arrowLeft, width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: inner.props["data-bubblebg"], borderRadius: 3 } }),
+      inner
+    );
+  };
   var renderBubble = function renderBubble(ch, cs, arrowLeft) {
-    return /*#__PURE__*/React.createElement("div", { style: { position: "relative", marginTop: 13, zIndex: 95, animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" } },
-      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: -6, left: arrowLeft, width: 13, height: 13, transform: "translateX(-50%) rotate(45deg)", background: cs.cracked ? C.amber : C.primary, borderRadius: 3 } }),
-      /*#__PURE__*/React.createElement("div", { style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 8px 22px " + (cs.cracked ? C.amber : C.primary) + "44", position: "relative" } },
+    var bg = cs.cracked ? C.amber : C.primary;
+    return bubbleWrap(arrowLeft, /*#__PURE__*/React.createElement("div", { "data-bubblebg": bg, style: { borderRadius: 18, padding: "15px 16px", background: cs.cracked ? "linear-gradient(135deg," + C.amber + ",#F59E0B)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + bg + "55", position: "relative" } },
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { setPathOpenCh(null); },
+        className: "press", "aria-label": "Close",
+        style: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#fff" })),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3, paddingRight: 30 } }, ch.title),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4 } },
+        cs.cracked
+          ? cs.expired + " words faded \u00b7 recover +" + cs.earn + " pts"
+          : cs.done + " of " + cs.cards.length + " words \u00b7 " + cs.pct + "%"),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: onStart,
+        className: "press",
+        style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: cs.cracked ? "#B45309" : C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
+      }, cs.cracked ? "Rewind  \u00b7  +" + cs.earn + " pts" : cs.pct === 0 ? "Start" : "Continue")
+    ));
+  };
+  /* Exam bubble for the "Jump here?" node at the head of a locked level */
+  var renderExamBubble = function renderExamBubble(lv, arrowLeft) {
+    return bubbleWrap(arrowLeft, /*#__PURE__*/React.createElement("div", { "data-bubblebg": C.primary, style: { borderRadius: 18, padding: "15px 16px", background: "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: "0 10px 26px " + C.primary + "55", position: "relative" } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3 } }, "Unlock " + lv + " \u00b7 " + LEVEL_LABEL[lv]),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4, lineHeight: 1.5 } },
+        "Pass this exam and you unlock everything up to here."),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setPathOpenCh(null); if (onStartLevelExam) onStartLevelExam(lv); },
+          className: "press",
+          style: { flex: 1, padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
+        }, "Let's go"),
         /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { setPathOpenCh(null); },
-          className: "press", "aria-label": "Close",
-          style: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-        }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#fff" })),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: -0.3, paddingRight: 30 } }, ch.title),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4 } },
-          cs.cracked
-            ? cs.expired + " words faded \u00b7 recover +" + cs.earn + " pts"
-            : cs.done + " of " + cs.cards.length + " words \u00b7 " + cs.pct + "%"),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: onStart,
           className: "press",
-          style: { marginTop: 12, width: "100%", padding: "12px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.96)", color: cs.cracked ? "#B45309" : C.primary, fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
-        }, cs.cracked ? "Rewind  \u00b7  +" + cs.earn + " pts" : cs.pct === 0 ? "Start" : "Continue")
+          style: { flex: 1, padding: "12px 14px", borderRadius: 13, border: "1.5px solid rgba(255,255,255,0.5)", background: "transparent", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
+        }, "Not now")
       )
-    );
+    ));
   };
   var sectionBanner = function sectionBanner(lv, st) {
     return /*#__PURE__*/React.createElement("div", {
@@ -5439,126 +5478,162 @@ function Dashboard(_ref27) {
         st.locked
           ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
           : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
-      ),
-      st.locked && /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() { if (onStartLevelExam) onStartLevelExam(lv); },
-        className: "press",
-        style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.94)", color: "#6B66A0", fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: "#6B66A0" }), "Jump here with an exam")
+      )
     );
   };
-  var nodeColors = function nodeColors(st, cs) {
-    if (st.locked) return { bg: "#EFEEF6", border: C.line, icon: "#B9B5CC" };
+  var nodeColors = function nodeColors(lockedNode, cs) {
+    if (lockedNode) return { bg: "#EFEEF6", border: C.line, icon: "#B9B5CC" };
     if (cs.cracked) return { bg: "#FFF8EC", border: C.amber, icon: "#B45309" };
     if (cs.pct === 100) return { bg: C.primary, border: C.primary, icon: "#fff" };
     if (cs.pct > 0) return { bg: C.surface, border: C.primary + "77", icon: C.primary };
     return { bg: C.surface, border: C.line, icon: C.sub };
   };
-  var nodeBadges = function nodeBadges(st, cs) {
+  var nodeBadges = function nodeBadges(lockedNode, cs) {
     return [
-      cs.cracked && /*#__PURE__*/React.createElement("div", { key: "h", style: { position: "absolute", top: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.amber, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
+      lockedNode && /*#__PURE__*/React.createElement("div", { key: "l", style: { position: "absolute", top: -5, right: -5, width: 19, height: 19, borderRadius: "50%", background: "#B9B5CC", border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
+        /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 8, color: "#fff" })),
+      !lockedNode && cs.cracked && /*#__PURE__*/React.createElement("div", { key: "h", style: { position: "absolute", top: -5, right: -5, width: 19, height: 19, borderRadius: "50%", background: C.amber, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
         /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 8, color: "#fff" })),
-      cs.pct === 100 && !cs.cracked && !st.locked && /*#__PURE__*/React.createElement("div", { key: "c", style: { position: "absolute", bottom: -3, right: -3, width: 19, height: 19, borderRadius: "50%", background: C.green, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
+      !lockedNode && cs.pct === 100 && !cs.cracked && /*#__PURE__*/React.createElement("div", { key: "c", style: { position: "absolute", bottom: -5, right: -5, width: 19, height: 19, borderRadius: "50%", background: C.green, border: "2.5px solid #F5F4FB", display: "flex", alignItems: "center", justifyContent: "center" } },
         /*#__PURE__*/React.createElement(Icon, { name: "check", size: 8, color: "#fff" }))
     ];
   };
   var renderHomePath = function renderHomePath(variant) {
     var content = LEVELS_ORDER.map(function (lv) {
       var st = levelStats(lv);
+      /* Sequential unlock chain: chapter i needs chapter i-1 at >= CHAPTER_UNLOCK_PCT */
+      var csList = st.chs.map(function (ch) { return chapStats(ch); });
+      var chainLocked = st.chs.map(function (ch, i) {
+        if (st.locked) return true;
+        if (i === 0) return false;
+        return csList[i - 1].pct < CHAPTER_UNLOCK_PCT * 100;
+      });
+      var examOpen = pathOpenCh === "exam:" + lv;
+      var examNode = st.locked && /*#__PURE__*/React.createElement("div", { key: "exam", style: { position: "relative", marginBottom: 16, zIndex: examOpen ? 97 : 1 } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setPathOpenCh(examOpen ? null : "exam:" + lv); },
+            className: "press",
+            style: { display: "flex", alignItems: "center", gap: 10, padding: "13px 20px", borderRadius: 18, border: "2px dashed " + C.primary + "88", background: C.primarySoft, cursor: "pointer", fontFamily: FONT, boxShadow: "0 3px 12px " + C.primary + "22" }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 10, background: C.primary, display: "flex", alignItems: "center", justifyContent: "center" } },
+              /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 13, color: "#fff" })),
+            /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 800, color: C.primary } }, "Jump here?")
+          )
+        ),
+        examOpen && renderExamBubble(lv, "50%")
+      );
       var nodes;
-      if (variant === "E") {
-        /* E: staggered two-column tile grid */
+      if (variant === "D") {
+        /* D: wide sticker tiles — room for the bar, pct, and +pts */
+        nodes = st.chs.map(function (ch, ci) {
+          var cs = csList[ci];
+          var lockedNode = chainLocked[ci];
+          var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
+          var off = TILE_OFF[ci % TILE_OFF.length];
+          var col = nodeColors(lockedNode, cs);
+          var openHere = pathOpenCh === ch.id && !lockedNode;
+          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+              /*#__PURE__*/React.createElement("button", {
+                ref: isCur ? curPathNodeRef : null,
+                onClick: function onClick() {
+                  if (lockedNode) return;
+                  setPathOpenCh(openHere ? null : ch.id);
+                  onLevelChapterSelect(lv, ch.id);
+                },
+                className: "press",
+                style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "2px solid " + (isCur ? (cs.cracked ? C.amber : C.primary) : col.border), background: col.bg, cursor: lockedNode ? "default" : "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + off + "px) rotate(" + (ci % 2 === 0 ? -1.6 : 1.6) + "deg)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "30" : C.primarySoft) + ", 0 4px 14px rgba(28,26,46,0.08)" : "0 3px 10px rgba(28,26,46,0.06)" }
+              },
+                /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 13, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.22)" : lockedNode ? "#E3E1EE" : cs.cracked ? C.amber + "22" : C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: col.icon })),
+                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
+                  /*#__PURE__*/React.createElement("div", { style: { height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.3)" : C.line, overflow: "hidden", marginTop: 6 } },
+                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } }))
+                ),
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.sub } }, cs.pct, "%"),
+                  !lockedNode && cs.cracked && /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: C.amber, marginTop: 2, whiteSpace: "nowrap" } }, "+" + cs.earn + " pts")
+                ),
+                nodeBadges(lockedNode, cs)
+              )
+            ),
+            openHere && renderBubble(ch, cs, "calc(50% + " + off + "px)")
+          );
+        });
+      } else if (variant === "E") {
         var pairs = [];
         for (var pi = 0; pi < st.chs.length; pi += 2) pairs.push(st.chs.slice(pi, pi + 2));
         nodes = pairs.map(function (pair, ri) {
-          var openIn = pair.filter(function (c) { return pathOpenCh === c.id && !st.locked; })[0];
-          var openCs = openIn ? chapStats(openIn) : null;
-          return /*#__PURE__*/React.createElement("div", { key: "r" + ri, style: { marginBottom: 14 } },
+          var openIn = pair.filter(function (c) { return pathOpenCh === c.id; })[0];
+          var openIdx = openIn ? st.chs.indexOf(openIn) : -1;
+          var openOk = openIn && !chainLocked[openIdx];
+          return /*#__PURE__*/React.createElement("div", { key: "r" + ri, style: { position: "relative", marginBottom: 36, zIndex: openOk ? 97 : 1 } },
             /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12 } },
               pair.map(function (ch, ci2) {
-                var cs = chapStats(ch);
-                var isCur = !st.locked && lv === curLevel && ch.id === curChapter;
-                var col = nodeColors(st, cs);
+                var gi = ri * 2 + ci2;
+                var cs = csList[gi];
+                var lockedNode = chainLocked[gi];
+                var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
+                var col = nodeColors(lockedNode, cs);
                 return /*#__PURE__*/React.createElement("button", {
                   key: ch.id,
                   ref: isCur ? curPathNodeRef : null,
                   onClick: function onClick() {
-                    if (st.locked) return;
+                    if (lockedNode) return;
                     setPathOpenCh(pathOpenCh === ch.id ? null : ch.id);
                     onLevelChapterSelect(lv, ch.id);
                   },
                   className: "press",
-                  style: { position: "relative", flex: 1, minWidth: 0, borderRadius: 22, border: "2.5px solid " + col.border, background: col.bg, cursor: st.locked ? "default" : "pointer", padding: "16px 12px 13px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: FONT, transform: "translateY(" + (ci2 === 1 ? 22 : 0) + "px)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 2px 10px rgba(28,26,46,0.05)" }
+                  style: { position: "relative", flex: 1, minWidth: 0, borderRadius: 22, border: "2.5px solid " + col.border, background: col.bg, cursor: lockedNode ? "default" : "pointer", padding: "16px 12px 13px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: FONT, transform: "translateY(" + (ci2 === 1 ? 22 : 0) + "px)", boxShadow: isCur ? "0 0 0 4px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 2px 10px rgba(28,26,46,0.05)" }
                 },
                   /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 24, color: col.icon }),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: st.locked ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
-                  /*#__PURE__*/React.createElement("div", { style: { width: "70%", height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !st.locked ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
-                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: st.locked ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
-                  nodeBadges(st, cs)
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
+                  /*#__PURE__*/React.createElement("div", { style: { width: "70%", height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
+                    /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", borderRadius: 3, background: lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
+                  nodeBadges(lockedNode, cs)
                 );
               })
             ),
-            openIn && /*#__PURE__*/React.createElement("div", { style: { transform: "translateY(" + (pair.indexOf(openIn) === 1 ? 22 : 0) + "px)" } },
-              renderBubble(openIn, openCs, pair.indexOf(openIn) === 0 ? "25%" : "75%")),
-            ri === pairs.length - 1 && /*#__PURE__*/React.createElement("div", { style: { height: 22 } })
+            openOk && renderBubble(openIn, csList[openIdx], pair.indexOf(openIn) === 0 ? "25%" : "75%")
           );
         });
       } else {
-        /* C: circular nodes with progress ring · D: tilted sticker tiles */
         nodes = st.chs.map(function (ch, ci) {
-          var cs = chapStats(ch);
-          var isCur = !st.locked && lv === curLevel && ch.id === curChapter;
+          var cs = csList[ci];
+          var lockedNode = chainLocked[ci];
+          var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
           var off = PATH_OFF[ci % PATH_OFF.length];
-          var col = nodeColors(st, cs);
-          var openHere = pathOpenCh === ch.id && !st.locked;
-          var ringColor = st.locked ? "#C9C5DD" : cs.cracked ? C.amber : C.primary;
-          var nodeBtn;
-          if (variant === "D") {
-            nodeBtn = /*#__PURE__*/React.createElement("button", {
-              ref: isCur ? curPathNodeRef : null,
-              onClick: function onClick() {
-                if (st.locked) return;
-                setPathOpenCh(openHere ? null : ch.id);
-                onLevelChapterSelect(lv, ch.id);
-              },
-              className: "press",
-              style: { position: "relative", width: 68, height: 68, borderRadius: 21, border: "2.5px solid " + col.border, background: col.bg, cursor: st.locked ? "default" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, transform: "rotate(" + (ci % 2 === 0 ? -3 : 3) + "deg)", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "0 3px 10px rgba(28,26,46,0.08)" }
-            },
-              /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 22, color: col.icon }),
-              /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 4, borderRadius: 3, background: cs.pct === 100 && !cs.cracked && !st.locked ? "rgba(255,255,255,0.35)" : C.line, overflow: "hidden" } },
-                /*#__PURE__*/React.createElement("div", { style: { width: cs.pct + "%", height: "100%", background: st.locked ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary } })),
-              nodeBadges(st, cs)
-            );
-          } else {
-            nodeBtn = nodeRing(st.locked ? 0 : cs.pct, ringColor, /*#__PURE__*/React.createElement("button", {
-              ref: isCur ? curPathNodeRef : null,
-              onClick: function onClick() {
-                if (st.locked) return;
-                setPathOpenCh(openHere ? null : ch.id);
-                onLevelChapterSelect(lv, ch.id);
-              },
-              className: "press",
-              style: { position: "relative", width: "100%", height: "100%", borderRadius: "50%", border: "none", background: col.bg, cursor: st.locked ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "none" }
-            },
-              /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 21, color: col.icon }),
-              nodeBadges(st, cs)
-            ));
-          }
-          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { marginBottom: 16 } },
+          var col = nodeColors(lockedNode, cs);
+          var openHere = pathOpenCh === ch.id && !lockedNode;
+          var ringColor = lockedNode ? "#C9C5DD" : cs.cracked ? C.amber : C.primary;
+          return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 16, zIndex: openHere ? 97 : 1 } },
             /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
               /*#__PURE__*/React.createElement("div", { style: { transform: "translateX(" + off + "px)", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 96 } },
-                nodeBtn,
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: st.locked ? "#B9B5CC" : isCur ? C.primary : C.sub, textAlign: "center", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title)
+                nodeRing(lockedNode ? 0 : cs.pct, ringColor, /*#__PURE__*/React.createElement("button", {
+                  ref: isCur ? curPathNodeRef : null,
+                  onClick: function onClick() {
+                    if (lockedNode) return;
+                    setPathOpenCh(openHere ? null : ch.id);
+                    onLevelChapterSelect(lv, ch.id);
+                  },
+                  className: "press",
+                  style: { position: "relative", width: "100%", height: "100%", borderRadius: "50%", border: "none", background: col.bg, cursor: lockedNode ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: isCur ? "0 0 0 5px " + (cs.cracked ? C.amber + "33" : C.primarySoft) : "none" }
+                },
+                  /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 21, color: col.icon }),
+                  nodeBadges(lockedNode, cs)
+                )),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: lockedNode ? "#B9B5CC" : isCur ? C.primary : C.sub, textAlign: "center", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title)
               )
             ),
             openHere && renderBubble(ch, cs, "calc(50% + " + off + "px)")
           );
         });
       }
-      return /*#__PURE__*/React.createElement("div", { key: lv }, sectionBanner(lv, st), nodes);
+      return /*#__PURE__*/React.createElement("div", { key: lv }, sectionBanner(lv, st), examNode, nodes);
     });
     return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } },
-      /* Tap-away: invisible overlay closes the open bubble */
       pathOpenCh && /*#__PURE__*/React.createElement("div", {
         onClick: function onClick() { setPathOpenCh(null); },
         style: { position: "fixed", inset: 0, zIndex: 80, background: "transparent" }
@@ -5845,7 +5920,7 @@ function Dashboard(_ref27) {
     });
     if (!firstCracked) return null;
     return /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "center", gap: 12, background: "#FFFBF2", border: "1px solid " + C.amber + "44", borderRadius: 18, padding: "13px 14px", fontFamily: FONT, animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both" }
+      style: { display: "flex", alignItems: "center", gap: 12, background: "#FFFBF2", border: "1px solid " + C.amber + "44", borderRadius: 18, padding: "13px 14px", fontFamily: FONT, animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both", position: "sticky", top: "calc(64px + env(safe-area-inset-top))", zIndex: 40, boxShadow: "0 4px 16px rgba(232,160,32,0.18)" }
     },
       /*#__PURE__*/React.createElement("button", {
         onClick: function onClick() {
@@ -5899,9 +5974,10 @@ function Dashboard(_ref27) {
         setPathOpenCh(curChapter);
       },
       className: "press",
-      style: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(86px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderRadius: 999, border: "none", background: "linear-gradient(135deg," + C.primary + ",#7C6CFF)", color: "#fff", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", boxShadow: "0 8px 24px " + C.primary + "55", whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+      style: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 8, padding: "9px 16px 9px 9px", borderRadius: 999, border: "1.5px solid " + C.primary + "44", background: C.surface, color: C.primary, fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer", boxShadow: "0 8px 24px rgba(28,26,46,0.18)", whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
     },
-      /*#__PURE__*/React.createElement(Icon, { name: "location-arrow", size: 12, color: "#fff" }),
+      /*#__PURE__*/React.createElement("span", { style: { width: 26, height: 26, borderRadius: "50%", background: C.primary, display: "flex", alignItems: "center", justifyContent: "center" } },
+        /*#__PURE__*/React.createElement(Icon, { name: "location-arrow", size: 11, color: "#fff" })),
       "Continue"
     ), document.body),
   HL === "B" ? renderHomeListAll() : (HL === "C" || HL === "D" || HL === "E") ? renderHomePath(HL) : function () {
@@ -7519,11 +7595,11 @@ function MyFlashcardsPage(_ref31) {
         /* Deck options: menu / rename / delete */
         deckAction && ReactDOM.createPortal(
           /*#__PURE__*/React.createElement("div", {
-            style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+            style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
             onClick: function onClick(e) { if (e.target === e.currentTarget) setDeckAction(null); }
           },
             /*#__PURE__*/React.createElement("div", {
-              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
+              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
             },
               /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -7796,11 +7872,11 @@ function MyFlashcardsPage(_ref31) {
     /* Add deck modal */
     showAddDeckModal && ReactDOM.createPortal(
       /*#__PURE__*/React.createElement("div", {
-        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kbInset > 0 ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -9063,7 +9139,7 @@ function FriendsPage(_ref37) {
     var ordered = friends.map(function (id) { return byId[id]; }).filter(Boolean);
     if (ordered.length === 0) ordered = myFriends;
     var newestFirst = ordered.slice().reverse();
-    var shown = q ? filteredFriends : newestFirst.slice(0, 6);
+    var shown = q ? filteredFriends : newestFirst.slice(0, 4);
     var row = function row(u, isLast) {
       return /*#__PURE__*/React.createElement("div", {
         key: u.id,
@@ -9079,7 +9155,7 @@ function FriendsPage(_ref37) {
         )
       );
     };
-    var hasMore = !q && newestFirst.length > 6;
+    var hasMore = !q && newestFirst.length > 4;
     return /*#__PURE__*/React.createElement(React.Fragment, null,
       /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
         shown.map(function (u, i) { return row(u, !hasMore && i === shown.length - 1); }),
@@ -9182,7 +9258,7 @@ function FriendsPage(_ref37) {
   )
   ),
   /* Pinned above the tab bar: suggestions always visible at a glance */
-  tab === "discover" && /*#__PURE__*/React.createElement("div", { style: { flexShrink: 0, display: "flex", flexDirection: "column", gap: 10, margin: "0 -20px", padding: "10px 20px calc(10px + 0px)", borderTop: "1px solid " + C.line, background: C.surface } },
+  tab === "discover" && /*#__PURE__*/React.createElement("div", { style: { flexShrink: 0, display: "flex", flexDirection: "column", gap: 10, margin: "0 -20px", padding: "10px 20px 8px" } },
   /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
@@ -10076,11 +10152,11 @@ function ProfilePage(_ref42) {
     }
   }), editModal && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kbInset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
       onClick: function onClick(e) { if (e.target === e.currentTarget) setEditModal(false); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "90vh", transform: kbInset > 0 ? "translateY(-" + kbInset + "px)" : undefined, transition: "transform .2s ease" }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", display: "flex", flexDirection: "column", fontFamily: FONT, maxHeight: kbInset > 0 ? "calc(100dvh - " + kbInset + "px - env(safe-area-inset-top) - 12px)" : "90vh" }
       },
         /* Fixed: handle + title row */
         /*#__PURE__*/React.createElement("div", { style: { padding: "16px 20px 14px", flexShrink: 0, borderBottom: "1px solid " + C.line } },
@@ -10117,6 +10193,10 @@ function ProfilePage(_ref42) {
             /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Name"),
             /*#__PURE__*/React.createElement("input", {
               value: name,
+              onFocus: function onFocus(e) {
+                var el = e.target;
+                setTimeout(function () { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (er) {} }, 250);
+              },
               onChange: function onChange(e) { return setName(e.target.value); },
               onBlur: function onBlur(e) { return setName(cap(e.target.value)); },
               placeholder: "Your name",
@@ -11050,7 +11130,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v139';
+  var CACHE_VERSION = 'memzy-v140';
 
   if (!('serviceWorker' in navigator)) return;
 
