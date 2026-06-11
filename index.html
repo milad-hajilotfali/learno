@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
   <title>Memzy</title>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="theme-color" content="#5A4FE3"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
@@ -15,6 +15,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden}
+    @keyframes spin{to{transform:rotate(360deg)}}
     #root{height:100vh;height:100dvh}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
   </style>
@@ -85,6 +86,53 @@ function loadLearnedIds(userId, lang, callback) {
   loadCardIds(userId, lang, "__learnedids__", callback);
 }
 
+/* ── RECHARGE STORAGE ── per-word learned dates: { cardId: "YYYY-MM-DD" } of
+   the LAST point-paying right swipe. Stored exactly like __learnedids__
+   (JSON in the `level` column). __learnedids__ stays dual-written, so chapter
+   progress, level unlocks, lock screens and exams keep reading learned status
+   exactly as before. */
+function saveLearnedAt(userId, lang, map) {
+  if (!userId || !map) return;
+  supabase.from("progress").upsert({
+    user_id: userId, language: lang || "de",
+    level: JSON.stringify(map).slice(0, 60000),
+    chapter: "__learnedat__", completed: false, score: Object.keys(map).length,
+    last_studied: new Date().toISOString()
+  }, { onConflict: "user_id,language,chapter" }).then(function(){});
+}
+/* callback(null) means the row doesn't exist yet (triggers one-time
+   migration); otherwise callback receives the parsed map (possibly {}) */
+function loadLearnedAt(userId, lang, callback) {
+  if (!userId) return;
+  supabase.from("progress").select("level")
+    .eq("user_id", userId).eq("language", lang || "de").eq("chapter", "__learnedat__")
+    .maybeSingle().then(function(res) {
+      if (!res.data) { callback(null); return; }
+      try {
+        var m = JSON.parse(res.data.level);
+        callback(m && typeof m === "object" && !Array.isArray(m) ? m : {});
+      } catch (e) { callback({}); }
+    });
+}
+/* One-time migration: stamp every already-learned id at load date, staggered
+   a few days back per chapter index so the whole history doesn't crack on the
+   same day. WORDS is already populated (called after initData resolves). */
+function migrateLearnedAt(ids) {
+  var chapterOf = {};
+  try { WORDS.forEach(function (w) { chapterOf[w.id] = w.chapter; }); } catch (e) {}
+  var chapters = [];
+  var m = {};
+  (ids || []).forEach(function (id) {
+    var ch = chapterOf[id] || "";
+    var ci = chapters.indexOf(ch);
+    if (ci < 0) { chapters.push(ch); ci = chapters.length - 1; }
+    var d = new Date();
+    d.setDate(d.getDate() - (ci % 10));
+    m[id] = d.toISOString().slice(0, 10);
+  });
+  return m;
+}
+
 /* Persist the user's current level+chapter (per language) so the app
    reopens exactly where they left off — locally for instant restore,
    and in Supabase so it survives sign-out / other devices. */
@@ -145,6 +193,30 @@ function loadProgressFromDB(userId, lang, setHistoryFn) {
     });
 }
 
+/* Shared-streak loader: same as loadProgressFromDB but aggregates __daily__
+   rows across ALL languages. The streak measures showing up, not progress in
+   one language — doing a Persian session and a German session both count. */
+function loadGlobalProgressFromDB(userId, setHistoryFn) {
+  if (!userId) return;
+  supabase.from("progress").select("chapter, score")
+    .eq("user_id", userId).like("chapter", "__daily__%")
+    .then(function(res) {
+      if (res.error) return;
+      var map = {};
+      (res.data || []).forEach(function(row) {
+        var date = row.chapter.replace("__daily__", "");
+        map[date] = (map[date] || 0) + (row.score || 0);
+      });
+      setHistoryFn(function(h) {
+        return h.map(function(day) {
+          return map[day.date] !== undefined
+            ? Object.assign({}, day, { points: map[day.date], active: true })
+            : Object.assign({}, day, { points: 0, active: false });
+        });
+      });
+    });
+}
+
 var LEVEL_LABEL = {
   A1: "Beginner",
   A2: "Elementary",
@@ -153,6 +225,50 @@ var LEVEL_LABEL = {
   C1: "Advanced"
 };
 var LEVELS_ORDER = ["A1", "A2", "B1", "B2", "C1"];
+/* ── WORD REWIND (spaced repetition) ── a learned word "expires" after its
+   current interval and then pays its 1 point again when right swiped.
+   Intervals follow an expanding ladder (research: expanding schedules beat
+   uniform ones — Dobson 2012; classic ladders run ~7/16/35 days — Mace 1932,
+   SuperMemo/Anki): each PAID rewind moves the word one rung up, pushing the
+   next review further out. A word pays at most once per interval (anti-grind
+   cap, never relax it). Expiry never touches chapter progress, level unlocks
+   or exams. */
+var REWIND_LADDER = [7, 16, 35, 60];
+/* learnedAt values are "YYYY-MM-DD" (stage 0) or "YYYY-MM-DD:stage" */
+function laDate(v) { return v ? String(v).split(":")[0] : v; }
+function laStage(v) { var p = String(v || "").split(":"); return p.length > 1 ? parseInt(p[1], 10) || 0 : 0; }
+function laMake(date, stage) { return stage > 0 ? date + ":" + stage : date; }
+function wordInterval(v) { return REWIND_LADDER[Math.min(laStage(v), REWIND_LADDER.length - 1)]; }
+/* ⚠️ DEMO / PREVIEW ONLY — on every app load, ages your stored learned dates
+   by this many days, so cracked chapters + the Recharge deck appear right
+   away. Unlike a fake clock, everything then behaves EXACTLY like production:
+   swiping a word right re-stamps it today, counts drop, cracks heal, and the
+   once-per-30-days point cap holds.
+   Note: the aged dates are saved back, so each load with the flag on pushes
+   the dates another 31 days into the past (harmless — already expired).
+   ⚠️ SET BACK TO 0 BEFORE RELEASING. */
+var RECHARGE_DEMO_DAYS = 31;
+/* A chapter renders "cracked" when learned >= CRACK_LEARNED_PCT of its cards
+   AND at least CRACK_EXPIRED_PCT of its cards have expired */
+var CRACK_LEARNED_PCT = 0.8;
+var CRACK_EXPIRED_PCT = 0.5;
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function wordExpired(v) {
+  var dateStr = laDate(v);
+  if (!dateStr) return false;
+  var t = Date.parse(dateStr + "T00:00:00Z");
+  if (isNaN(t)) return false;
+  return (Date.now() - t) / 86400000 > wordInterval(v);
+}
+/* DEMO helper: shift every stored date back by N days (used once at load) */
+function ageLearnedAt(map, days) {
+  var out = {};
+  Object.keys(map || {}).forEach(function (k) {
+    var t = Date.parse(laDate(map[k]) + "T00:00:00Z");
+    out[k] = isNaN(t) ? map[k] : laMake(new Date(t - days * 86400000).toISOString().slice(0, 10), laStage(map[k]));
+  });
+  return out;
+}
 var LEVEL_COLOR = {
   A1: {
     bg: "#EEEEFF",
@@ -457,29 +573,35 @@ function ensureProfile(u) {
         });
     });
 }
+/* ── MILESTONES ── roughly doubling gaps: early ones land fast (hook), late
+   ones are prestige. High tiers are reachable thanks to Rewind income. */
 var REWARDS = [{
-  at: 50,
-  name: "Spark badge",
+  at: 25,
+  name: "Sprout",
+  icon: "seedling"
+}, {
+  at: 75,
+  name: "Spark",
   icon: "bolt"
 }, {
-  at: 150,
-  name: "Bronze medal",
-  icon: "medal"
+  at: 200,
+  name: "Wordsmith",
+  icon: "feather"
 }, {
-  at: 300,
-  name: "Silver medal",
-  icon: "award"
-}, {
-  at: 600,
-  name: "Gold trophy",
-  icon: "trophy"
+  at: 500,
+  name: "Voyager",
+  icon: "compass"
 }, {
   at: 1000,
-  name: "Diamond badge",
+  name: "Mastermind",
+  icon: "brain"
+}, {
+  at: 2000,
+  name: "Diamond Mind",
   icon: "gem"
 }, {
-  at: 1500,
-  name: "Legend crown",
+  at: 5000,
+  name: "Memzy Legend",
   icon: "crown"
 }];
 /* Highest reward/badge earned for a given points total (or null) */
@@ -574,20 +696,29 @@ function preloadSFX() {
     } catch (e) {}
   });
 }
-/* Unlock every SFX element inside a user gesture: a muted play+pause per
-   element satisfies iOS's per-element gesture requirement, so later
-   programmatic plays (end screens fire from effects, not taps) succeed. */
+/* Unlock every SFX element inside a user gesture so later programmatic plays
+   (end screens fire from effects, not taps) succeed.
+   IMPORTANT: do NOT use the muted play+pause trick here — iOS Safari ignores
+   the .muted / .volume properties on JS-created Audio elements, so the "muted"
+   unlock audibly blips every sound at once on the first tap. Instead, play a
+   silent WAV through each element (genuinely silent), then swap the real file
+   back in. The gesture unlock sticks to the element across src changes. */
 function unlockSFX() {
   preloadSFX();
   Object.keys(_sfx).forEach(function (k) {
     var a = _sfx[k];
     try {
-      a.muted = true;
+      a.src = SILENT_WAV;
+      var restore = function () {
+        try {
+          a.pause();
+          a.src = SFX_FILES[k];
+          a.load();
+        } catch (e) {}
+      };
       var p = a.play();
-      if (p && p.then) p.then(function () {
-        a.pause(); a.currentTime = 0; a.muted = false;
-      }).catch(function () { a.muted = false; });
-      else { a.pause(); a.currentTime = 0; a.muted = false; }
+      if (p && p.then) p.then(restore).catch(restore);
+      else restore();
     } catch (e) {}
   });
 }
@@ -1017,6 +1148,7 @@ function PrimaryButton(_ref4) {
     onClick = _ref4.onClick,
     disabled = _ref4.disabled,
     glow = _ref4.glow,
+    amber = _ref4.amber,
     style = _ref4.style;
   var baseStyle = {
     width: "100%",
@@ -1036,7 +1168,7 @@ function PrimaryButton(_ref4) {
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
     disabled: disabled,
-    className: "press" + (glow && !disabled ? " btn-glow-ring" : ""),
+    className: "press" + (glow && !disabled ? (amber ? " btn-glow-ring-amber" : " btn-glow-ring") : ""),
     style: _objectSpread(baseStyle, style || {})
   },
   /* Shimmer sweep — only rendered when glow is on */
@@ -1514,6 +1646,11 @@ function App() {
     _useState16 = _slicedToArray(_useState15, 2),
     learnedIds = _useState16[0],
     setLearnedIds = _useState16[1];
+  /* { cardId: "YYYY-MM-DD" } — last point-paying right swipe per word (Recharge) */
+  var _useState_learnedAt = useState({}),
+    _useState_learnedAt2 = _slicedToArray(_useState_learnedAt, 2),
+    learnedAt = _useState_learnedAt2[0],
+    setLearnedAt = _useState_learnedAt2[1];
   var _useState17 = useState([]),
     _useState18 = _slicedToArray(_useState17, 2),
     markedIds = _useState18[0],
@@ -1532,6 +1669,11 @@ function App() {
     _useState24 = _slicedToArray(_useState23, 2),
     history = _useState24[0],
     setHistory = _useState24[1];
+  /* Shared-streak history: __daily__ activity merged across ALL languages */
+  var _useState_gh = useState(function () { return buildHistory(); }),
+    _useState_gh2 = _slicedToArray(_useState_gh, 2),
+    globalHistory = _useState_gh2[0],
+    setGlobalHistory = _useState_gh2[1];
   var _useState25 = useState(function() {
       var sfxOn = true;
       try { sfxOn = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
@@ -1607,6 +1749,8 @@ function App() {
     cardsSubScreen = _useState38[0],
     setCardsSubScreen = _useState38[1];
   var _useState37b = useState(null), _useState38b = _slicedToArray(_useState37b, 2), openDeckType = _useState38b[0], setOpenDeckType = _useState38b[1];
+  /* bumped when the Decks tab is re-tapped — pops MyFlashcardsPage to its root */
+  var _useState_dreset = useState(0), _useState_dreset2 = _slicedToArray(_useState_dreset, 2), deckResetKey = _useState_dreset2[0], setDeckResetKey = _useState_dreset2[1];
   var _useState_customDecks = useState(function () {
     try { return JSON.parse(localStorage.getItem("memzy_custom_decks") || "[]"); } catch (e) { return []; }
   }), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
@@ -1617,8 +1761,8 @@ function App() {
     try { localStorage.setItem("memzy_tab", tab); } catch (e) {}
   }, [tab]);
   var dayStreak = useMemo(function () {
-    return calcStreak(history);
-  }, [history]);
+    return calcStreak(globalHistory);
+  }, [globalHistory]);
   var totalPoints = useMemo(function () {
     return history.reduce(function (a, d) {
       return a + d.points;
@@ -1639,6 +1783,26 @@ function App() {
     setToast(msg);
     if (toastTRef.current) clearTimeout(toastTRef.current);
     toastTRef.current = setTimeout(function () { setToast(""); }, 2400);
+  };
+
+  /* Load learned ids + per-word dates together; runs the one-time migration
+     if the __learnedat__ row doesn't exist yet for this user+language */
+  var applyLearnedState = function applyLearnedState(uid, lang) {
+    loadLearnedIds(uid, lang, function(ids) {
+      if (ids.length) setLearnedIds(ids);
+      loadLearnedAt(uid, lang, function(map) {
+        if (map === null) {
+          var m = migrateLearnedAt(ids || []);
+          if (RECHARGE_DEMO_DAYS > 0) m = ageLearnedAt(m, RECHARGE_DEMO_DAYS);
+          setLearnedAt(m);
+          if (ids && ids.length) saveLearnedAt(uid, lang, m);
+        } else {
+          var m2 = map || {};
+          if (RECHARGE_DEMO_DAYS > 0) m2 = ageLearnedAt(m2, RECHARGE_DEMO_DAYS);
+          setLearnedAt(m2);
+        }
+      });
+    });
   };
 
   /* Fetch total points for ALL languages from Supabase — for language switcher display */
@@ -1671,18 +1835,20 @@ function App() {
     setMyStats = _useState_myStats2[1];
   var syncProfileStats = function syncProfileStats(userId) {
     if (!userId) return;
-    supabase.from("progress").select("chapter, score").eq("user_id", userId)
+    supabase.from("progress").select("chapter, score, language").eq("user_id", userId)
       .then(function (res) {
         if (res.error || !res.data) return;
         var byDate = {};
         var seen = {}; /* a daily row existing = active day, even at score 0 */
         var total = 0;
+        var byLang = {}; /* per-language all-time totals for profile display */
         res.data.forEach(function (r) {
           if (!r.chapter || r.chapter.indexOf("__daily__") !== 0) return;
           var ds = r.chapter.slice(9);
           byDate[ds] = (byDate[ds] || 0) + (r.score || 0);
           seen[ds] = true;
           total += r.score || 0;
+          if (r.language) byLang[r.language] = (byLang[r.language] || 0) + (r.score || 0);
         });
         var key = function key(x) { return x.toISOString().slice(0, 10); };
         /* streak: consecutive active days ending today (or yesterday if today not yet played) */
@@ -1712,10 +1878,13 @@ function App() {
           prevDs = ds;
         });
         if (streak > bestStreak) bestStreak = streak;
-        setMyStats({ points: total, streak: streak, weekPts: week, activeDays: activeDays, bestDay: bestDay, bestStreak: bestStreak });
+        setMyStats({ points: total, streak: streak, weekPts: week, activeDays: activeDays, bestDay: bestDay, bestStreak: bestStreak, faPts: byLang.fa || 0, dePts: byLang.de || 0 });
         supabase.from("profiles").update(stats).eq("id", userId).then(function () {});
         /* best_streak sent separately so a missing column never breaks the main stats sync */
         supabase.from("profiles").update({ best_streak: bestStreak }).eq("id", userId).then(function () {});
+        /* per-language points sent separately for the same reason — requires
+           profiles columns points_fa / points_de (integer) */
+        supabase.from("profiles").update({ points_fa: byLang.fa || 0, points_de: byLang.de || 0 }).eq("id", userId).then(function () {});
       });
   };
   var sessionChapterRef = useRef(null); /* chapter id that the active session was started for */
@@ -1779,7 +1948,7 @@ function App() {
               farsi: w.farsi || "", farsiExample: w.farsi_example || "" };
           });
           WORDS.length = 0; WORDS.push.apply(WORDS, words);
-          setAllCards(words); setLearnedIds([]); setMarkedIds([]); setReviewIds([]); setQueue([]);
+          setAllCards(words); setLearnedIds([]); setLearnedAt({}); setMarkedIds([]); setReviewIds([]); setQueue([]);
           resolve();
         });
     });
@@ -1794,6 +1963,21 @@ function App() {
       return !learnedIds.includes(c.id);
     });
   }, [chapterCards, learnedIds]);
+  /* ── RECHARGE: which learned system words have expired (per chapter) ── */
+  var rechargeInfo = useMemo(function () {
+    var learnedSet = {};
+    learnedIds.forEach(function (id) { learnedSet[id] = true; });
+    var ids = [];
+    var byChapter = {};
+    allCards.forEach(function (c) {
+      if (c.custom || c.chapter === "custom") return;
+      if (learnedSet[c.id] && wordExpired(learnedAt[c.id])) {
+        ids.push(c.id);
+        byChapter[c.chapter] = (byChapter[c.chapter] || 0) + 1;
+      }
+    });
+    return { ids: ids, byChapter: byChapter };
+  }, [allCards, learnedIds, learnedAt]);
   useEffect(function () {
     if (screen !== "deck") return;
     /* Only auto-advance when the session that was started for this chapter has fully drained */
@@ -1857,6 +2041,8 @@ function App() {
   /* Snapshot of chapter/level progress taken at session start, used by the
      end screens to detect "chapter completed" and "level crossed 80%" */
   var sessionSnapRef = useRef(null);
+  /* "chapter" | "rewind" — rewind-deck sessions add a completion end screen */
+  var sessionKindRef = useRef("chapter");
   var _useState_exitConfirm = useState(false), _useState_exitConfirm2 = _slicedToArray(_useState_exitConfirm, 2), showExitConfirm = _useState_exitConfirm2[0], setShowExitConfirm = _useState_exitConfirm2[1];
   var _useState_sessTime = useState(0), _useState_sessTime2 = _slicedToArray(_useState_sessTime, 2), sessionSeconds = _useState_sessTime2[0], setSessionSeconds = _useState_sessTime2[1];
   var _useState_isFirstToday = useState(false), _useState_isFirstToday2 = _slicedToArray(_useState_isFirstToday, 2), isFirstSessionToday = _useState_isFirstToday2[0], setIsFirstSessionToday = _useState_isFirstToday2[1];
@@ -1873,6 +2059,7 @@ function App() {
     sessionStartRef.current = Date.now();
     setSessionSeconds(0);
     sessionChapterRef.current = curChapter; /* remember which chapter this session belongs to */
+    sessionKindRef.current = "chapter";
     /* Progress snapshot for end-screen milestones */
     (function () {
       var lvCards = allCards.filter(function (c) { return c.level === curLevel; });
@@ -1891,7 +2078,14 @@ function App() {
     setScreen("deck");
   };
   var startChapter = function startChapter() {
-    var pool = deckSettings.onlyUnknown ? chapterRemaining : chapterCards;
+    /* "Only unknown" includes everything that still pays: unlearned words
+       PLUS faded (expired) ones \u2014 so a cracked chapter's session count
+       matches its "+N pts" pill exactly */
+    var pool = deckSettings.onlyUnknown
+      ? chapterCards.filter(function (c) {
+          return !learnedIds.includes(c.id) || wordExpired(learnedAt[c.id]);
+        })
+      : chapterCards;
     if (!pool.length) pool = chapterCards;
     if (!pool.length) {
       /* Chapter has no cards for this language — give feedback instead of silently doing nothing */
@@ -1909,6 +2103,20 @@ function App() {
     return startSession(allCards.filter(function (c) {
       return markedIds.includes(c.id);
     }));
+  };
+  /* Start a Recharge session: every expired word across all chapters and
+     levels, oldest timestamps first, capped at 30 cards per session.
+     Normal session flow — expired cards pay and their timers reset. */
+  var startRecharge = function startRecharge() {
+    var idSet = {};
+    rechargeInfo.ids.forEach(function (id) { idSet[id] = true; });
+    var pool = allCards.filter(function (c) { return idSet[c.id]; });
+    if (!pool.length) { showToast("All your words are fresh!"); return; }
+    pool.sort(function (a, b) {
+      return String(laDate(learnedAt[a.id]) || "").localeCompare(String(laDate(learnedAt[b.id]) || ""));
+    });
+    startSession(pool.slice(0, 30));
+    sessionKindRef.current = "rewind";
   };
   /* Start level-unlock exam: 30 random cards from previous level */
   var startLevelExam = function startLevelExam(lockedLevel) {
@@ -1936,6 +2144,11 @@ function App() {
     var currentUser = userRef.current;
     var currentLangs = selectedLangsRef.current;
     setHistory(function(h) {
+      var c = _toConsumableArray(h);
+      c[c.length-1] = _objectSpread(_objectSpread({}, c[c.length-1]), {}, { points: c[c.length-1].points + pts, active: true });
+      return c;
+    });
+    setGlobalHistory(function(h) {
       var c = _toConsumableArray(h);
       c[c.length-1] = _objectSpread(_objectSpread({}, c[c.length-1]), {}, { points: c[c.length-1].points + pts, active: true });
       return c;
@@ -2001,9 +2214,26 @@ function App() {
         if (examMode) {
           examCorrectRef.current += 1;
         } else {
-          /* 1 point per word, ONCE ever, system cards only (custom never pays) */
-          if (top.chapter !== "custom" && !learnedIds.includes(top.id)) {
+          /* 1 point per word, system cards only (custom never pays). Pays when
+             never learned OR the word's last paid review is older than
+             its current ladder interval — at most once per interval. */
+          if (top.chapter !== "custom" && (!learnedIds.includes(top.id) || wordExpired(learnedAt[top.id]))) {
             roundPointsRef.current += 1;
+          }
+          /* EVERY right swipe on a system card restarts its interval timer —
+             reviewing a fresh word pays nothing but resets the clock. A PAID
+             rewind also climbs the ladder: the next review moves further out
+             (7 \u2192 16 \u2192 35 \u2192 60 days). */
+          if (top.chapter !== "custom") {
+            setLearnedAt(function (m) {
+              var prev = m[top.id];
+              var climbed = learnedIds.includes(top.id) && wordExpired(prev);
+              var next = laMake(todayISO(), laStage(prev) + (climbed ? 1 : 0));
+              if (m[top.id] === next) return m;
+              var n = _objectSpread({}, m);
+              n[top.id] = next;
+              return n;
+            });
           }
           setLearnedIds(function (ids) {
             return ids.includes(top.id) ? ids : [].concat(_toConsumableArray(ids), [top.id]);
@@ -2111,6 +2341,12 @@ function App() {
         return x !== id;
       });
     });
+    setLearnedAt(function (m) {
+      if (!(id in m)) return m;
+      var n = _objectSpread({}, m);
+      delete n[id];
+      return n;
+    });
   };
   /* Session restore on page load */
   useEffect(function() {
@@ -2130,11 +2366,12 @@ function App() {
           var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
+          loadGlobalProgressFromDB(u.id, setGlobalHistory);
           fetchAllLangPoints(u.id);
           if ((p && p.last_language) || localStorage.getItem("memzy_lang")) {
             /* Returning user with language set — go to app */
             initData([lang], "A1").then(function() {
-              loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
+              applyLearnedState(u.id, lang);
               loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
               loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
               if (p && p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
@@ -2283,6 +2520,14 @@ function App() {
     }
   }, [learnedIds]);
 
+  /* Auto-save learnedAt (Recharge timestamps) — dual-written alongside
+     __learnedids__ so everything that reads learned status keeps working */
+  useEffect(function() {
+    if (userRef.current && userRef.current.id && Object.keys(learnedAt).length > 0) {
+      saveLearnedAt(userRef.current.id, (selectedLangsRef.current[0] || "de"), learnedAt);
+    }
+  }, [learnedAt]);
+
   /* Auto-save markedIds */
   useEffect(function() {
     if (userRef.current && userRef.current.id) {
@@ -2328,8 +2573,8 @@ function App() {
 
   var signOut = function signOut() {
     supabase.auth.signOut();
-    setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]);
-    setMarkedIds([]); setReviewIds([]); setQueue([]); setHistory(buildHistory());
+    setUser(null); setSelectedLangs([]); setAllCards([]); setLearnedIds([]); setLearnedAt({});
+    setMarkedIds([]); setReviewIds([]); setQueue([]); setHistory(buildHistory()); setGlobalHistory(buildHistory());
     setFriends([]); setReceivedHearts([]); setHeartNotifCount(0); setHasSentTo({}); setSentAtTo({});
     setFollowers([]); setFollowNotifs([]); setFriendsLoaded(false);
     lastSeenHeartsAtRef.current = null;
@@ -2414,9 +2659,10 @@ function App() {
           var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
+          loadGlobalProgressFromDB(u.id, setGlobalHistory);
           fetchAllLangPoints(u.id);
           initData([lang], "A1").then(function() {
-            loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
+            applyLearnedState(u.id, lang);
             loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
             loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
             if (p && p.unlocked_levels) { try { var ul = JSON.parse(p.unlocked_levels); if (ul.length) setUnlockedLevels(ul); } catch(e){} }
@@ -2774,6 +3020,7 @@ function App() {
     !sessionDone && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: "18px 18px 4px",
+        paddingTop: "calc(18px + env(safe-area-inset-top))",
         display: "flex",
         alignItems: "center",
         gap: 10,
@@ -2814,7 +3061,11 @@ function App() {
       style: {
         width: (examMode
           ? (examMode.total > 0 ? (examMode.total - queue.length) / examMode.total * 100 : 0)
-          : (chapterCards.length ? chDone / chapterCards.length * 100 : 0)) + "%",
+          : (function () {
+              /* progress of THIS round, so the bar always matches "X left" */
+              var t = queue.length + historyStack.length;
+              return t > 0 ? historyStack.length / t * 100 : 0;
+            })()) + "%",
         height: "100%",
         background: examMode ? "#E8A030" : C.primary,
         borderRadius: 8,
@@ -2914,6 +3165,7 @@ function App() {
       name: user && user.name,
       level: curLevel,
       chapterTitle: chap === null || chap === void 0 ? void 0 : chap.title,
+      rewindCompleted: sessionKindRef.current === "rewind" && rechargeInfo.ids.length === 0,
       onContinue: exitToApp,
       userAvatar: user && user.avatar,
       totalCards: (function(){ var pool = queue.concat(historyStack); return pool.length || historyStack.length; }()),
@@ -3143,7 +3395,7 @@ function App() {
         /* Rebuild the queue immediately if a session is running (never in exams) */
         if (screen === "deck" && !examMode && queue.length >= 0 && sessionChapterRef.current) {
           var seenIds = historyStack.map(function(c) { return c.id; });
-          var fullPool = v ? chapterRemaining : chapterCards;
+          var fullPool = v ? chapterCards.filter(function (c) { return !learnedIds.includes(c.id) || wordExpired(learnedAt[c.id]); }) : chapterCards;
           var newQueue = shuffle(fullPool.filter(function(c) { return !seenIds.includes(c.id); }));
           setQueue(newQueue);
         }
@@ -3179,6 +3431,12 @@ function App() {
             return x !== id;
           });
         });
+        /* Keep the Recharge timestamp in sync (manual toggles never pay) */
+        setLearnedAt(function (m) {
+          var n = _objectSpread({}, m);
+          if (known) n[id] = laMake(todayISO(), laStage(m[id])); else delete n[id];
+          return n;
+        });
         setReviewIds(function (ids) {
           return known ? ids.filter(function (x) {
             return x !== id;
@@ -3193,6 +3451,7 @@ function App() {
       tab: tab,
       heartNotifCount: heartNotifCount,
       setTab: function setTab(t) {
+        if (t === "mywords" && tab === "mywords") { setOpenDeckType(null); setDeckResetKey(function (k) { return k + 1; }); }
         _setTab(t);
         setCardsSubScreen(null);
       }
@@ -3218,6 +3477,7 @@ function App() {
     reviewIds: reviewIds,
     dayStreak: dayStreak,
     history: history,
+    globalHistory: globalHistory,
     totalPoints: totalPoints,
     curLevel: curLevel,
     curChapter: curChapter,
@@ -3246,7 +3506,7 @@ function App() {
       if (u && u.id) loadProgressFromDB(u.id, lang, setHistory);
       initData([lang], curLevel).then(function() {
         if (u && u.id) {
-          loadLearnedIds(u.id, lang, function(ids) { if (ids.length) setLearnedIds(ids); });
+          applyLearnedState(u.id, lang);
           loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
           loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
           loadPosition(u.id, lang, function(pos) { setCurLevel(pos.lv); setCurChapter(pos.ch); });
@@ -3259,8 +3519,15 @@ function App() {
       return _setTab("profile");
     },
     scrollRef: scrollRef,
+    expiredByChapter: rechargeInfo.byChapter,
+    rechargeCount: rechargeInfo.ids.length,
+    onStartRecharge: startRecharge,
     onOpenDeck: function(type) { setOpenDeckType(type); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
+    rechargeIds: rechargeInfo.ids,
+    expiredByChapter: rechargeInfo.byChapter,
+    onStartRecharge: startRecharge,
+    deckResetKey: deckResetKey,
     initialDeckScreen: openDeckType ? { type: openDeckType } : null,
     onInitDeckScreenConsumed: function() { setOpenDeckType(null); },
     onBackToHome: function() { setOpenDeckType(null); _setTab("dashboard"); },
@@ -3270,6 +3537,7 @@ function App() {
       setCustomDecks(function(d) { return [].concat(_toConsumableArray(d), [_objectSpread(_objectSpread({}, deck), {}, { colorIdx: d.length % 8, lang: lang })]); });
     },
     onDeleteDeck: function(id) { setCustomDecks(function(d) { return d.filter(function(dk) { return dk.id !== id; }); }); },
+    onRenameDeck: function(id, name) { setCustomDecks(function(d) { return d.map(function(dk) { return dk.id === id ? _objectSpread(_objectSpread({}, dk), {}, { name: name }) : dk; }); }); },
     allCards: allCards,
     learnedIds: learnedIds,
     markedIds: markedIds,
@@ -3281,6 +3549,12 @@ function App() {
         return known ? ids.includes(id) ? ids : [].concat(_toConsumableArray(ids), [id]) : ids.filter(function (x) {
           return x !== id;
         });
+      });
+      /* Keep the Recharge timestamp in sync (manual toggles never pay) */
+      setLearnedAt(function (m) {
+        var n = _objectSpread({}, m);
+        if (known) n[id] = laMake(todayISO(), laStage(m[id])); else delete n[id];
+        return n;
       });
       setReviewIds(function (ids) {
         return known ? ids.filter(function (x) {
@@ -3323,6 +3597,8 @@ function App() {
     dayStreak: dayStreak,
     totalPoints: totalPoints,
     allPoints: (myStats && myStats.points) || Object.keys(allLangPoints).reduce(function (a, k) { return a + (allLangPoints[k] || 0); }, 0) || totalPoints,
+    allLangPoints: allLangPoints,
+    weekPoints: (myStats && myStats.weekPts) || 0,
     history: history,
     unlockedLevels: unlockedLevels,
     onLangsChanged: (/*#__PURE__*/function () {
@@ -3394,6 +3670,7 @@ function App() {
     tab: tab,
     heartNotifCount: heartNotifCount,
     setTab: function setTab(t) {
+      if (t === "mywords" && tab === "mywords") { setOpenDeckType(null); setDeckResetKey(function (k) { return k + 1; }); }
       _setTab(t);
       setCardsSubScreen(null);
     }
@@ -3482,6 +3759,7 @@ function Welcome(_ref15) {
       display: "flex",
       flexDirection: "column",
       padding: "56px 26px 0",
+      paddingTop: "calc(40px + env(safe-area-inset-top))",
       paddingBottom: "calc(28px + env(safe-area-inset-bottom))",
       overflowY: "auto",
       minHeight: 0
@@ -3619,6 +3897,11 @@ function AuthScreen(_ref16) {
     _useState_msg2 = _slicedToArray(_useState_msg, 2),
     authMsg = _useState_msg2[0],
     setAuthMsg = _useState_msg2[1];
+  /* Show/hide password toggle */
+  var _useState_showPass = useState(false),
+    _useState_showPass2 = _slicedToArray(_useState_showPass, 2),
+    showPass = _useState_showPass2[0],
+    setShowPass = _useState_showPass2[1];
   var valid = isReg ? name.trim() && email.includes("@") && pass.length >= 6 : email.includes("@") && pass.length >= 1;
   var submit = function submit() {
     if (!valid || loading) return;
@@ -3740,8 +4023,10 @@ function AuthScreen(_ref16) {
     style: _objectSpread(_objectSpread({}, lbl), {}, {
       marginTop: 14
     })
-  }, "Password"), /*#__PURE__*/React.createElement("input", {
-    type: "password",
+  }, "Password"), /*#__PURE__*/React.createElement("div", {
+    style: { position: "relative" }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: showPass ? "text" : "password",
     value: pass,
     onChange: function onChange(e) {
       return setPass(e.target.value);
@@ -3751,8 +4036,29 @@ function AuthScreen(_ref16) {
     onKeyDown: function onKeyDown(e) {
       return e.key === "Enter" && submit();
     },
-    style: inp
-  }), /*#__PURE__*/React.createElement("div", {
+    style: _objectSpread(_objectSpread({}, inp), {}, { paddingRight: 46 })
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: function onClick() { setShowPass(function (v) { return !v; }); },
+    "aria-label": showPass ? "Hide password" : "Show password",
+    tabIndex: -1,
+    style: { position: "absolute", right: 6, top: "50%", transform: "translateY(calc(-50% + 3px))", width: 36, height: 36, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: showPass ? "eye-slash" : "eye",
+    size: 15,
+    color: showPass ? C.primary : C.sub
+  }))),
+  /* Password length hint — visible from the start when registering */
+  isReg && /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 6, marginTop: 7 }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: pass.length >= 6 ? "circle-check" : "circle-info",
+    size: 12,
+    color: pass.length >= 6 ? C.green : C.sub
+  }), /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 12, fontWeight: 600, color: pass.length >= 6 ? C.green : C.sub }
+  }, pass.length >= 6 ? "Password looks good" : "At least 6 characters")),
+  /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 16
     }
@@ -3844,7 +4150,7 @@ function TabBar(_ref19) {
     heartNotifCount = _ref19.heartNotifCount;
   var items = [{ k: "dashboard", icon: "house", label: "Home" },
     { k: "mywords", icon: "layer-group", label: "Decks" },
-    { k: "friends", icon: "users", label: "Friends" },
+    { k: "friends", icon: "users", label: "Community" },
     { k: "profile", icon: "circle-user", label: "Profile" }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4662,41 +4968,36 @@ function PointsDialog(_ref25) {
           earned && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 800, color: C.ink, fontSize: 13 } }, earned.name))
       )
     ),
-    /* Next reward progress (kept) */
-    next ? /*#__PURE__*/React.createElement("div", {
-      style: { background: C.primarySoft, border: "1px solid " + C.primary + "26", borderRadius: 16, padding: "12px 14px", marginBottom: 16 }
-    },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-          /*#__PURE__*/React.createElement(Icon, { name: next.icon, size: 13, color: C.primary }),
-          /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 800, color: C.ink } }, next.name)
-        ),
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, fontWeight: 800, color: C.primary } }, (next.at - points) + " pts to go")
-      ),
-      /*#__PURE__*/React.createElement("div", { style: { height: 8, background: C.surface, borderRadius: 6, overflow: "hidden" } },
-        /*#__PURE__*/React.createElement("div", { style: { width: pct + "%", height: "100%", borderRadius: 6, background: "linear-gradient(90deg,#6A5BFF,#A06BFF)", transition: "width .4s ease" } })
-      )
-    ) : /*#__PURE__*/React.createElement("div", {
-      style: { textAlign: "center", color: C.green, fontWeight: 800, fontSize: 13.5, marginBottom: 16 }
-    }, "You've unlocked every reward! \uD83C\uDF89"),
-    /* All rewards: light list rows, no heavy cards */
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 } }, "Badges"),
+    points >= REWARDS[REWARDS.length - 1].at && /*#__PURE__*/React.createElement("div", {
+      style: { textAlign: "center", color: C.green, fontWeight: 800, fontSize: 13.5, marginBottom: 14 }
+    }, "You've reached every milestone! \uD83C\uDF89"),
+    /* Milestone table — each row carries its own progress bar */
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 } }, "Milestones"),
     /*#__PURE__*/React.createElement("div", null,
       REWARDS.map(function (r, ri) {
         var got = points >= r.at;
         var isNext = next && r.at === next.at;
+        var rowPct = got ? 100 : Math.min(100, Math.round(points / r.at * 100));
         return /*#__PURE__*/React.createElement("div", {
           key: r.at,
-          style: { display: "flex", alignItems: "center", gap: 12, padding: "9px 2px", borderBottom: ri === REWARDS.length - 1 ? "none" : "1px solid " + C.line }
+          style: { display: "flex", alignItems: "center", gap: 12, padding: "10px 2px", borderBottom: ri === REWARDS.length - 1 ? "none" : "1px solid " + C.line }
         },
           /*#__PURE__*/React.createElement("div", {
-            style: { width: 30, height: 30, borderRadius: 9, background: got ? C.primarySoft : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
-          }, /*#__PURE__*/React.createElement(Icon, { name: r.icon, size: 13, color: got ? C.primary : "#B6B2CE" })),
-          /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13.5, fontWeight: 700, color: got ? C.ink : C.sub } }, r.name),
-          got
-            ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", gap: 4 } },
-                /*#__PURE__*/React.createElement(Icon, { name: "check", size: 10, color: C.primary }), "Unlocked")
-            : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: "#B6B2CE" } }, r.at + " pts")
+            style: { width: 32, height: 32, borderRadius: 10, background: got ? C.primary : isNext ? C.primarySoft : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: got ? "0 3px 8px " + C.primary + "44" : "none" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: r.icon, size: 13, color: got ? "#fff" : isNext ? C.primary : "#B6B2CE" })),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 } },
+              /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: got || isNext ? 800 : 700, color: got || isNext ? C.ink : C.sub } }, r.name),
+              got
+                ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: C.primary, display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 } },
+                    /*#__PURE__*/React.createElement(Icon, { name: "check", size: 9, color: C.primary }), "Reached")
+                : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: isNext ? C.primary : "#B6B2CE", flexShrink: 0 } },
+                    isNext ? points + " / " + r.at + " pts" : r.at + " pts")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { height: 5, background: got ? C.primary + "26" : C.line, borderRadius: 4, overflow: "hidden" } },
+              /*#__PURE__*/React.createElement("div", { style: { width: rowPct + "%", height: "100%", borderRadius: 4, background: got ? C.primary : isNext ? "linear-gradient(90deg,#6A5BFF,#A06BFF)" : "#C4BFF0", animation: "growBar .7s cubic-bezier(.2,.8,.2,1) " + (0.15 + ri * 0.06).toFixed(2) + "s both" } })
+            )
+          )
         );
       })
     )
@@ -4827,6 +5128,7 @@ function Dashboard(_ref27) {
     reviewIds = _ref27.reviewIds,
     dayStreak = _ref27.dayStreak,
     history = _ref27.history,
+    globalHistory = _ref27.globalHistory || _ref27.history,
     totalPoints = _ref27.totalPoints,
     curLevel = _ref27.curLevel,
     curChapter = _ref27.curChapter,
@@ -4842,6 +5144,9 @@ function Dashboard(_ref27) {
     onSwitchLang = _ref27.onSwitchLang,
     onOpenProfile = _ref27.onOpenProfile,
     onOpenDeck = _ref27.onOpenDeck,
+    expiredByChapter = _ref27.expiredByChapter || {},
+    rechargeCount = _ref27.rechargeCount || 0,
+    onStartRecharge = _ref27.onStartRecharge,
     scrollRef = _ref27.scrollRef;
   var chap = ((_CHAPTERS$curLevel2 = CHAPTERS[curLevel]) === null || _CHAPTERS$curLevel2 === void 0 ? void 0 : _CHAPTERS$curLevel2.find(function (c) {
     return c.id === curChapter;
@@ -4853,6 +5158,12 @@ function Dashboard(_ref27) {
     return learnedIds.includes(c.id);
   }).length;
   var pct = chapCards.length ? Math.round(done / chapCards.length * 100) : 0;
+  /* Is the currently selected chapter cracked? (drives the amber Rewind button) */
+  var curExpired = (expiredByChapter && expiredByChapter[curChapter]) || 0;
+  var curEarn = curExpired + (chapCards.length - done);
+  var curCracked = chapCards.length > 0 &&
+    (done / chapCards.length) >= CRACK_LEARNED_PCT &&
+    (curExpired / chapCards.length) >= CRACK_EXPIRED_PCT;
   var pts = useCountUp(totalPoints, "pts");
   var streak = useCountUp(dayStreak, "streak");
   var _useState73 = useState(null),
@@ -4861,8 +5172,28 @@ function Dashboard(_ref27) {
     setDlg = _useState74[1];
   var _useState_langSwitcher = useState(false), _useState_langSwitcher2 = _slicedToArray(_useState_langSwitcher, 2),
     showLangSwitcher = _useState_langSwitcher2[0], setShowLangSwitcher = _useState_langSwitcher2[1];
-  /* Has today's streak been earned yet? (last history entry is today) */
-  var todayDone = isActiveDay(history && history.length ? history[history.length - 1] : null);
+  /* "Chapter has faded" banner — navigational, dismissible per day so it
+     gently returns while faded chapters remain */
+  var rechargeIntroKey = "memzy_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString();
+  var _useState_rIntro = useState(function () {
+    try { return localStorage.getItem("memzy_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString()) === "1"; } catch (e) { return false; }
+  }), _useState_rIntro2 = _slicedToArray(_useState_rIntro, 2),
+    rechargeIntroSeen = _useState_rIntro2[0], setRechargeIntroSeen = _useState_rIntro2[1];
+  var dismissRechargeIntro = function dismissRechargeIntro() {
+    setRechargeIntroSeen(true);
+    try { localStorage.setItem(rechargeIntroKey, "1"); } catch (e) {}
+  };
+  /* When the selection jumps (e.g. via the faded banner), bring the selected
+     chapter into view; block:"nearest" makes it a no-op when already visible */
+  var curChapterRowRef = useRef(null);
+  useEffect(function () {
+    var el = curChapterRowRef.current;
+    if (el && el.scrollIntoView) {
+      try { el.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
+    }
+  }, [curChapter, curLevel]);
+  /* Has today's streak been earned yet? (any-language activity counts) */
+  var todayDone = isActiveDay(globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null);
   /* Streak-rescue banner: ticking clock + per-user per-day dismissal */
   var _useState_bNow = useState(Date.now()), _useState_bNow2 = _slicedToArray(_useState_bNow, 2),
     bannerNow = _useState_bNow2[0], setBannerNow = _useState_bNow2[1];
@@ -4928,6 +5259,7 @@ function Dashboard(_ref27) {
       zIndex: 50,
       margin: "-20px -20px -4px",
       padding: "16px 20px 10px",
+      paddingTop: "calc(16px + env(safe-area-inset-top))",
       background: "rgba(245,244,251,0.88)",
       backdropFilter: "blur(14px)",
       WebkitBackdropFilter: "blur(14px)"
@@ -5116,7 +5448,57 @@ function Dashboard(_ref27) {
       }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 11, color: "#B45309" }))
     ),
     document.body
-  ), function () {
+  ),
+  /* Faded-chapter banner — finds the FIRST cracked chapter across ALL
+     unlocked levels (not just the one on screen). Tapping it selects that
+     level + chapter on the dashboard; the user then just hits Continue.
+     Dismissible per day. */
+  (function () {
+    if (rechargeIntroSeen) return null;
+    var firstCracked = null;
+    LEVELS_ORDER.some(function (lv) {
+      if (unlockedLevels && !unlockedLevels.includes(lv)) return false;
+      return (CHAPTERS[lv] || []).some(function (ch) {
+        var cc = allCards.filter(function (c) { return c.chapter === ch.id; });
+        if (!cc.length) return false;
+        var dn = cc.filter(function (c) { return learnedIds.includes(c.id); }).length;
+        var ex = expiredByChapter[ch.id] || 0;
+        if ((dn / cc.length) >= CRACK_LEARNED_PCT && (ex / cc.length) >= CRACK_EXPIRED_PCT) {
+          firstCracked = { lv: lv, ch: ch, earn: ex + (cc.length - dn) };
+          return true;
+        }
+        return false;
+      });
+    });
+    if (!firstCracked) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", gap: 12, background: "#FFFBF2", border: "1px solid " + C.amber + "44", borderRadius: 18, padding: "13px 14px", fontFamily: FONT, animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both" }
+    },
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() {
+          /* first tap selects the faded chapter; second tap starts it */
+          if (curLevel === firstCracked.lv && curChapter === firstCracked.ch.id) { onStart(); return; }
+          onLevelChapterSelect(firstCracked.lv, firstCracked.ch.id);
+        },
+        className: "press",
+        style: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "left", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 36, borderRadius: 11, background: C.amber + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 15, color: "#B45309" })
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, fontWeight: 800, color: "#B45309", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+            "Time to rewind \u201C" + firstCracked.ch.title + "\u201D"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 3, lineHeight: 1.45 } },
+            LEVEL_LABEL[firstCracked.lv] + " \u00b7 review it to earn +" + firstCracked.earn + " pts again")
+        )
+      ),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: dismissRechargeIntro, className: "press", "aria-label": "Dismiss",
+        style: { width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(180,83,9,0.10)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 10, color: "#B45309" }))
+    );
+  })(), function () {
     var lvc2 = allCards.filter(function (c) {
       return c.level === curLevel;
     });
@@ -5276,21 +5658,40 @@ function Dashboard(_ref27) {
       }).length;
       var chPct = chCards.length ? Math.round(chDone / chCards.length * 100) : 0;
       var icon = CHAPTER_ICONS[ch.id] || "book";
+      /* CRACKED: chapter mostly learned AND at least half of it has expired.
+         Cracking ONLY changes point-earnability + this visual — progress stays
+         100%, levels stay unlocked, exams stay passed. */
+      var chExpired = expiredByChapter[ch.id] || 0;
+      /* Earnable = faded words + never-learned words: exactly what a session
+         of this chapter pays, and exactly how many cards it will contain */
+      var chEarn = chExpired + (chCards.length - chDone);
+      var cracked = chCards.length > 0 &&
+        (chDone / chCards.length) >= CRACK_LEARNED_PCT &&
+        (chExpired / chCards.length) >= CRACK_EXPIRED_PCT;
+      /* Cracked styling: quiet when unselected (icon dot + small "+N pts"),
+         full amber treatment + pill only on the selected chapter — so amber
+         is a focused invitation tied to the Rewind CTA, not wallpaper. */
+      var amberRow = cracked && isCur;
+      var quietHint = cracked && !isCur;
       return /*#__PURE__*/React.createElement("button", {
         key: ch.id,
         onClick: function onClick() {
-          return onLevelChapterSelect(curLevel, ch.id);
+          /* second tap on the already-selected chapter starts it */
+          if (isCur) { onStart(); return; }
+          onLevelChapterSelect(curLevel, ch.id);
         },
         className: "press",
+        ref: isCur ? curChapterRowRef : null,
         style: {
+          position: "relative",
           display: "flex",
           alignItems: "center",
           gap: 12,
           padding: "10px 12px",
           borderRadius: 16,
-          border: "1.5px solid " + (isCur ? C.primary : C.line),
-          background: isCur ? C.primarySoft : C.surface,
-          boxShadow: isCur ? "0 2px 12px " + C.primary + "22" : "none",
+          border: "1.5px solid " + (amberRow ? (isCur ? C.amber : C.amber + "66") : isCur ? C.primary : C.line),
+          background: amberRow ? (isCur ? "#FFEFCB" : "#FFFDF6") : isCur ? C.primarySoft : C.surface,
+          boxShadow: amberRow && isCur ? "0 2px 12px " + C.amber + "44" : isCur ? "0 2px 12px " + C.primary + "22" : amberRow ? "0 2px 10px " + C.amber + "1F" : "none",
           cursor: "pointer",
           textAlign: "left",
           fontFamily: FONT,
@@ -5301,17 +5702,20 @@ function Dashboard(_ref27) {
           width: 34,
           height: 34,
           borderRadius: 10,
-          background: isCur ? C.primary : C.line,
+          background: amberRow ? (isCur ? C.amber : C.amber + "22") : isCur ? C.primary : C.line,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          flexShrink: 0
+          flexShrink: 0,
+          position: "relative"
         }
       }, /*#__PURE__*/React.createElement(Icon, {
         name: icon,
         size: 15,
-        color: isCur ? "#fff" : C.sub
-      })), /*#__PURE__*/React.createElement("div", {
+        color: amberRow ? (isCur ? "#fff" : "#B45309") : isCur ? "#fff" : C.sub
+      }), cracked && /*#__PURE__*/React.createElement("div", {
+        style: { position: "absolute", top: -5, right: -5, width: 16, height: 16, borderRadius: "50%", background: amberRow ? (isCur ? "#B45309" : C.amber) : C.amber, border: "2px solid " + (amberRow ? (isCur ? "#FFEFCB" : "#FFFDF6") : isCur ? C.primarySoft : C.surface), display: "flex", alignItems: "center", justifyContent: "center" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 8, color: "#fff" }))), /*#__PURE__*/React.createElement("div", {
         style: {
           flex: 1,
           minWidth: 0
@@ -5320,13 +5724,18 @@ function Dashboard(_ref27) {
         style: {
           fontSize: 13.5,
           fontWeight: isCur ? 800 : 600,
-          color: isCur ? C.primary : C.ink,
-          marginBottom: 6
+          color: amberRow ? "#B45309" : isCur ? C.primary : C.ink,
+          marginBottom: 6,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
         }
-      }, ch.title), /*#__PURE__*/React.createElement("div", {
+      }, ch.title, isCur && /*#__PURE__*/React.createElement("span", {
+        style: { fontWeight: 700, fontSize: 11.5, color: amberRow ? C.amber : C.primary + "AA", marginLeft: 6 }
+      }, "\u00b7 " + chPct + "%")), /*#__PURE__*/React.createElement("div", {
         style: {
           height: 4,
-          background: isCur ? "rgba(90,79,227,0.18)" : C.line,
+          background: amberRow ? C.amber + "30" : isCur ? "rgba(90,79,227,0.18)" : C.line,
           borderRadius: 3,
           overflow: "hidden"
         }
@@ -5335,17 +5744,44 @@ function Dashboard(_ref27) {
           width: chPct + "%",
           height: "100%",
           borderRadius: 3,
-          background: isCur ? C.primary : "#C4BFF0",
+          background: amberRow ? C.amber : isCur ? C.primary : "#C4BFF0",
           transition: "width .8s cubic-bezier(.2,.8,.2,1)"
         }
-      }))), /*#__PURE__*/React.createElement("span", {
+      }))),
+      /* right slot: percentage as before — swapped for a chevron circle on
+         the selected chapter (tap again to start) */
+      isCur ? /*#__PURE__*/React.createElement("span", {
+        style: { width: 26, height: 26, borderRadius: "50%", background: amberRow ? C.amber : C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 8px " + (amberRow ? C.amber : C.primary) + "55" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 11, color: "#fff" })) : /*#__PURE__*/React.createElement("span", {
+        style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }
+      },
+        /*#__PURE__*/React.createElement("span", {
+          style: { fontSize: 12, fontWeight: 800, color: amberRow ? "#B45309" : C.sub }
+        }, chPct, "%"),
+        quietHint && /*#__PURE__*/React.createElement("span", {
+          style: { fontSize: 9, fontWeight: 800, color: C.amber, marginTop: 1, whiteSpace: "nowrap" }
+        }, "+" + chEarn + " pts")
+      ),
+      /* floating Rewind pill on the top-right border — bar stays full-length */
+      amberRow && /*#__PURE__*/React.createElement("span", {
         style: {
-          fontSize: 12,
+          position: "absolute",
+          top: -5,
+          right: 10,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 9.5,
           fontWeight: 800,
-          color: isCur ? C.primary : C.sub,
-          flexShrink: 0
+          color: isCur ? "#fff" : "#B45309",
+          background: isCur ? C.amber : "#FFF3DD",
+          border: isCur ? "1px solid " + C.amber : "1px solid " + C.amber + "66",
+          borderRadius: 8,
+          padding: "2px 7px",
+          whiteSpace: "nowrap",
+          zIndex: 1
         }
-      }, chPct, "%"));
+      }, /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 7, color: isCur ? "#fff" : "#B45309" }), "Rewind \u00b7 +" + chEarn + " pts"));
     })),
     /* CRITICAL: Lock overlay — single blurred box covering all chapters */
     isLevelLocked && /*#__PURE__*/React.createElement("div", {
@@ -5414,10 +5850,55 @@ function Dashboard(_ref27) {
         }, "Take an exam to unlock")
       : /*#__PURE__*/React.createElement(PrimaryButton, {
           onClick: onStart,
-          glow: true
-        }, pct === 0 ? "Start" : "Continue")
+          glow: true,
+          amber: curCracked,
+          style: curCracked ? { background: C.amber } : undefined
+        }, curCracked ? "Rewind  \u00b7  +" + curEarn + " pts" : pct === 0 ? "Start" : "Continue")
     )));
-  }(), /*#__PURE__*/React.createElement("div", {
+  }(),
+  /* Recharge deck — full-width stacked card, same family as Review/Bookmarked
+     below. Only appears once words have faded (30+ days); tapping starts a
+     Recharge session immediately */
+  (function() {
+    var fresh = rechargeCount === 0;
+    var borderCol = C.amber + "55";
+    return /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { if (onOpenDeck) onOpenDeck("recharge"); },
+      className: "press",
+      style: { width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, padding: 0, textAlign: "left" }
+    }, /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 74 } },
+      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-2deg)", width: "94%", height: 68, borderRadius: 14, background: "#FFF3DD", border: "1.5px solid " + borderCol, opacity: 0.45 } }),
+      /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-0.8deg)", width: "97%", height: 68, borderRadius: 14, background: "#FFF3DD", border: "1.5px solid " + borderCol, opacity: 0.7 } }),
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 68, borderRadius: 15, background: "linear-gradient(135deg,#FFF8EA,#FFF3DD)", border: "1.5px solid " + borderCol, boxShadow: "0 3px 14px " + C.amber + "26", padding: "12px 13px 10px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8 }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 } },
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 9, background: C.amber + "26", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 13, color: "#B45309" })
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#B45309", letterSpacing: -0.2, lineHeight: 1.15 } }, "Rewind"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#B45309" + "99", fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                fresh
+                  ? "All words fresh \u2014 they return when due"
+                  : rechargeCount + " word" + (rechargeCount === 1 ? " has" : "s have") + " faded \u2014 due for review")
+            )
+          ),
+          fresh
+            ? /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.greenSoft, color: C.green, borderRadius: 9, padding: "4px 9px", fontSize: 11, fontWeight: 800, flexShrink: 0 } },
+                /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 10, color: C.green }), "Fresh"
+              )
+            : /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", background: C.amber, color: "#fff", borderRadius: 9, padding: "4px 9px", fontSize: 11, fontWeight: 800, flexShrink: 0 } },
+                "+" + rechargeCount + " pts"
+              )
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.amber + "28", overflow: "hidden" } },
+          /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: "100%", borderRadius: 3, background: "repeating-linear-gradient(90deg," + C.amber + " 0 8px," + C.amber + "55 8px 14px)" } })
+        )
+      )
+    ));
+  })(), /*#__PURE__*/React.createElement("div", {
     style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }
   },
     /* Review deck card */
@@ -5490,7 +5971,7 @@ function Dashboard(_ref27) {
       onClick: function onClick(e) { if (e.target === e.currentTarget) setDlg(null); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", fontFamily: FONT, height: "80vh", display: "flex", flexDirection: "column" }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, boxSizing: "border-box", fontFamily: FONT, height: "92vh", display: "flex", flexDirection: "column" }
       },
         /* Handle + close + tabs — all fixed, never scrolls */
         /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px 12px", flexShrink: 0 } },
@@ -5498,7 +5979,7 @@ function Dashboard(_ref27) {
           /* Title row with close button */
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 } },
             /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: -0.3 } },
-              dlg === "streak" ? "Your Streak" : "Points & Rewards"
+              dlg === "streak" ? "Your Streak" : "Points & Milestones"
             ),
             /*#__PURE__*/React.createElement("button", {
               onClick: function onClick() { setDlg(null); }, className: "press",
@@ -5525,7 +6006,7 @@ function Dashboard(_ref27) {
         /* Scrollable content — flex:1 fills remaining fixed height exactly */
         /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "env(safe-area-inset-bottom)" } },
           dlg === "streak"
-            ? /*#__PURE__*/React.createElement(StreakDialog, { history: history, streak: dayStreak, onClose: function onClose() { return setDlg(null); } })
+            ? /*#__PURE__*/React.createElement(StreakDialog, { history: globalHistory, streak: dayStreak, onClose: function onClose() { return setDlg(null); } })
             : /*#__PURE__*/React.createElement(PointsDialog, { points: totalPoints, onClose: function onClose() { return setDlg(null); } })
         )
       )
@@ -6076,10 +6557,12 @@ function PointsChart(_ref30) {
 /* ── MY FLASHCARDS ── */
 /* ── EMPTY STATE for Review / Bookmarked decks — shows HOW cards get here ── */
 function EmptyDeckState(_refED) {
-  var type = _refED.type; /* "review" | "marked" */
+  var type = _refED.type; /* "review" | "marked" | "recharge" | "mine" | "customDeck" */
   var isReview = type === "review";
-  var accent = isReview ? C.red : C.primary;
-  var soft = isReview ? C.redSoft : C.primarySoft;
+  var isRecharge = type === "recharge";
+  var isMine = type === "mine" || type === "customDeck";
+  var accent = isRecharge ? C.amber : isReview ? C.red : isMine ? "#B45309" : C.primary;
+  var soft = isRecharge ? "#FFF3DD" : isReview ? C.redSoft : isMine ? "#FFF3CD" : C.primarySoft;
   /* Mini mock flashcard */
   var mockCard = function mockCard(rot, dx, dim) {
     return {
@@ -6112,41 +6595,52 @@ function EmptyDeckState(_refED) {
       /*#__PURE__*/React.createElement("div", { style: mockCard(2, 4, false) },
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
           /*#__PURE__*/React.createElement("div", { style: lineBar(54, 2) }),
-          isReview
+          (isReview || isRecharge)
             ? null
-            : /*#__PURE__*/React.createElement("i", { className: "fa-solid fa-bookmark", style: { fontSize: 14, color: C.primary, animation: "pop .6s cubic-bezier(.2,.8,.2,1) .3s both" } })
+            : /*#__PURE__*/React.createElement("i", { className: "fa-solid fa-" + (isMine ? "pen" : "bookmark"), style: { fontSize: 14, color: isMine ? "#B45309" : C.primary, animation: "pop .6s cubic-bezier(.2,.8,.2,1) .3s both" } })
         ),
         /*#__PURE__*/React.createElement("div", { style: lineBar(78, 10) }),
         /*#__PURE__*/React.createElement("div", { style: lineBar(40, 6) })
       ),
-      /* Swipe-left hint for review / tap hint for bookmark */
+      /* Animated hint per deck type */
       isReview
         ? /*#__PURE__*/React.createElement("div", {
+            className: "nudge-l",
             style: { position: "absolute", left: "50%", top: 40, marginLeft: -106, display: "flex", alignItems: "center", gap: 6 }
           },
             /*#__PURE__*/React.createElement(Icon, { name: "arrow-left-long", size: 18, color: accent }),
-            /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: "50%", background: accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 14px " + accent + "55" } },
+            /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: "50%", background: accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 14px " + accent + "55", animation: "pop .6s cubic-bezier(.2,.8,.2,1) .25s both" } },
               /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 14, color: "#fff" })
             )
           )
+        : isMine
+        ? /*#__PURE__*/React.createElement("div", {
+            style: { position: "absolute", left: "50%", top: 4, marginLeft: 48, width: 34, height: 34, borderRadius: "50%", background: C.amber, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 14px " + C.amber + "55", animation: "pop .6s cubic-bezier(.2,.8,.2,1) .3s both" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 14, color: "#fff" }))
         : /*#__PURE__*/React.createElement("div", {
-            style: { position: "absolute", left: "50%", top: 6, marginLeft: 54, fontSize: 18 }
-          }, "\uD83D\uDC46")
+            style: { position: "absolute", left: "50%", top: 6, marginLeft: 54, fontSize: 18, animation: "pop .6s cubic-bezier(.2,.8,.2,1) .3s both" }
+          }, isRecharge ? "\u2728" : "\uD83D\uDC46")
     ),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 } },
-      isReview ? "Nothing to review yet" : "No bookmarks yet"
+      isRecharge ? "All your words are fresh!" : isReview ? "Nothing to review yet" : type === "customDeck" ? "This deck is empty" : isMine ? "No custom cards yet" : "No bookmarks yet"
     ),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, lineHeight: 1.55, maxWidth: 250, margin: "0 auto" } },
-      isReview
+      isRecharge
+        ? "Words return here when they're due for review \u2014 first after " + REWIND_LADDER[0] + " days, then at growing intervals. Each rewind locks them deeper into memory and earns their point again."
+        : isReview
         ? "During a session, swipe a card LEFT (or tap \u2715) when you don't know it \u2014 it lands here so you can practice it again."
+        : type === "customDeck"
+        ? "Tap Add to drop your first card in. Anything you want to remember belongs here."
+        : isMine
+        ? "Add your own words and phrases \u2014 anything you want to remember. They collect here and in your custom decks."
         : "Tap the bookmark icon on the corner of any card to save it. Your saved cards collect here."
     ),
     /*#__PURE__*/React.createElement("div", {
       style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, background: soft, borderRadius: 10, padding: "6px 12px" }
     },
-      /*#__PURE__*/React.createElement(Icon, { name: isReview ? "rotate-left" : "bookmark", size: 11, color: accent }),
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: accent } },
-        isReview ? "Start a session to fill this deck" : "Bookmark cards during sessions"
+      /*#__PURE__*/React.createElement(Icon, { name: isRecharge ? "hourglass-half" : isReview ? "rotate-left" : isMine ? "plus" : "bookmark", size: 11, color: isRecharge || isMine ? "#B45309" : accent }),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: isRecharge || isMine ? "#B45309" : accent } },
+        isRecharge ? "Keep learning \u2014 words return here later" : isReview ? "Start a session to fill this deck" : isMine ? "Tap Add to create your first card" : "Bookmark cards during sessions"
       )
     )
   );
@@ -6174,7 +6668,11 @@ function MyFlashcardsPage(_ref31) {
     onBackToHome = _ref31.onBackToHome,
     customDecks = _ref31.customDecks,
     onAddDeck = _ref31.onAddDeck,
-    onDeleteDeck = _ref31.onDeleteDeck;
+    onDeleteDeck = _ref31.onDeleteDeck,
+    onRenameDeck = _ref31.onRenameDeck,
+    rechargeIds = _ref31.rechargeIds || [],
+    onStartRecharge = _ref31.onStartRecharge,
+    expiredByChapter = _ref31.expiredByChapter || {};
   var _useState81 = useState(initialDeckScreen || null),
     /* Track if deckScreen was seeded from home navigation */
     _useState82 = _slicedToArray(_useState81, 2),
@@ -6205,9 +6703,21 @@ function MyFlashcardsPage(_ref31) {
     showAddDeckModal = _useState_addDeckModal2[0], setShowAddDeckModal = _useState_addDeckModal2[1];
   var _useState_newDeckName = useState(""), _useState_newDeckName2 = _slicedToArray(_useState_newDeckName, 2),
     newDeckName = _useState_newDeckName2[0], setNewDeckName = _useState_newDeckName2[1];
+  /* Custom-deck actions: null | "rename" | "delete" */
+  var _useState_deckAction = useState(null), _useState_deckAction2 = _slicedToArray(_useState_deckAction, 2),
+    deckAction = _useState_deckAction2[0], setDeckAction = _useState_deckAction2[1];
+  var _useState_renameVal = useState(""), _useState_renameVal2 = _slicedToArray(_useState_renameVal, 2),
+    renameVal = _useState_renameVal2[0], setRenameVal = _useState_renameVal2[1];
   useEffect(function() {
     if (initialDeckScreen && onInitDeckScreenConsumed) onInitDeckScreenConsumed();
   }, []);
+  /* Decks tab re-tapped → pop back to the decks root */
+  var deckResetKey = _ref31.deckResetKey;
+  var firstResetRef = useRef(true);
+  useEffect(function() {
+    if (firstResetRef.current) { firstResetRef.current = false; return; }
+    setDeckScreen(null); setQ(""); setDeckAction(null);
+  }, [deckResetKey]);
   /* iOS standalone (default status-bar style) paints the status bar / Dynamic
      Island area with the page background. Deck sub-screens have a white header
      at the very top, so match the bar to it while one is open. */
@@ -6235,6 +6745,10 @@ function MyFlashcardsPage(_ref31) {
   var reviewCards = allCards.filter(function (c) {
     return reviewIds.includes(c.id);
   });
+  /* Words whose 30-day timer has run out (computed in App, passed down) */
+  var rechargeCards = allCards.filter(function (c) {
+    return rechargeIds.includes(c.id);
+  });
   var langsPresent = ["fa", "de"].filter(function (l) {
     return allCards.some(function (c) {
       return c.language === l;
@@ -6247,7 +6761,12 @@ function MyFlashcardsPage(_ref31) {
     var dn = learnedIds.includes(c.id);
     var rv = reviewIds.includes(c.id);
     var mkd = markedIds.includes(c.id);
-    var badge = dn ? {
+    var due = rechargeIds.includes(c.id);
+    var badge = due ? {
+      label: "Rewind",
+      color: "#B45309",
+      bg: "#FFF3DD"
+    } : dn ? {
       label: "Done",
       color: C.green,
       bg: C.greenSoft
@@ -6392,6 +6911,7 @@ function MyFlashcardsPage(_ref31) {
   var COL_MARKED  = { bg: C.primarySoft, text: C.primary, bar: C.primary };   /* purple / primary */
   var COL_REVIEW  = { bg: C.redSoft,     text: C.red,     bar: C.red   };
   var COL_MINE    = { bg: "#FFF3CD",     text: "#B45309", bar: C.amber };      /* solid amber, no transparency */
+  var COL_RECHARGE = { bg: "#FFF8EA",    text: "#B45309", bar: C.amber };      /* faded words — amber accent */
   var DECK_PALETTE = [
     { bg: "#E6FFFA", text: "#0E7A6A", bar: "#20B09A" }, /* teal   */
     { bg: "#E8F8F0", text: "#1B7A4B", bar: "#29A96A" }, /* green  */
@@ -6532,13 +7052,18 @@ function MyFlashcardsPage(_ref31) {
           lvChapters.map(function (ch) {
             var chCards = allCards.filter(function (c) { return !c.custom && c.chapter === ch.id; });
             var chDone = chCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+            var chExpired = expiredByChapter[ch.id] || 0;
+            var chEarn = chExpired + (chCards.length - chDone);
+            var cracked = chCards.length > 0 &&
+              (chDone / chCards.length) >= CRACK_LEARNED_PCT &&
+              (chExpired / chCards.length) >= CRACK_EXPIRED_PCT;
             return /*#__PURE__*/React.createElement(DeckCard, {
               key: ch.id,
               label: ch.title,
-              sublabel: null,
+              sublabel: cracked ? "+" + chEarn + " pts \xB7 Rewind" : null,
               count: chCards.length,
               doneCount: chDone,
-              colorObj: LEVEL_NEUTRAL,
+              colorObj: cracked ? COL_RECHARGE : LEVEL_NEUTRAL,
               icon: CHAPTER_ICONS[ch.id] || "book",
               onClick: function onClick() { setDeckScreen({ type: "level", level: lv, chapterId: ch.id, chapterTitle: ch.title }); setQ(""); }
             });
@@ -6566,26 +7091,101 @@ function MyFlashcardsPage(_ref31) {
           ),
           title: cdDeck.name,
           sub: cdCards.length + " cards",
-          rightEl: /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { openAddModal(cdDeck.id); }, className: "press",
-            style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
-          }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add"))
+          rightEl: /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexShrink: 0 } },
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { openAddModal(cdDeck.id); }, className: "press",
+              style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add")),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setRenameVal(cdDeck.name); setDeckAction("rename"); }, className: "press", "aria-label": "Edit deck",
+              style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "pen", size: 14, color: C.sub }))
+          )
         }),
+        /* Deck options: menu / rename / delete */
+        deckAction && ReactDOM.createPortal(
+          /*#__PURE__*/React.createElement("div", {
+            style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+            onClick: function onClick(e) { if (e.target === e.currentTarget) setDeckAction(null); }
+          },
+            /*#__PURE__*/React.createElement("div", {
+              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                  deckAction === "rename" ? "Rename deck" : deckAction === "delete" ? "Delete deck?" : cdDeck.name),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function onClick() { setDeckAction(null); }, className: "press",
+                  style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+                }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+              ),
+              deckAction === "rename" && /*#__PURE__*/React.createElement(React.Fragment, null,
+                /*#__PURE__*/React.createElement("input", {
+                  value: renameVal,
+                  onChange: function onChange(e) { setRenameVal(e.target.value); },
+                  autoFocus: true,
+                  maxLength: 30,
+                  style: { width: "100%", padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 14 }
+                }),
+                /*#__PURE__*/React.createElement(PrimaryButton, {
+                  disabled: !renameVal.trim(),
+                  onClick: function onClick() {
+                    var nm = renameVal.trim();
+                    if (!nm) return;
+                    if (onRenameDeck) onRenameDeck(cdDeck.id, nm);
+                    setDeckScreen({ type: "customDeck", deck: _objectSpread(_objectSpread({}, cdDeck), {}, { name: nm }) });
+                    setDeckAction(null);
+                  }
+                }, "Rename"),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function onClick() { setDeckAction("delete"); }, className: "press",
+                  style: { width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, marginTop: 10, borderRadius: 16, border: "1.5px solid " + C.red + "44", background: C.redSoft, cursor: "pointer", fontFamily: FONT }
+                },
+                  /*#__PURE__*/React.createElement(Icon, { name: "trash", size: 13, color: C.red }),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 14.5, fontWeight: 700, color: C.red } }, "Delete deck")
+                )
+              ),
+              deckAction === "delete" && /*#__PURE__*/React.createElement(React.Fragment, null,
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.55, marginBottom: 16 } },
+                  "\u201C" + cdDeck.name + "\u201D will be removed. Its cards are kept and stay available in My Cards."),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function onClick() {
+                    if (onDeleteDeck) onDeleteDeck(cdDeck.id);
+                    setDeckAction(null);
+                    setDeckScreen(null); setQ("");
+                  },
+                  className: "press",
+                  style: { width: "100%", padding: 15, borderRadius: 16, border: "none", background: C.red, color: "#fff", fontSize: 15.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", marginBottom: 10 }
+                }, "Delete deck"),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function onClick() { setDeckAction("rename"); },
+                  className: "press",
+                  style: { width: "100%", padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontSize: 14.5, fontWeight: 700, fontFamily: FONT, cursor: "pointer" }
+                }, "Cancel")
+              )
+            )
+          ),
+          document.body
+        ),
         SearchBar,
         /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
           cdFiltered.length === 0
-            ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, "No cards yet. Tap + to add one.")
+            ? (!s
+                ? /*#__PURE__*/React.createElement(EmptyDeckState, { type: "customDeck" })
+                : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, "No matches."))
             : cdFiltered.map(function(c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
         ),
         adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
         open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
       );
     }
-    var dsCards = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : customCards;
-    var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : COL_MINE;
-    var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "\u21ba" : "plus";
-    var dsLabel = ds.type === "marked" ? "Marked" : ds.type === "review" ? "Review" : "My Cards";
-    var dsEmpty = ds.type === "marked" ? "Bookmark cards during sessions." : ds.type === "review" ? "Cards you swipe left appear here." : "No custom cards yet.";
+    var dsCards = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : ds.type === "recharge" ? rechargeCards : customCards;
+    var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : ds.type === "recharge" ? COL_RECHARGE : COL_MINE;
+    var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "\u21ba" : ds.type === "recharge" ? "hourglass-half" : "plus";
+    var dsLabel = ds.type === "marked" ? "Marked" : ds.type === "review" ? "Review" : ds.type === "recharge" ? "Rewind" : "My Cards";
+    var dsEmpty = ds.type === "marked" ? "Bookmark cards during sessions." : ds.type === "review" ? "Cards you swipe left appear here." : ds.type === "recharge" ? "All your words are fresh! Words return here when they're due for review." : "No custom cards yet.";
+    var dsSessionN = ds.type === "recharge" ? Math.min(dsCards.length, 30) : dsCards.length;
     var filteredDs = fc(dsCards);
     var dsAddBtn = ds.type === "mine"
       ? /*#__PURE__*/React.createElement("button", {
@@ -6602,21 +7202,37 @@ function MyFlashcardsPage(_ref31) {
         rightEl: dsAddBtn
       }),
       /* Start a session with these cards */
-      (ds.type === "review" || ds.type === "marked") && dsCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
+      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge") && dsCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
         /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: ds.type === "review" ? onStartReview : onStartMarked,
-          style: { padding: 13, fontSize: 15, background: ds.type === "review" ? C.red : C.primary, boxShadow: "0 8px 22px " + (ds.type === "review" ? C.red : C.primary) + "44" }
+          onClick: ds.type === "review" ? onStartReview : ds.type === "recharge" ? onStartRecharge : onStartMarked,
+          style: { padding: 13, fontSize: 15, background: ds.type === "review" ? C.red : ds.type === "recharge" ? C.amber : C.primary, boxShadow: "0 8px 22px " + (ds.type === "review" ? C.red : ds.type === "recharge" ? C.amber : C.primary) + "44" }
         },
           /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 8 } },
             /*#__PURE__*/React.createElement(Icon, { name: "play", size: 13, color: "#fff" }),
-            "Practice " + dsCards.length + " card" + (dsCards.length === 1 ? "" : "s")
+            ds.type === "recharge"
+              ? "Rewind " + (dsCards.length > dsSessionN ? dsSessionN + " of " + dsCards.length : dsSessionN) + " card" + (dsCards.length === 1 ? "" : "s")
+              : "Practice " + dsSessionN + " card" + (dsSessionN === 1 ? "" : "s")
           )
+        )
+      ),
+      /* Recharge explainer header — same pattern as the other collection decks */
+      ds.type === "recharge" && dsCards.length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: { margin: "12px 16px 0", display: "flex", gap: 11, alignItems: "flex-start", background: "#FFFBF2", border: "1px solid " + C.amber + "44", borderRadius: 16, padding: "13px 14px" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 10, background: C.amber + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "brain", size: 14, color: "#B45309" })
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { minWidth: 0, fontFamily: FONT } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#B45309", marginBottom: 3 } },
+            "The Science of the Rewind"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, lineHeight: 1.55, fontWeight: 600 } },
+            "Spaced repetition tracks your learning, bringing words back at expanding intervals. Lock vocabulary into long-term memory and score points with every rewind.")
         )
       ),
       SearchBar,
       /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 28px", display: "flex", flexDirection: "column", gap: 8 } },
         filteredDs.length === 0
-          ? ((ds.type === "review" || ds.type === "marked") && dsCards.length === 0 && !s
+          ? ((ds.type === "review" || ds.type === "marked" || ds.type === "recharge" || ds.type === "mine") && dsCards.length === 0 && !s
               ? /*#__PURE__*/React.createElement(EmptyDeckState, { type: ds.type })
               : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, s ? "No matches." : dsEmpty))
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
@@ -6635,6 +7251,7 @@ function MyFlashcardsPage(_ref31) {
       display: "flex", alignItems: "center", justifyContent: "space-between",
       position: "sticky", top: 0, zIndex: 50,
       margin: "-20px -16px -6px", padding: "16px 16px 10px",
+      paddingTop: "calc(16px + env(safe-area-inset-top))",
       background: "rgba(245,244,251,0.88)",
       backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)"
     } },
@@ -6688,6 +7305,12 @@ function MyFlashcardsPage(_ref31) {
         ),
         /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
           /*#__PURE__*/React.createElement(DeckCard, {
+            label: "Rewind", sublabel: "Faded words",
+            count: rechargeCards.length, doneCount: 0,
+            colorObj: COL_RECHARGE, icon: "hourglass-half",
+            onClick: function onClick() { setDeckScreen({ type: "recharge" }); }
+          }),
+          /*#__PURE__*/React.createElement(DeckCard, {
             label: "My Cards", sublabel: "Custom",
             count: customCards.length,
             doneCount: customCards.filter(function (c) { return learnedIds.includes(c.id); }).length,
@@ -6720,7 +7343,13 @@ function MyFlashcardsPage(_ref31) {
           className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 16, letterSpacing: -0.4 } }, "What do you want to add?"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, "What do you want to add?"),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setShowAddSheet(false); }, className: "press",
+              style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+          ),
           /*#__PURE__*/React.createElement("button", {
             onClick: function onClick() { setShowAddSheet(false); setAdding(true); },
             className: "press",
@@ -7580,18 +8209,23 @@ function FriendsPage(_ref37) {
     var mins = Math.floor(ms % 3600000 / 60000);
     return days > 0 ? days + "d " + hrs + "h" : hrs > 0 ? hrs + "h " + mins + "m" : mins + "m";
   })();
-  /* Profile select that includes best_streak, but degrades gracefully if the column doesn't exist */
+  /* Profile select that includes optional columns (best_streak, per-language
+     points), degrading gracefully if any column doesn't exist yet */
   var PROF_COLS = "id, display_name, avatar_emoji, points, streak, week_points, active_days, best_day";
   var selectProfiles = function selectProfiles(build) {
-    return build(PROF_COLS + ", best_streak").then(function (res) {
+    return build(PROF_COLS + ", best_streak, points_fa, points_de").then(function (res) {
       if (!res.error) return res;
-      return build(PROF_COLS);
+      return build(PROF_COLS + ", best_streak").then(function (res2) {
+        if (!res2.error) return res2;
+        return build(PROF_COLS);
+      });
     });
   };
   var mapProf = function mapProf(p) {
     return { id: p.id, name: cap(p.display_name || p.id.slice(0,8)), avatar: p.avatar_emoji || "🐣",
       points: p.points || 0, weekPts: p.week_points || 0, streak: p.streak || 0,
-      bestDay: p.best_day || 0, activeDays: p.active_days || 0, bestStreak: p.best_streak || 0 };
+      bestDay: p.best_day || 0, activeDays: p.active_days || 0, bestStreak: p.best_streak || 0,
+      faPts: p.points_fa || 0, dePts: p.points_de || 0 };
   };
 
   useEffect(function() {
@@ -7691,6 +8325,8 @@ function FriendsPage(_ref37) {
     activeDays: (myStats && myStats.activeDays) || 0,
     bestDay: (myStats && myStats.bestDay) || 0,
     bestStreak: (myStats && myStats.bestStreak) || 0,
+    faPts: (myStats && myStats.faPts) || 0,
+    dePts: (myStats && myStats.dePts) || 0,
     _isMe: true
   } : null;
   var everyoneBoard = useMemo(function() {
@@ -7728,6 +8364,8 @@ function FriendsPage(_ref37) {
           activeDays: (myStats && myStats.activeDays) || 0,
           bestDay: (myStats && myStats.bestDay) || 0,
           bestStreak: (myStats && myStats.bestStreak) || 0,
+          faPts: (myStats && myStats.faPts) || 0,
+          dePts: (myStats && myStats.dePts) || 0,
           _isMe: true
         } : p;
         return { id: id, name: isMe ? "You" : p.name, avatar: isMe ? currentUser.avatar : p.avatar, pts: lastWeek.agg[id], _isMe: isMe, prof: prof };
@@ -7843,6 +8481,7 @@ function FriendsPage(_ref37) {
       zIndex: 50,
       margin: "-24px -20px -2px",
       padding: "18px 20px 10px",
+      paddingTop: "calc(18px + env(safe-area-inset-top))",
       background: "rgba(245,244,251,0.88)",
       backdropFilter: "blur(14px)",
       WebkitBackdropFilter: "blur(14px)",
@@ -8051,20 +8690,47 @@ function FriendsPage(_ref37) {
       )
     );
   })()), !loadingFriends && filteredFriends.length === 0 && !q && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.primarySoft,
-      border: "1px solid " + C.primary + "22",
-      borderRadius: 16,
-      padding: "16px 18px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {fontSize: 22, marginBottom: 6}
-  }, "\uD83D\uDC65"), /*#__PURE__*/React.createElement("div", {
-    style: {fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 4}
-  }, "You have no friends yet"), /*#__PURE__*/React.createElement("div", {
-    style: {fontSize: 12.5, color: C.sub}
-  }, "Follow people below to compare your progress!")), /*#__PURE__*/React.createElement("div", {
+    style: { background: "#FBFAFF", border: "1.5px dashed " + C.line, borderRadius: 20, padding: "22px 18px 20px", textAlign: "center" }
+  },
+    /* Illustration: stacked mock friend-cards + popping heart — same style as EmptyDeckState */
+    /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 116 } },
+      /* Back card (dimmed) */
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "absolute", left: "50%", top: 14, width: 120, height: 78, marginLeft: -60, transform: "translateX(-10px) rotate(-5deg)", borderRadius: 14, background: C.surface, border: "1.5px solid " + C.line, boxShadow: "0 6px 18px rgba(28,26,46,0.10)", opacity: 0.5, padding: "10px 12px", boxSizing: "border-box" }
+      }),
+      /* Front card: mock friend row — avatar circle + skeleton bars */
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "absolute", left: "50%", top: 14, width: 120, height: 78, marginLeft: -60, transform: "translateX(4px) rotate(2deg)", borderRadius: 14, background: C.surface, border: "1.5px solid " + C.line, boxShadow: "0 6px 18px rgba(28,26,46,0.10)", padding: "10px 12px", boxSizing: "border-box", textAlign: "left" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          /*#__PURE__*/React.createElement("div", {
+            style: { width: 24, height: 24, borderRadius: "50%", background: C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "user", size: 10, color: C.primary })),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+            /*#__PURE__*/React.createElement("div", { style: { width: 48, height: 7, borderRadius: 4, background: C.line } }),
+            /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 7, borderRadius: 4, background: C.line, marginTop: 5 } })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5, marginTop: 11 } },
+          /*#__PURE__*/React.createElement("i", { className: "fa-solid fa-fire", style: { fontSize: 10, color: C.amber } }),
+          /*#__PURE__*/React.createElement("div", { style: { width: 64, height: 7, borderRadius: 4, background: C.line } })
+        )
+      ),
+      /* Popping heart badge — same accent treatment as deck empty states */
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "absolute", left: "50%", top: 4, marginLeft: 48, width: 34, height: 34, borderRadius: "50%", background: C.red, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 14px " + C.red + "55", zIndex: 2, animation: "pop .6s cubic-bezier(.2,.8,.2,1) .3s both" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "heart", size: 14, color: "#fff" }))
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 } }, "No friends yet"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, lineHeight: 1.55, maxWidth: 250, margin: "0 auto" } },
+      "Follow learners below \u2014 you'll see their streaks, send hearts, and race them on the leaderboard."),
+    /*#__PURE__*/React.createElement("div", {
+      style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, background: C.primarySoft, borderRadius: 10, padding: "6px 12px" }
+    },
+      /*#__PURE__*/React.createElement(Icon, { name: "users", size: 11, color: C.primary }),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: C.primary } }, "Find learners below")
+    )
+  ), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       fontWeight: 800,
@@ -8381,42 +9047,51 @@ function FriendDetailDialog(_ref40) {
   var heartDisabled = heartAlreadySent || heartSent;
   var avg = user.activeDays ? Math.round(user.points / user.activeDays) : 0;
   var badge = badgeFor(user.points);
-  var stats = [{
-    label: "Points (all languages)",
-    value: user.points,
+  /* Tiered stats: hero (this week) > mid (all-time + streak) > minor strip.
+     value = the big number, unit = small word rendered after it */
+  var dayWord = function dayWord(n) { return n === 1 ? "day" : "days"; };
+  var midStats = [{
+    label: "Total points",
+    value: user.points || 0,
+    unit: "points",
     icon: "star",
-    color: C.amber,
-    bg: C.amber + "18"
+    color: "#B45309",
+    bg: C.amber + "18",
+    border: C.amber + "44"
   }, {
     label: "Day streak",
-    value: user.streak + "d",
+    value: user.streak || 0,
+    unit: dayWord(user.streak || 0),
     icon: "fire",
     color: C.red,
-    bg: C.redSoft
-  }, {
+    bg: C.redSoft,
+    border: C.red + "33"
+  }];
+  var bestStr = Math.max(user.bestStreak || 0, user.streak || 0);
+  var miniStats = [{
     label: "Longest streak",
-    value: Math.max(user.bestStreak || 0, user.streak || 0) + "d",
+    value: bestStr,
+    unit: dayWord(bestStr),
     icon: "bolt",
-    color: "#E8A030",
-    bg: "#FFF3DD"
+    color: "#E8A030"
   }, {
     label: "Best day",
-    value: user.bestDay,
+    value: user.bestDay || 0,
+    unit: "points",
     icon: "trophy",
-    color: C.fa,
-    bg: C.faSoft
+    color: "#7C3AED"
   }, {
-    label: "Active days",
-    value: user.activeDays,
-    icon: "calendar-check",
-    color: C.de,
-    bg: C.deSoft
+    label: "Persian",
+    value: user.faPts || 0,
+    unit: "points",
+    icon: "star",
+    color: C.fa
   }, {
-    label: "Avg points/day",
-    value: avg,
-    icon: "gauge-high",
-    color: "#7C3AED",
-    bg: "#F3F0FF"
+    label: "German",
+    value: user.dePts || 0,
+    unit: "points",
+    icon: "star",
+    color: C.de
   }];
   return /*#__PURE__*/React.createElement(Sheet, {
     onClose: onClose,
@@ -8474,42 +9149,61 @@ function FriendDetailDialog(_ref40) {
     name: "xmark",
     size: 15,
     color: C.sub
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))),
+  /* HERO — the leaderboard metric, big and unmissable */
+  /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 10,
-      marginBottom: 10
+      background: "linear-gradient(135deg," + C.primary + ",#8B73F0)",
+      borderRadius: 20,
+      padding: "16px 18px",
+      marginBottom: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 14,
+      boxShadow: "0 10px 26px " + C.primary + "44",
+      position: "relative",
+      overflow: "hidden"
     }
-  }, stats.map(function (s) {
+  },
+    /*#__PURE__*/React.createElement("div", { style: { position: "absolute", right: -18, top: -18, width: 92, height: 92, borderRadius: "50%", background: "rgba(255,255,255,0.10)" } }),
+    /*#__PURE__*/React.createElement("div", { style: { position: "absolute", right: 26, bottom: -28, width: 64, height: 64, borderRadius: "50%", background: "rgba(255,255,255,0.08)" } }),
+    /*#__PURE__*/React.createElement("div", {
+      style: { width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "calendar-week", size: 18, color: "#fff" })),
+    /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 30, fontWeight: 900, color: "#fff", letterSpacing: -1, lineHeight: 1 } }, user.weekPts || 0),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4, letterSpacing: 0.2 } }, "Points this week")
+    )
+  ),
+  /* MID — all-time points + streak */
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }
+  }, midStats.map(function (s) {
     return /*#__PURE__*/React.createElement("div", {
       key: s.label,
-      style: {
-        background: s.bg,
-        borderRadius: 16,
-        padding: "14px 12px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6
-      }
-    }, /*#__PURE__*/React.createElement(Icon, {
-      name: s.icon,
-      size: 16,
-      color: s.color
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 22,
-        fontWeight: 800,
-        color: C.ink,
-        letterSpacing: -0.5
-      }
-    }, s.value), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: C.sub,
-        fontWeight: 600
-      }
-    }, s.label));
+      style: { background: s.bg, border: "1px solid " + s.border, borderRadius: 18, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 5 }
+    }, /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+      /*#__PURE__*/React.createElement(Icon, { name: s.icon, size: 13, color: s.color }),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, color: s.color, letterSpacing: 0.2 } }, s.label)
+    ), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 24, fontWeight: 900, color: C.ink, letterSpacing: -0.6 }
+    }, s.value, s.unit && /*#__PURE__*/React.createElement("span", {
+      style: { fontSize: 12, fontWeight: 700, color: C.sub, letterSpacing: 0, marginLeft: 4 }
+    }, s.unit)));
+  })),
+  /* MINOR — compact strip of secondary stats */
+  /*#__PURE__*/React.createElement("div", {
+    style: { background: C.bg, borderRadius: 18, padding: "4px 14px", marginBottom: 10 }
+  }, miniStats.map(function (s, i) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.label,
+      style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i === 0 ? "none" : "1px solid " + C.line }
+    }, /*#__PURE__*/React.createElement(Icon, { name: s.icon, size: 13, color: s.color, style: { width: 16, textAlign: "center" } }),
+      /*#__PURE__*/React.createElement("span", { style: { flex: 1, fontSize: 12, fontWeight: 600, color: C.sub } }, s.label),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 800, color: C.ink } }, s.value, s.unit && /*#__PURE__*/React.createElement("span", {
+        style: { fontSize: 10.5, fontWeight: 700, color: C.sub, marginLeft: 3 }
+      }, s.unit))
+    );
   })), !isSelf && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -8669,6 +9363,8 @@ function ProfilePage(_ref42) {
     dayStreak = _ref42.dayStreak,
     totalPoints = _ref42.totalPoints,
     allPoints = _ref42.allPoints != null ? _ref42.allPoints : _ref42.totalPoints,
+    allLangPoints = _ref42.allLangPoints || {},
+    weekPoints = _ref42.weekPoints || 0,
     history = _ref42.history,
     unlockedLevels = _ref42.unlockedLevels,
     onLangsChanged = _ref42.onLangsChanged,
@@ -8787,6 +9483,7 @@ function ProfilePage(_ref42) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "18px 20px 0",
+      paddingTop: "calc(18px + env(safe-area-inset-top))",
       paddingBottom: "calc(24px + env(safe-area-inset-bottom))",
       display: "flex",
       flexDirection: "column",
@@ -8853,96 +9550,60 @@ function ProfilePage(_ref42) {
       fontWeight: 800,
       color: C.ink
     }
-  }, cap(user && user.name || "You")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10,
-      width: "100%"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      background: "linear-gradient(135deg," + C.primary + ",#A06BFF)",
-      borderRadius: 18,
-      padding: "16px 10px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "rgba(255,255,255,0.8)",
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, "Level"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 900,
-      color: "#fff"
-    }
-  }, lvl), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: "rgba(255,255,255,0.7)",
-      marginTop: 2
-    }
-  }, LEVEL_LABEL[lvl])), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      background: C.amber + "18",
-      border: "1px solid " + C.amber + "40",
-      borderRadius: 18,
-      padding: "16px 10px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.sub,
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, "Streak"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 900,
-      color: C.amber
-    }
-  }, dayStreak), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.sub,
-      marginTop: 2
-    }
-  }, "days")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      background: C.greenSoft,
-      border: "1px solid " + C.green + "40",
-      borderRadius: 18,
-      padding: "16px 10px",
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.sub,
-      fontWeight: 700,
-      marginBottom: 4
-    }
-  }, "Points"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 900,
-      color: C.green
-    }
-  }, allPoints), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.sub,
-      marginTop: 2
-    }
-  }, "all languages"))), /*#__PURE__*/React.createElement("div", {
+  }, cap(user && user.name || "You")),
+  /* Badge chip — current milestone */
+  (function () {
+    var b = badgeFor(allPoints);
+    if (!b) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px", marginTop: -4 }
+    }, /*#__PURE__*/React.createElement(Icon, { name: b.icon, size: 11, color: "#B45309" }), b.name);
+  })(),
+  /* HERO — points this week (the leaderboard metric) */
+  /*#__PURE__*/React.createElement("div", {
+    style: { width: "100%", boxSizing: "border-box", background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", borderRadius: 20, padding: "15px 18px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 10px 26px " + C.primary + "40", position: "relative", overflow: "hidden" }
+  },
+    /*#__PURE__*/React.createElement("div", { style: { position: "absolute", right: -16, top: -16, width: 84, height: 84, borderRadius: "50%", background: "rgba(255,255,255,0.10)" } }),
+    /*#__PURE__*/React.createElement("div", { style: { position: "absolute", right: 30, bottom: -26, width: 58, height: 58, borderRadius: "50%", background: "rgba(255,255,255,0.08)" } }),
+    /*#__PURE__*/React.createElement("div", { style: { width: 42, height: 42, borderRadius: 13, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+      /*#__PURE__*/React.createElement(Icon, { name: "calendar-week", size: 17, color: "#fff" })
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 28, fontWeight: 900, color: "#fff", letterSpacing: -1, lineHeight: 1 } }, weekPoints),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 4, letterSpacing: 0.2 } }, "Points this week")
+    )
+  ),
+  /* Compact secondary stats: 2x2 grid — Streak / Total / Persian / German.
+     Quiet design: neutral boxes, color lives only in the small icon chip. */
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }
+  }, (function () {
+    var curLang = selectedLangs[0];
+    var faPts = curLang === "fa" ? totalPoints : (allLangPoints.fa || 0);
+    var dePts = curLang === "de" ? totalPoints : (allLangPoints.de || 0);
+    return [
+      { value: dayStreak, sub: "day streak", icon: "fire", tint: C.amber, chipBg: C.amber + "16" },
+      { value: allPoints, sub: "total points", icon: "star", tint: C.primary, chipBg: C.primarySoft },
+      { value: faPts, sub: "Persian points", mono: "FA", tint: C.fa, chipBg: C.faSoft },
+      { value: dePts, sub: "German points", mono: "DE", tint: C.de, chipBg: C.deSoft }
+    ];
+  })().map(function (s) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.sub,
+      style: { minWidth: 0, display: "flex", alignItems: "center", gap: 9, background: C.surface, border: "1px solid " + C.line, borderRadius: 14, padding: "9px 10px" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { width: 28, height: 28, borderRadius: 9, background: s.chipBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+    }, s.mono
+      ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 9.5, fontWeight: 900, color: s.tint, letterSpacing: 0.3 } }, s.mono)
+      : /*#__PURE__*/React.createElement(Icon, { name: s.icon, size: 12, color: s.tint })
+    ), /*#__PURE__*/React.createElement("div", {
+      style: { minWidth: 0, textAlign: "left" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 15.5, fontWeight: 800, color: C.ink, letterSpacing: -0.3, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }
+    }, s.value), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 9, color: C.sub, marginTop: 2, fontWeight: 700, letterSpacing: 0.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }
+    }, s.sub)));
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: C.sub,
@@ -9433,6 +10094,7 @@ function SessionComplete(_ref47) {
     name = _ref47.name,
     level = _ref47.level,
     chapterTitle = _ref47.chapterTitle,
+    rewindCompleted = _ref47.rewindCompleted,
     onContinue = _ref47.onContinue,
     userAvatar = _ref47.userAvatar,
     totalCards = _ref47.totalCards,
@@ -9441,11 +10103,13 @@ function SessionComplete(_ref47) {
     isFirstSessionToday = _ref47.isFirstSessionToday;
   /* page: "claim" → "stats" → ["badge"] → ["streak"] */
   var _useState_page = useState(function () {
-    /* Zero-point rounds (all repeats/custom) skip the claim & points pages */
+    /* Zero-point rounds (all repeats/custom) skip the claim & points pages
+       but still get a closing stats screen — only aborted sessions exit
+       silently (forceExit never reaches this component on 0 points) */
     if (points > 0) return "claim";
     if (_ref47.chapterCompleted) return "chapter";
     if (_ref47.levelUnlock) return "level";
-    return "streakcheck";
+    return "stats";
   }), _useState_page2 = _slicedToArray(_useState_page, 2), page = _useState_page2[0], setPage = _useState_page2[1];
   var _useState_shareMsg = useState(""), _useState_shareMsg2 = _slicedToArray(_useState_shareMsg, 2), shareMsg = _useState_shareMsg2[0], setShareMsg = _useState_shareMsg2[1];
   var ptsCu = useCountUp(points, "roundPts");
@@ -9482,13 +10146,14 @@ function SessionComplete(_ref47) {
   /* Sound effects per end-screen step */
   useEffect(function () {
     if (page === "claim") playFinishSFX();
+    else if (page === "rewinddone") playSFX("badge");
     else if (page === "chapter") playSFX("badge");
     else if (page === "level") playSFX("badge");
     else if (page === "badge") playSFX("badge");
     else if (page === "streak") playSFX("streak");
   }, [page]);
   useEffect(function () {
-    var bg = page === "badge" || page === "streak" || page === "level" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : "#F0EEFF";
+    var bg = page === "badge" || page === "streak" || page === "level" || page === "rewinddone" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : "#F0EEFF";
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
     return function () {
@@ -9548,6 +10213,11 @@ function SessionComplete(_ref47) {
     else afterBadgeStep();
   };
   var afterStats = function afterStats() {
+    if (rewindCompleted) setPage("rewinddone");
+    else if (chapterCompleted) setPage("chapter");
+    else afterLevelStep();
+  };
+  var afterRewindStep = function afterRewindStep() {
     if (chapterCompleted) setPage("chapter");
     else afterLevelStep();
   };
@@ -9691,6 +10361,44 @@ function SessionComplete(_ref47) {
 
   /* ── PAGE 3: Reward / badge unlocked (only if a threshold was crossed) ── */
   /* ── PAGE: Chapter complete ── */
+  /* ── PAGE: Rewind deck cleared — every due word refreshed ── */
+  if (page === "rewinddone") {
+    return /*#__PURE__*/React.createElement("div", { key: "rewinddone", className: "page-in", style: pageShell("linear-gradient(160deg,#FFF8EC 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: C.amber, b: "#FF8E2B" }),
+      /*#__PURE__*/React.createElement(Watermark, { color: "#E8A020", top: "6%" }, "\u2713"),
+      /*#__PURE__*/React.createElement(Overline, { color: "#B45309" }, "Rewind complete"),
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+      },
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement(PingWrap, { color: C.amber + "66", radius: 28 },
+            /*#__PURE__*/React.createElement("div", {
+              style: { width: 96, height: 96, borderRadius: 28, background: "linear-gradient(145deg,#FFC24A,#F59E0B)", boxShadow: "0 14px 32px rgba(245,158,11,0.40)", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "hourglass-half", size: 36, color: "#fff" }))
+          )
+        ),
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Rewind deck cleared!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".16s", fontSize: 12.5, color: C.sub, marginBottom: 20 } },
+          "Every due word refreshed \u00b7 locked into long-term memory"),
+        /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%" } },
+          /*#__PURE__*/React.createElement(Burst, { colors: [C.amber, "#FFC24A", "#FF8E2B", "#FFFFFF"] }),
+          /*#__PURE__*/React.createElement("div", {
+            style: Object.assign(inkPanel({ padding: "22px 24px 18px" }), { animation: "scalePop .55s cubic-bezier(.16,1,.3,1) .2s both" })
+          },
+            /*#__PURE__*/React.createElement(Sheen, null),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 52, fontWeight: 900, color: "#fff", letterSpacing: -2, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 32, color: "#FFD98A" }), totalCards || 0
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#FFE2AE", fontWeight: 600, marginTop: 7 } }, "word" + (totalCards === 1 ? "" : "s") + " rewound this round")
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
+        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterRewindStep, style: { background: C.amber } }, "Continue")
+      )
+    );
+  }
+
   if (page === "chapter") {
     return /*#__PURE__*/React.createElement("div", { key: "chapter", className: "page-in", style: pageShell("linear-gradient(160deg,#E9F8F0 0%,#F5F4FB 55%)") },
       /*#__PURE__*/React.createElement(Aurora, { a: C.green, b: "#36D49A" }),
@@ -9772,7 +10480,7 @@ function SessionComplete(_ref47) {
     var top = crossed[crossed.length - 1];
     return /*#__PURE__*/React.createElement("div", { key: "badge", className: "page-in", style: pageShell("linear-gradient(160deg,#FFF8EC 0%,#F5F4FB 55%)") },
       /*#__PURE__*/React.createElement(Aurora, { a: "#FFB938", b: C.primary }),
-      /*#__PURE__*/React.createElement(Overline, { color: C.amber }, "Reward unlocked"),
+      /*#__PURE__*/React.createElement(Overline, { color: C.amber }, "Milestone reached"),
       /*#__PURE__*/React.createElement("div", {
         style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
@@ -9794,7 +10502,7 @@ function SessionComplete(_ref47) {
         ),
         /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".14s", fontSize: 27, fontWeight: 900, color: "#B45309", margin: "0 0 7px", letterSpacing: -0.7 } }, top.name + "!"),
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".18s", fontSize: 13.5, color: C.sub, marginBottom: 22, lineHeight: 1.45 } },
-          "You passed " + top.at + " points and unlocked a new reward."
+          "You passed " + top.at + " points and reached a new milestone."
         ),
         /* All rewards unlocked this round (usually one) */
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".26s", width: "100%", display: "flex", flexDirection: "column", gap: 8 } },
@@ -9892,7 +10600,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
@@ -9900,7 +10608,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v116';
+  var CACHE_VERSION = 'memzy-v135';
 
   if (!('serviceWorker' in navigator)) return;
 
