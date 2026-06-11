@@ -218,11 +218,11 @@ function loadGlobalProgressFromDB(userId, setHistoryFn) {
 }
 
 var LEVEL_LABEL = {
-  A1: "Beginner",
-  A2: "Elementary",
-  B1: "Intermediate",
-  B2: "Upper-Int.",
-  C1: "Advanced"
+  A1: "First Steps",
+  A2: "Daily Life",
+  B1: "Out in the World",
+  B2: "The Big Picture",
+  C1: "Deep Waters"
 };
 var LEVELS_ORDER = ["A1", "A2", "B1", "B2", "C1"];
 /* ── WORD REWIND (spaced repetition) ── a learned word "expires" after its
@@ -344,6 +344,64 @@ var CHAPTER_ICONS = {
   "C1-5": "coins",
   "C1-6": "book-open"
 };
+/* ── Open Peeps path buddy (DiceBear): one chosen character, 10 style
+   variants, shown along the home path. Picker UI comes later — for now a
+   random identity is generated once and persisted. ── */
+var PEEP_API = "https://api.dicebear.com/9.x/open-peeps/svg";
+var PEEP_HEADS = ["afro","bangs","bun","buns","cornrows","dreads1","flatTop","long","longCurly","medium1","mediumBangs","mohawk","pomp","shaved2","short1","short3","short5","twists","turban","hijab","grayShort","noHair2"];
+var PEEP_HATS = ["hatBeanie","hatHip"];
+var PEEP_FACIAL = ["chin","full","goatee1","moustache1","moustache4","moustache7"];
+var PEEP_SKINS = ["ffdbb4","edb98a","d08b5b","ae5d29","694d3d"];
+var PEEP_FACES = ["calm","cheeky","cute","driven","eatingHappy","explaining","lovingGrin1","smile","smileBig","smileLOL","smileTeethGap","awe"];
+var PEEP_ACCESSORIES = ["glasses","glasses2","glasses5","sunglasses","sunglasses2"];
+var PEEP_CLOTHES = ["e78276","ffcf77","fdea6b","78e185","9ddadb","8fa7df","e279c7","6d28d9","f4a4c0","a78bfa"];
+function peepRnd(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function peepUrl(opts, size) {
+  var p = new URLSearchParams(Object.assign({ seed: "memzy", size: String(size) }, opts));
+  return PEEP_API + "?" + p.toString();
+}
+function peepIdentityParams(id) {
+  return {
+    head: id.head, skinColor: id.skinColor,
+    facialHair: id.facialHair || PEEP_FACIAL[0],
+    facialHairProbability: id.facialHair ? "100" : "0",
+    maskProbability: "0"
+  };
+}
+function makePeepVariants(identity, n) {
+  var base = peepIdentityParams(identity);
+  var canHat = identity.head !== "hijab" && identity.head !== "turban";
+  var seen = {}, out = [], guard = 0;
+  while (out.length < n && guard < 200) {
+    guard++;
+    var hasAcc = Math.random() < 0.45;
+    var hasHat = canHat && Math.random() < 0.2;
+    var v = Object.assign({}, base, hasHat ? { head: peepRnd(PEEP_HATS) } : {}, {
+      face: peepRnd(PEEP_FACES),
+      clothingColor: peepRnd(PEEP_CLOTHES),
+      accessoriesProbability: hasAcc ? "100" : "0"
+    }, hasAcc ? { accessories: peepRnd(PEEP_ACCESSORIES) } : {});
+    var key = v.head + "|" + v.face + "|" + v.clothingColor + "|" + (v.accessories || "none");
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(v);
+  }
+  return out;
+}
+function getPeep() {
+  try {
+    var p = JSON.parse(localStorage.getItem("memzy_peep"));
+    if (p && p.identity && p.variants && p.variants.length) return p;
+  } catch (e) {}
+  var id = { head: peepRnd(PEEP_HEADS), skinColor: peepRnd(PEEP_SKINS), facialHair: Math.random() < 0.3 ? peepRnd(PEEP_FACIAL) : null };
+  var p2 = { identity: id, variants: makePeepVariants(id, 10) };
+  try { localStorage.setItem("memzy_peep", JSON.stringify(p2)); } catch (e) {}
+  return p2;
+}
+function rerollPeep() {
+  try { localStorage.removeItem("memzy_peep"); } catch (e) {}
+  return getPeep();
+}
 var CHAPTERS = {
   A1: [{
     id: "A1-1",
@@ -5595,7 +5653,24 @@ function Dashboard(_ref27) {
         var lockMsg = ci === 0
           ? "Pass the level exam above \u2014 or finish " + (lvIdx > 0 ? LEVELS_ORDER[lvIdx - 1] : "") + " \u2014 to unlock this chapter."
           : "Reach " + Math.round(CHAPTER_UNLOCK_PCT * 100) + "% in \u201C" + st.chs[ci - 1].title + "\u201D to unlock this chapter.";
+        var gIdx = lvIdx * 10 + ci;
+        var buddyHere = buddy !== "off" && peep.variants.length > 0 && (
+          (buddy === "A" && isFrontier) ||
+          (buddy === "B" && isFrontier) ||
+          (buddy === "C" && !lockedNode && (isFrontier || ci % 3 === 1))
+        );
+        var buddyBig = isFrontier;
+        var buddySide = off > 0 ? -1 : 1; /* stand on the roomier side */
+        var buddySize = buddyBig ? 60 : 40;
         return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
+          buddyHere && /*#__PURE__*/React.createElement("div", {
+            style: { position: "absolute", top: "50%", left: "50%", marginTop: -buddySize / 2 - 4, marginLeft: off + (buddySide > 0 ? 126 : -126 - buddySize), zIndex: 2, pointerEvents: "none", opacity: buddyBig ? 1 : 0.92 }
+          }, /*#__PURE__*/React.createElement("img", {
+            className: buddyBig ? "avatar-float" : undefined,
+            src: peepUrl(peep.variants[gIdx % peep.variants.length], 96),
+            width: buddySize, height: buddySize, alt: "",
+            style: { display: "block", transform: buddySide > 0 ? "scaleX(-1)" : undefined }
+          })),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
             /*#__PURE__*/React.createElement("button", {
               ref: isCur ? curPathNodeRef : null,
@@ -5626,29 +5701,57 @@ function Dashboard(_ref27) {
           openHere && (lockedNode ? renderLockedBubble(ch, lockMsg, "calc(50% + " + off + "px)") : renderBubble(lv, ch, cs, "calc(50% + " + off + "px)"))
         );
       });
-      var banner = /*#__PURE__*/React.createElement("div", {
-        style: { position: "relative", zIndex: examOpen ? 97 : 1, marginBottom: 16 }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: { borderRadius: 20, padding: "14px 16px", background: headLocked ? "linear-gradient(135deg,#B9B5CC,#A39FBC)" : "linear-gradient(135deg," + C.primary + ",#7C6CFF)", boxShadow: headLocked ? "none" : "0 6px 18px " + C.primary + "33" }
-      },
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-          /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -0.4 } }, lv, " \u00b7 ", LEVEL_LABEL[lv]),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 3 } },
-              headLocked ? "Locked" : st.done + " of " + st.total + " cards")
+      /* Small SVG progress ring used by box styles 2 & 3 */
+      var lvRing = function lvRing(p, color, track, txtColor) {
+        var sz = 40, r = 16, circ = 2 * Math.PI * r;
+        return /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: sz, height: sz, flexShrink: 0 } },
+          /*#__PURE__*/React.createElement("svg", { width: sz, height: sz, style: { position: "absolute", inset: 0, transform: "rotate(-90deg)" } },
+            /*#__PURE__*/React.createElement("circle", { cx: sz / 2, cy: sz / 2, r: r, stroke: track, strokeWidth: 4, fill: "none" }),
+            /*#__PURE__*/React.createElement("circle", { cx: sz / 2, cy: sz / 2, r: r, stroke: color, strokeWidth: 4, fill: "none", strokeLinecap: "round", strokeDasharray: circ, strokeDashoffset: circ * (1 - p / 100) })
           ),
-          headLocked
-            ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: "rgba(255,255,255,0.9)" })
-            : /*#__PURE__*/React.createElement("span", { style: { fontSize: 16, fontWeight: 900, color: "#fff" } }, st.pct, "%")
-        ),
-        /* Unlock-by-exam lives inside the locked level box */
-        headLocked && /*#__PURE__*/React.createElement("button", {
+          /*#__PURE__*/React.createElement("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, fontWeight: 900, color: txtColor } }, p + "%")
+        );
+      };
+      var unlockBtn = function unlockBtn(softStyle) {
+        return /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { setPathOpenCh(examOpen ? null : "exam:" + lv); },
           "data-path-keep": "1",
           className: "press",
-          style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "rgba(255,255,255,0.94)", color: "#6B66A0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
-        }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: "#6B66A0" }), "Unlock")
-      ),
+          style: Object.assign({ marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 },
+            softStyle ? { background: C.primarySoft, color: C.primary } : { background: "rgba(255,255,255,0.94)", color: "#6B66A0" })
+        }, /*#__PURE__*/React.createElement(Icon, { name: "bolt", size: 12, color: softStyle ? C.primary : "#6B66A0" }), "Unlock");
+      };
+      var bannerInner;
+      {
+        /* Level box — neutral card with monogram + progress ring (final) */
+        var frontierInLv = st.chs.some(function (c2) { return c2.id === frontierId; });
+        bannerInner = /*#__PURE__*/React.createElement("div", {
+          style: { borderRadius: 20, padding: "13px 15px", background: C.surface, border: "1px solid " + C.line, boxShadow: "0 4px 14px rgba(28,26,46,0.05)", position: "relative" }
+        },
+          buddy === "B" && !headLocked && peep.variants.length > 0 && /*#__PURE__*/React.createElement("img", {
+            className: frontierInLv ? "avatar-float" : undefined,
+            src: peepUrl(peep.variants[lvIdx % peep.variants.length], 96),
+            width: 46, height: 46, alt: "",
+            style: { position: "absolute", top: -26, right: 16, display: "block", zIndex: 1 }
+          }),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+            /*#__PURE__*/React.createElement("div", { style: { width: 44, height: 44, borderRadius: 14, background: headLocked ? "#EFEEF6" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: headLocked ? "#B9B5CC" : "#fff", flexShrink: 0 } },
+              headLocked ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 14, color: "#B9B5CC" }) : lv),
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: headLocked ? "#B9B5CC" : C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, LEVEL_LABEL[lv]),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: headLocked ? "#C9C5DD" : C.sub, marginTop: 2 } },
+                headLocked ? lv + " \u00b7 Locked" : lv + " \u00b7 " + st.done + " of " + st.total + " cards")
+            ),
+            headLocked
+              ? null
+              : lvRing(st.pct, C.primary, C.line, C.ink)
+          ),
+          headLocked && unlockBtn(true)
+        );
+      }
+      var banner = /*#__PURE__*/React.createElement("div", {
+        style: { position: "relative", zIndex: examOpen ? 97 : 1, marginBottom: 16 }
+      }, bannerInner,
         examOpen && renderExamBubble(lv, "50%")
       );
       return /*#__PURE__*/React.createElement("div", { key: lv }, banner, nodes);
@@ -5703,6 +5806,18 @@ function Dashboard(_ref27) {
 
   /* scroll animation disabled */
   var headerRef = useRef(null);
+  /* DEV: path-buddy placement off/A/B/C + character reroll — remove once decided */
+  var _useState_bd = useState(function () {
+    try { return localStorage.getItem("memzy_buddy") || "A"; } catch (e) { return "A"; }
+  }),
+    _useState_bd2 = _slicedToArray(_useState_bd, 2),
+    buddy = _useState_bd2[0],
+    setBuddy = _useState_bd2[1];
+  useEffect(function () { try { localStorage.setItem("memzy_buddy", buddy); } catch (e) {} }, [buddy]);
+  var _useState_pp = useState(getPeep),
+    _useState_pp2 = _slicedToArray(_useState_pp, 2),
+    peep = _useState_pp2[0],
+    setPeep = _useState_pp2[1];
   /* Smart-deck strip: hide while scrolling down, reappear on scroll up */
   var _useState_sh = useState(false),
     _useState_sh2 = _slicedToArray(_useState_sh, 2),
@@ -5952,9 +6067,28 @@ function Dashboard(_ref27) {
       );
     })
   ),
-  /* Bottom-slot priority: the streak-rescue banner (time-critical, dismissible)
-     owns the slot above the tab bar; the jump tile yields while it's visible */
-  !curNodeVisible && !showRescue && ReactDOM.createPortal((function () {
+  /* DEV: path-buddy switcher — remove once decided */
+  /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, justifyContent: "center" } },
+    /*#__PURE__*/React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, color: C.sub } }, "Buddy:"),
+    ["off", "A", "B", "C"].map(function (v) {
+      var on = buddy === v;
+      return /*#__PURE__*/React.createElement("button", {
+        key: v,
+        onClick: function onClick() { setBuddy(v); },
+        className: "press",
+        style: { minWidth: 28, height: 26, padding: "0 7px", borderRadius: 9, border: "1.5px solid " + (on ? C.primary : C.line), background: on ? C.primarySoft : C.surface, color: on ? C.primary : C.sub, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: FONT }
+      }, v);
+    }),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { setPeep(rerollPeep()); },
+      className: "press",
+      title: "New character",
+      style: { width: 28, height: 26, borderRadius: 9, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", fontSize: 13, fontFamily: FONT }
+    }, "\uD83C\uDFB2")
+  ),
+  /* Jump tile is always available; when the rescue banner is up, the tile
+     stacks ABOVE it instead of overlapping (or disappearing) */
+  !curNodeVisible && ReactDOM.createPortal((function () {
     var ch = (CHAPTERS[curLevel] || []).filter(function (c2) { return c2.id === curChapter; })[0];
     if (!ch) return null;
     var cards = allCards.filter(function (c) { return c.chapter === ch.id; });
@@ -5970,7 +6104,7 @@ function Dashboard(_ref27) {
         setPathOpenCh(curChapter);
       },
       className: cracked ? "press btn-glow-ring-amber" : "press btn-glow-ring",
-      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, fontFamily: FONT, cursor: "pointer", textAlign: "left", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: showRescue ? "calc(160px + env(safe-area-inset-bottom))" : "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, fontFamily: FONT, cursor: "pointer", textAlign: "left", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
     },
       /*#__PURE__*/React.createElement("span", { style: { width: 38, height: 38, borderRadius: 13, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
         /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: "#fff" })),
@@ -10679,7 +10813,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v151';
+  var CACHE_VERSION = 'memzy-v153';
 
   if (!('serviceWorker' in navigator)) return;
 
