@@ -255,6 +255,10 @@ var CRACK_LEARNED_PCT = 0.8;
 var CRACK_EXPIRED_PCT = 0.5;
 /* Path layouts: a chapter unlocks once the PREVIOUS chapter reaches this pct */
 var CHAPTER_UNLOCK_PCT = 0.8;
+/* One-time bonus for unlocking a level */
+var LEVEL_CLAIM_POINTS = { A2: 50, B1: 100, B2: 150, C1: 250 };
+/* Surprise gift after the 3rd chapter of each level: pick 1 of 3 cards */
+var GIFT_PRIZES = [20, 25, 50];
 /* Every chapter is served in exactly this many rounds; the round size is
    derived from the chapter (45 cards → 3 rounds of 15) */
 var ROUNDS_PER_CHAPTER = 3;
@@ -436,6 +440,7 @@ function reshufflePeepStyles() {
   var p = getPeep();
   return setPeepFromChar(p.identity);
 }
+
 var CHAPTERS = {
   A1: [{
     id: "A1-1",
@@ -651,10 +656,21 @@ function FlagIcon(_ref_fi) {
     style: { fontSize: size || 22, lineHeight: 1, display: "inline-block", borderRadius: 3, overflow: "hidden" }
   });
 }
-var AVATARS = ["Milad", "Aneka", "Bella", "Leo", "Zoe", "Felix", "Mia", "Max", "Luna", "Kai", "Nova", "Remy", "Sara", "Jonas", "Niloo", "Lena", "Reza", "Mira", "Tobias", "Darya", "Oliver", "Emma", "Liam", "Sophia", "Noah", "Ava", "Ethan", "Isla", "Aria", "Jack", "Maya", "Theo", "Ivy", "Hugo", "Nora", "Finn", "Ruby", "Milo", "Cleo", "Atlas", "Vivian", "Caleb", "Hazel", "Owen", "Stella", "Jude", "Willow", "Asher", "Iris", "Ezra", "Amir", "Yasmin", "Layla", "Darius", "Shirin", "Keanu", "Freya", "Bjorn", "Hana", "Soren", "Leila", "Rafael", "Chiara", "Tariq", "Anika", "Sven", "Nadia", "Viktor", "Celine", "Hamid", "Roxana", "Florian", "Ingrid", "Cyrus", "Zara", "Matteo", "Elena"];
+var AVATARS = getPeepChars().map(peepAvatarVal); /* the 50 Open Peeps characters */
 var avatarURL = function avatarURL(seed) {
+  var str = String(seed || "");
+  if (str.indexOf("peep:") === 0) {
+    /* one of the 50 characters: head|skin|facialHair */
+    var p = str.slice(5).split("|");
+    return peepUrl(Object.assign({}, peepIdentityParams({ head: p[0], skinColor: p[1], facialHair: p[2] || null }), { face: "smile", accessoriesProbability: "0" }), 240);
+  }
+  if (str.indexOf("peepv:") === 0) {
+    /* a full style variant, JSON-encoded */
+    try { return peepUrl(JSON.parse(decodeURIComponent(str.slice(6))), 240); } catch (e) {}
+  }
   return "https://api.dicebear.com/9.x/open-peeps/svg?seed=" + encodeURIComponent(seed || "Milad");
 };
+function peepAvatarVal(id) { return "peep:" + id.head + "|" + id.skinColor + "|" + (id.facialHair || ""); }
 /* Create a profiles row if the user doesn't have one (deleted row, or OAuth
    user linked to an existing auth account where the signup trigger never fired). */
 function ensureProfile(u) {
@@ -1328,8 +1344,8 @@ function Shell(_ref5) {
     anim = _ref5.anim;
   return /*#__PURE__*/React.createElement("div", {
     style: _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({
-      height: "100vh"
-    }, "height", "100dvh"), "width", "100%"), "display", "flex"), "justifyContent", "center"), "background", C.bg), "fontFamily", FONT), "overflow", "hidden")
+      height: "100%"
+    }, "height", "100%"), "width", "100%"), "display", "flex"), "justifyContent", "center"), "background", C.bg), "fontFamily", FONT), "overflow", "hidden")
   }, /*#__PURE__*/React.createElement("div", {
     className: anim || undefined,
     style: {
@@ -3702,6 +3718,7 @@ function App() {
     },
     onStart: startChapter,
     onStartChapterAt: startChapterAt,
+    onBonusPoints: commitRound,
     onStartReview: startReview,
     onStartMarked: startMarked,
     onStartLevelExam: startLevelExam,
@@ -5352,6 +5369,7 @@ function Dashboard(_ref27) {
     onLevelChapterSelect = _ref27.onLevelChapterSelect,
     onStart = _ref27.onStart,
     onStartChapterAt = _ref27.onStartChapterAt,
+    onBonusPoints = _ref27.onBonusPoints,
     onStartReview = _ref27.onStartReview,
     onStartMarked = _ref27.onStartMarked,
     onStartLevelExam = _ref27.onStartLevelExam,
@@ -5705,14 +5723,14 @@ function Dashboard(_ref27) {
         var buddyBig = isFrontier;
         var buddySide = off > 0 ? -1 : 1; /* stand on the roomier side */
         var buddySize = buddyBig ? 60 : 40;
-        return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
+        var tile = /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
           buddyHere && /*#__PURE__*/React.createElement("div", {
             style: { position: "absolute", top: "50%", left: "50%", marginTop: -buddySize / 2 - 4, marginLeft: off + (buddySide > 0 ? 126 : -126 - buddySize), zIndex: 2, pointerEvents: "none", opacity: buddyBig ? 1 : 0.92, animation: (buddySide > 0 ? "buddyInR" : "buddyInL") + " .55s cubic-bezier(.16,1,.3,1) both" }
           }, /*#__PURE__*/React.createElement("img", {
             className: buddyBig ? "avatar-float" : undefined,
             src: peepUrl(peep.variants[gIdx % peep.variants.length], 96),
             width: buddySize, height: buddySize, alt: "",
-            style: { display: "block", transform: buddySide > 0 ? "scaleX(-1)" : undefined }
+            style: { display: "block", borderRadius: "50%", background: C.surface, border: "2px solid " + (buddyBig ? C.primary + "55" : C.line), boxShadow: "0 3px 10px rgba(28,26,46,0.10)", transform: buddySide > 0 ? "scaleX(-1)" : undefined }
           })),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
             /*#__PURE__*/React.createElement("button", {
@@ -5749,6 +5767,33 @@ function Dashboard(_ref27) {
           ),
           openHere && (lockedNode ? renderLockedBubble(ch, lockMsg, "calc(50% + " + off + "px)") : renderBubble(lv, ch, cs, "calc(50% + " + off + "px)"))
         );
+        if (ci !== 2) return tile;
+        /* Surprise gift after the 3rd chapter — one use, pick 1 of 3 cards */
+        var giftId = lv + ":gift1";
+        var giftAvail = !lockedNode;
+        var giftUsed = giftsUsed.indexOf(giftId) !== -1;
+        var giftLive = giftAvail && !giftUsed;
+        var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", style: { display: "flex", justifyContent: "center", marginBottom: 14 } },
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() {
+              if (!giftLive) return;
+              setGiftPick(-1); setGiftPrize(0); setGiftLv(lv);
+            },
+            "data-path-keep": "1",
+            className: "press",
+            style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "none", cursor: giftLive ? "pointer" : "default", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(0px) rotate(" + (ci % 2 === 0 ? 1.6 : -1.6) + "deg)", background: giftUsed || !giftAvail ? "#EFEEF6" : "linear-gradient(135deg,#FF8FB1,#F5A623)", boxShadow: giftLive ? "0 6px 18px rgba(245,120,140,0.4)" : "none", overflow: "hidden" }
+          },
+            /* perforated ticket edge */
+            /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 4, borderRadius: 14, border: "1.5px dashed " + (giftLive ? "rgba(255,255,255,0.55)" : "#D6D3E4"), pointerEvents: "none" } }),
+            /*#__PURE__*/React.createElement("span", { className: giftLive ? "gift-wiggle" : undefined, style: { width: 40, height: 40, borderRadius: 13, background: giftLive ? "rgba(255,255,255,0.25)" : "#E3E1EE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: giftUsed ? "box-open" : "gift", size: 17, color: giftLive ? "#fff" : "#B9B5CC" })),
+            /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13, fontWeight: 800, color: giftLive ? "#fff" : "#B9B5CC" } }, giftUsed ? "Gift opened" : "Surprise gift"),
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 10.5, fontWeight: 700, color: giftLive ? "rgba(255,255,255,0.85)" : "#C9C5DD", marginTop: 2 } }, giftUsed ? "See you at the next one" : giftAvail ? "Pick a card \u00b7 1 try" : "Unlock this chapter first")),
+            !giftUsed && /*#__PURE__*/React.createElement(Icon, { name: "star", size: 13, color: giftLive ? "rgba(255,255,255,0.9)" : "#C9C5DD" })
+          )
+        );
+        return /*#__PURE__*/React.createElement(React.Fragment, { key: ch.id + "-f" }, tile, giftEl);
       });
       /* Small SVG progress ring used by box styles 2 & 3 */
       var lvRing = function lvRing(p, color, track, txtColor) {
@@ -5781,7 +5826,7 @@ function Dashboard(_ref27) {
             className: frontierInLv ? "avatar-float" : undefined,
             src: peepUrl(peep.variants[lvIdx % peep.variants.length], 96),
             width: 46, height: 46, alt: "",
-            style: { position: "absolute", top: -26, right: 16, display: "block", zIndex: 1 }
+            style: { position: "absolute", top: -26, right: 16, display: "block", zIndex: 1, borderRadius: "50%", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 3px 10px rgba(28,26,46,0.10)" }
           }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
             /*#__PURE__*/React.createElement("div", { style: { width: 44, height: 44, borderRadius: 14, background: headLocked ? "#EFEEF6" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: headLocked ? "#B9B5CC" : "#fff", flexShrink: 0 } },
@@ -5795,7 +5840,14 @@ function Dashboard(_ref27) {
               ? null
               : lvRing(st.pct, C.primary, C.line, C.ink)
           ),
-          headLocked && unlockBtn(true)
+          headLocked && unlockBtn(true),
+          /* One-time unlock bonus */
+          !headLocked && LEVEL_CLAIM_POINTS[lv] && levelClaims.indexOf(lv) === -1 && /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setClaimDone(false); setClaimLv(lv); },
+            "data-path-keep": "1",
+            className: "press",
+            style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#FFD66B,#F5A623)", color: "#7A4A00", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: "0 4px 14px rgba(245,166,35,0.35)" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 13, color: "#7A4A00" }), "Claim +" + LEVEL_CLAIM_POINTS[lv] + " pts")
         );
       }
       var banner = /*#__PURE__*/React.createElement("div", {
@@ -5808,15 +5860,21 @@ function Dashboard(_ref27) {
     var allDone = levelData.every(function (ld) {
       return ld.csList.length > 0 && ld.csList.every(function (cs2) { return cs2.pct === 100; });
     });
-    var finale = /*#__PURE__*/React.createElement("div", { key: "finale", style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "18px 0 10px" } },
+    var finale = /*#__PURE__*/React.createElement("div", { key: "finale", style: { padding: "10px 0 110px" } },
       /*#__PURE__*/React.createElement("div", {
         className: allDone ? "avatar-float" : undefined,
-        style: { width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: allDone ? "linear-gradient(145deg,#FFD66B,#F5A623)" : C.surface, border: allDone ? "none" : "2px dashed #C9C5DD", boxShadow: allDone ? "0 10px 26px rgba(245,166,35,0.45)" : "none" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: allDone ? "trophy" : "flag-checkered", size: 24, color: allDone ? "#fff" : "#B9B5CC" })),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: allDone ? "#B45309" : C.sub, textAlign: "center" } },
-        allDone ? "Journey complete — you mastered it all!" : "The summit"),
-      !allDone && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#B9B5CC", textAlign: "center", maxWidth: 220, lineHeight: 1.5 } },
-        "Finish every chapter of every level to claim the trophy.")
+        style: { borderRadius: 20, padding: "13px 15px", background: allDone ? "linear-gradient(145deg,#FFD66B,#F5A623)" : C.surface, border: allDone ? "none" : "1px solid " + C.line, boxShadow: allDone ? "0 12px 30px rgba(245,166,35,0.4)" : "0 4px 14px rgba(28,26,46,0.05)", display: "flex", alignItems: "center", gap: 12, opacity: allDone ? 1 : 0.75 }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 44, height: 44, borderRadius: 14, background: allDone ? "rgba(255,255,255,0.25)" : "#EFEEF6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: allDone ? "trophy" : "lock", size: allDone ? 18 : 15, color: allDone ? "#fff" : "#B9B5CC" })),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: allDone ? "#fff" : "#B9B5CC", letterSpacing: -0.3 } },
+            allDone ? "Journey complete!" : "Memzy Certificate"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: allDone ? "rgba(255,255,255,0.9)" : "#C9C5DD", marginTop: 2 } },
+            allDone ? "Every chapter mastered — incredible." : "Master every chapter to earn it")
+        ),
+        !allDone && /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 16, color: "#D6D3E4" })
+      )
     );
     return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } }, content, finale);
   };
@@ -5876,10 +5934,52 @@ function Dashboard(_ref27) {
     buddy = _useState_bd2[0],
     setBuddy = _useState_bd2[1];
   useEffect(function () { try { localStorage.setItem("memzy_buddy", buddy); } catch (e) {} }, [buddy]);
+  /* Level unlock bonus + surprise gifts (both one-time, persisted) */
+  var _useState_lc = useState(function () {
+    try { return JSON.parse(localStorage.getItem("memzy_level_claims") || "[]"); } catch (e) { return []; }
+  }),
+    _useState_lc2 = _slicedToArray(_useState_lc, 2),
+    levelClaims = _useState_lc2[0],
+    setLevelClaims = _useState_lc2[1];
+  var _useState_cl = useState(null),
+    _useState_cl2 = _slicedToArray(_useState_cl, 2),
+    claimLv = _useState_cl2[0],
+    setClaimLv = _useState_cl2[1];
+  var _useState_cd = useState(false),
+    _useState_cd2 = _slicedToArray(_useState_cd, 2),
+    claimDone = _useState_cd2[0],
+    setClaimDone = _useState_cd2[1];
+  var _useState_gu = useState(function () {
+    try { return JSON.parse(localStorage.getItem("memzy_gifts_used") || "[]"); } catch (e) { return []; }
+  }),
+    _useState_gu2 = _slicedToArray(_useState_gu, 2),
+    giftsUsed = _useState_gu2[0],
+    setGiftsUsed = _useState_gu2[1];
+  var _useState_gl = useState(null),
+    _useState_gl2 = _slicedToArray(_useState_gl, 2),
+    giftLv = _useState_gl2[0],
+    setGiftLv = _useState_gl2[1];
+  var _useState_gp = useState(-1),
+    _useState_gp2 = _slicedToArray(_useState_gp, 2),
+    giftPick = _useState_gp2[0],
+    setGiftPick = _useState_gp2[1];
+  var _useState_gz = useState(0),
+    _useState_gz2 = _slicedToArray(_useState_gz, 2),
+    giftPrize = _useState_gz2[0],
+    setGiftPrize = _useState_gz2[1];
   var _useState_pp = useState(getPeep),
     _useState_pp2 = _slicedToArray(_useState_pp, 2),
     peep = _useState_pp2[0],
     setPeep = _useState_pp2[1];
+  /* If the profile avatar is one of the 50 characters and differs from the
+     stored buddy identity, adopt it (e.g. set on another device) */
+  useEffect(function () {
+    var av = user && user.avatar ? String(user.avatar) : "";
+    if (av.indexOf("peep:") !== 0) return;
+    var p = av.slice(5).split("|");
+    var id = { head: p[0], skinColor: p[1], facialHair: p[2] || null };
+    if (peepKey(id) !== peepKey(peep.identity)) setPeep(setPeepFromChar(id));
+  }, [user && user.avatar]);
   /* Smart-deck strip: hide while scrolling down, reappear on scroll up */
   var _useState_sh = useState(false),
     _useState_sh2 = _slicedToArray(_useState_sh, 2),
@@ -6140,14 +6240,114 @@ function Dashboard(_ref27) {
         className: "press",
         style: { minWidth: 28, height: 26, padding: "0 7px", borderRadius: 9, border: "1.5px solid " + (on ? C.primary : C.line), background: on ? C.primarySoft : C.surface, color: on ? C.primary : C.sub, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: FONT }
       }, v);
-    }),
-    /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() { setPeep(setPeepFromChar(peepRnd(getPeepChars()))); },
-      className: "press",
-      title: "New character",
-      style: { width: 28, height: 26, borderRadius: 9, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", fontSize: 13, fontFamily: FONT }
-    }, "\uD83C\uDFB2")
+    })
   ),
+  /* Level-bonus claim sheet */
+  claimLv && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget && claimDone) setClaimLv(null); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in",
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setClaimLv(null); },
+          className: "press", "aria-label": "Close",
+          style: { position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub })),
+        !claimDone
+          ? /*#__PURE__*/React.createElement(React.Fragment, null,
+              /*#__PURE__*/React.createElement("div", { className: "pop", style: { width: 76, height: 76, borderRadius: "50%", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#FFD66B,#F5A623)", boxShadow: "0 10px 26px rgba(245,166,35,0.4)" } },
+                /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 28, color: "#fff" })),
+              /*#__PURE__*/React.createElement("h2", { style: { fontSize: 19, fontWeight: 900, color: C.ink, margin: "0 0 5px", letterSpacing: -0.4 } }, "Level reward!"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.sub, marginBottom: 18 } },
+                "You reached " + claimLv + " \u00b7 " + LEVEL_LABEL[claimLv] + " \u2014 here's a little gift."),
+              /*#__PURE__*/React.createElement(PrimaryButton, {
+                onClick: function onClick() {
+                  var n = LEVEL_CLAIM_POINTS[claimLv] || 0;
+                  if (onBonusPoints) onBonusPoints(n);
+                  var next = levelClaims.concat([claimLv]);
+                  setLevelClaims(next);
+                  try { localStorage.setItem("memzy_level_claims", JSON.stringify(next)); } catch (e) {}
+                  setClaimDone(true);
+                },
+                glow: true
+              }, "Claim your reward")
+            )
+          : /*#__PURE__*/React.createElement(React.Fragment, null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 54, fontWeight: 900, color: C.amber, letterSpacing: -2, animation: "scalePop .5s cubic-bezier(.16,1,.3,1) both" } },
+                "+" + (LEVEL_CLAIM_POINTS[claimLv] || 0)),
+              /*#__PURE__*/React.createElement("div", { className: "pop", style: { fontSize: 14, fontWeight: 800, color: C.ink, margin: "6px 0 18px" } }, "Points added \uD83C\uDF89"),
+              /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setClaimLv(null); } }, "Keep learning")
+            )
+      )
+    ), document.body),
+  /* Surprise gift: pick 1 of 3 lottery cards */
+  giftLv && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget && giftPick === -1) setGiftLv(null); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in",
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setGiftLv(null); },
+          className: "press", "aria-label": "Close",
+          style: { position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub })),
+        /*#__PURE__*/React.createElement("h2", { style: { fontSize: 19, fontWeight: 900, color: C.ink, margin: "0 0 5px", letterSpacing: -0.4 } }, "Pick a card"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.sub, marginBottom: 18 } }, "One of these hides your surprise"),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 18 } },
+          [0, 1, 2].map(function (i) {
+            var flipped = giftPick === i;
+            return /*#__PURE__*/React.createElement("div", { key: i, className: "flip-wrap", style: { flex: 1, height: 118, opacity: giftPick !== -1 && !flipped ? 0.45 : 1, transition: "opacity .3s ease" } },
+              /*#__PURE__*/React.createElement("button", {
+                onClick: function onClick() {
+                  if (giftPick !== -1) return;
+                  setGiftPrize(GIFT_PRIZES[Math.floor(Math.random() * GIFT_PRIZES.length)]);
+                  setGiftPick(i);
+                },
+                className: "flip-inner" + (flipped ? " flip-go" : ""),
+                style: { width: "100%", border: "none", background: "transparent", cursor: giftPick === -1 ? "pointer" : "default", padding: 0 }
+              },
+                /*#__PURE__*/React.createElement("span", { className: "flip-face", style: { background: "linear-gradient(160deg,#FF8FB1,#F5A623)", boxShadow: "0 6px 16px rgba(245,120,140,0.35)", overflow: "hidden" } },
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed rgba(255,255,255,0.6)", pointerEvents: "none" } }),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.85)", letterSpacing: 1.5, textTransform: "uppercase" } }, "Memzy"),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 30, fontWeight: 900, color: "#fff", margin: "2px 0", textShadow: "0 2px 6px rgba(0,0,0,0.12)" } }, "?"),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.85)", letterSpacing: 1.5, textTransform: "uppercase" } }, "Lottery")),
+                /*#__PURE__*/React.createElement("span", { className: "flip-face flip-back", style: { background: "linear-gradient(160deg,#FFF6E3,#FFE9C2)", border: "2px solid " + C.amber, overflow: "hidden" } },
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed " + C.amber + "88", pointerEvents: "none" } }),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "#B45309", letterSpacing: 1.5, textTransform: "uppercase" } }, "Winner"),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 23, fontWeight: 900, color: "#B45309", margin: "2px 0" } }, "+" + giftPrize),
+                  /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 800, color: "#D98E1B" } },
+                    /*#__PURE__*/React.createElement(Icon, { name: "star", size: 9, color: "#D98E1B" }), "points"))
+              )
+            );
+          })
+        ),
+        giftPick !== -1
+          ? /*#__PURE__*/React.createElement("div", { style: { animation: "riseIn .45s cubic-bezier(.16,1,.3,1) .45s both" } },
+              /*#__PURE__*/React.createElement(PrimaryButton, {
+                onClick: function onClick() {
+                  if (onBonusPoints) onBonusPoints(giftPrize);
+                  var gid = giftLv + ":gift1";
+                  var next = giftsUsed.concat([gid]);
+                  setGiftsUsed(next);
+                  try { localStorage.setItem("memzy_gifts_used", JSON.stringify(next)); } catch (e) {}
+                  setGiftLv(null);
+                },
+                glow: true
+              }, "Claim +" + giftPrize + " pts")
+            )
+          : /*#__PURE__*/React.createElement("div", { style: { height: 50 } })
+      )
+    ), document.body),
   /* Jump tile is always available; when the rescue banner is up, the tile
      stacks ABOVE it instead of overlapping (or disappearing) */
   !curNodeVisible && ReactDOM.createPortal((function () {
@@ -8884,7 +9084,9 @@ function FriendsPage(_ref37) {
     var ordered = friends.map(function (id) { return byId[id]; }).filter(Boolean);
     if (ordered.length === 0) ordered = myFriends;
     var newestFirst = ordered.slice().reverse();
-    var shown = q ? filteredFriends : newestFirst.slice(0, 4);
+    /* Render everything; the card clips to available height so tall screens
+       show more rows and short screens never hide the footer */
+    var shown = q ? filteredFriends : newestFirst;
     var row = function row(u, isLast) {
       return /*#__PURE__*/React.createElement("div", {
         key: u.id,
@@ -8900,15 +9102,17 @@ function FriendsPage(_ref37) {
         )
       );
     };
-    var hasMore = !q && newestFirst.length > 4;
+    var hasMore = !q && newestFirst.length > 0;
     return /*#__PURE__*/React.createElement(React.Fragment, null,
-      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
-        shown.map(function (u, i) { return row(u, !hasMore && i === shown.length - 1); }),
-        /* "See all" lives inside the list as its final row */
+      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minHeight: 0, overflowY: "hidden" } },
+          shown.map(function (u, i) { return row(u, i === shown.length - 1); })
+        ),
+        /* "See all" is pinned to the bottom of the table */
         hasMore && /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { setShowAllFriends(true); },
           className: "press",
-          style: { width: "100%", padding: "11px 13px", border: "none", background: "transparent", color: C.primary, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }
+          style: { width: "100%", padding: "11px 13px", border: "none", borderTop: "1px solid " + C.line, background: C.surface, color: C.primary, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0 }
         }, "See all " + newestFirst.length + " friends", /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 11, color: C.primary }))
       ),
       showAllFriends && /*#__PURE__*/React.createElement(Sheet, {
@@ -9639,11 +9843,6 @@ function ProfilePage(_ref42) {
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
   var kb = useKeyboardInset();
-  /* Path character (Open Peeps): selected from the 50, with its 10 styles */
-  var _useState_mp = useState(getPeep),
-    _useState_mp2 = _slicedToArray(_useState_mp, 2),
-    myPeep = _useState_mp2[0],
-    setMyPeep = _useState_mp2[1];
   var _useState_ss = useState(false),
     _useState_ss2 = _slicedToArray(_useState_ss, 2),
     showSettings = _useState_ss2[0],
@@ -9685,6 +9884,11 @@ function ProfilePage(_ref42) {
       var av = pendAvatar;
       setUser(function(u) { return _objectSpread(_objectSpread({}, u), {}, { avatar: av }); });
       if (user && user.id) supabase.from("profiles").update({ avatar_emoji: av }).eq("id", user.id).then(function(){});
+      /* New character chosen -> regenerate its 10 background styles */
+      if (av && String(av).indexOf("peep:") === 0) {
+        var pp = String(av).slice(5).split("|");
+        setPeepFromChar({ head: pp[0], skinColor: pp[1], facialHair: pp[2] || null });
+      }
     }
     if (langDirty) {
       setSelectedLangs([lang]);
@@ -9775,8 +9979,8 @@ function ProfilePage(_ref42) {
     /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() { setShowSettings(true); },
       className: "press", "aria-label": "Settings",
-      style: { width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-    }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 14, color: C.sub }))
+      style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
   )), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
@@ -9979,42 +10183,6 @@ function ProfilePage(_ref42) {
             )
           ),
           /* Name */
-          /*#__PURE__*/React.createElement("div", { style: { marginBottom: 18 } },
-            /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Your character"),
-            /*#__PURE__*/React.createElement("div", { style: { height: 196, overflowY: "auto", overscrollBehaviorY: "none", border: "1.5px solid " + C.line, borderRadius: 14, padding: 8, background: C.bg } },
-              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 } },
-                getPeepChars().map(function (chr, ci) {
-                  var on = peepKey(chr) === peepKey(myPeep.identity);
-                  return /*#__PURE__*/React.createElement("button", {
-                    key: ci,
-                    onClick: function onClick() { setMyPeep(setPeepFromChar(chr)); },
-                    className: "press",
-                    style: { background: on ? C.primarySoft : C.surface, borderRadius: 14, padding: 4, cursor: "pointer", border: on ? "2px solid " + C.primary : "2px solid " + C.line }
-                  }, /*#__PURE__*/React.createElement("img", {
-                    src: peepUrl(Object.assign({}, peepIdentityParams(chr), { face: "smile", accessoriesProbability: "0" }), 96),
-                    width: 64, height: 64, alt: "", loading: "lazy",
-                    style: { width: "100%", height: "auto", display: "block" }
-                  }));
-                })
-              )
-            ),
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 7px" } },
-              /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.sub } }, "Your 10 styles"),
-              /*#__PURE__*/React.createElement("button", {
-                onClick: function onClick() { setMyPeep(reshufflePeepStyles()); },
-                className: "press",
-                style: { padding: "6px 13px", borderRadius: 999, border: "none", background: C.primary, color: "#fff", fontSize: 11.5, fontWeight: 800, cursor: "pointer", fontFamily: FONT }
-              }, "Shuffle")
-            ),
-            /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4 } },
-              myPeep.variants.map(function (v, vi) {
-                return /*#__PURE__*/React.createElement("img", {
-                  key: vi, src: peepUrl(v, 80), width: 46, height: 46, alt: "", loading: "lazy",
-                  style: { flexShrink: 0, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, animation: "pop .25s ease both", animationDelay: vi * 0.03 + "s" }
-                });
-              })
-            )
-          ),
           /*#__PURE__*/React.createElement("div", null,
             /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Name"),
             /*#__PURE__*/React.createElement("input", {
@@ -10418,10 +10586,24 @@ function ExamComplete(_ref_ec) {
   /*#__PURE__*/React.createElement("div", {
     className: "rise",
     style: { animationDelay: ".4s", width: "100%", zIndex: 10 }
-  }, /*#__PURE__*/React.createElement(PrimaryButton, {
-    onClick: onContinue,
-    style: passed ? { background: "#2DBF72" } : undefined
-  }, passed ? ("Go to " + LEVEL_LABEL[level]) : "Back to Home")));
+  }, /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+    /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+      /*#__PURE__*/React.createElement(PrimaryButton, {
+        onClick: onContinue,
+        style: passed ? { background: "#2DBF72" } : undefined
+      }, passed ? ("Go to " + LEVEL_LABEL[level]) : "Back to Home")),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        var msg = passed
+          ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy! \uD83C\uDF89"
+          : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy \uD83D\uDCAA";
+        if (navigator.share) { navigator.share({ text: msg }).catch(function () {}); }
+        else if (navigator.clipboard) { navigator.clipboard.writeText(msg).catch(function () {}); }
+      },
+      className: "press", "aria-label": "Share",
+      style: { width: 56, height: 56, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 16, color: C.ink }))
+  )));
 }
 function SessionComplete(_ref47) {
   var points = _ref47.points,
@@ -10453,6 +10635,16 @@ function SessionComplete(_ref47) {
   var _useState_shareMsg = useState(""), _useState_shareMsg2 = _slicedToArray(_useState_shareMsg, 2), shareMsg = _useState_shareMsg2[0], setShareMsg = _useState_shareMsg2[1];
   var ptsCu = useCountUp(points, "roundPts");
   var totalCu = useCountUp(page === "stats" ? totalPoints : 0, "roundTotal");
+  /* One random style of the user's character per celebration */
+  var pickCeleb = function pickCeleb() {
+    var pp = getPeep();
+    if (pp && pp.variants && pp.variants.length) {
+      return "peepv:" + encodeURIComponent(JSON.stringify(pp.variants[Math.floor(Math.random() * pp.variants.length)]));
+    }
+    return null;
+  };
+  var celebSeed = useMemo(pickCeleb, []);
+  var celebSeed2 = useMemo(pickCeleb, []);
   var streakCu = useCountUp(dayStreak, "roundStreak");
   /* Rewards crossed by THIS round (total before round → total after round) */
   var crossed = useMemo(function () {
@@ -10492,6 +10684,12 @@ function SessionComplete(_ref47) {
     else if (page === "streak") playSFX("streak");
   }, [page]);
   var pageBg = page === "badge" || page === "streak" || page === "level" || page === "rewinddone" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : "#F0EEFF";
+  /* iOS standalone: paint the status-bar area in the page color too */
+  useEffect(function () {
+    var prev = document.documentElement.style.background;
+    document.documentElement.style.background = pageBg;
+    return function () { document.documentElement.style.background = prev || "#F5F4FB"; };
+  }, [pageBg]);
   useEffect(function () {
     var bg = pageBg;
     document.documentElement.style.background = bg;
@@ -10616,9 +10814,9 @@ function SessionComplete(_ref47) {
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 12 } },
           tier === 0
-            ? /*#__PURE__*/React.createElement(RingAvatar, { seed: userAvatar, pct: knownPct, color: C.green, size: 108 })
+            ? /*#__PURE__*/React.createElement(RingAvatar, { seed: celebSeed || userAvatar, pct: knownPct, color: C.primary, size: 108 })
             : /*#__PURE__*/React.createElement(PingWrap, { color: C.primary + "66", radius: "50%" },
-                /*#__PURE__*/React.createElement(RingAvatar, { seed: userAvatar, pct: knownPct, color: C.green, size: 108 })
+                /*#__PURE__*/React.createElement(RingAvatar, { seed: celebSeed || userAvatar, pct: knownPct, color: C.primary, size: 108 })
               )
         ),
         /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, cheer),
@@ -10637,10 +10835,13 @@ function SessionComplete(_ref47) {
         )
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".42s", width: "100%", zIndex: 10 } },
-        /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: function onClick() { playSFX("claim"); setPage("stats"); },
-          glow: tier >= 1
-        }, "Claim " + points + " point" + (points === 1 ? "" : "s"))
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: function onClick() { playSFX("claim"); setPage("stats"); },
+            glow: tier >= 1
+          }, "Claim " + points + " point" + (points === 1 ? "" : "s"))),
+          shareIconBtn()
+        )
       )
     );
   }
@@ -10658,18 +10859,10 @@ function SessionComplete(_ref47) {
         style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
-          /*#__PURE__*/React.createElement(PingWrap, { color: C.primary + "66", radius: 28 },
-            /*#__PURE__*/React.createElement("div", {
-              style: { width: 88, height: 88, borderRadius: 28, background: "linear-gradient(145deg,#6A5BFF,#5A4FE3)", boxShadow: "0 14px 32px rgba(90,79,227,0.38)", display: "flex", alignItems: "center", justifyContent: "center", animation: tier >= 1 ? "avatarFloat 3s ease-in-out infinite" : "none", overflow: "hidden" }
-            }, (function () {
-              /* A different style of the user's character celebrates each time */
-              var pp = getPeep();
-              if (pp && pp.variants && pp.variants.length) {
-                var v = pp.variants[Math.floor(Math.random() * pp.variants.length)];
-                return /*#__PURE__*/React.createElement("img", { src: peepUrl(v, 120), width: 78, height: 78, alt: "", style: { display: "block" } });
-              }
-              return /*#__PURE__*/React.createElement(Icon, { name: "star", size: 36, color: "#fff" });
-            })())
+          /*#__PURE__*/React.createElement(React.Fragment, null,
+            /* Same RingAvatar style as the session-complete screen, with another
+               random style of the user's character — no pulse animation here */
+            /*#__PURE__*/React.createElement(RingAvatar, { seed: celebSeed2 || userAvatar, pct: 100, color: C.primary, size: 108 })
           )
         ),
         /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Points claimed!"),
@@ -10750,7 +10943,10 @@ function SessionComplete(_ref47) {
         )
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
-        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterRewindStep, style: { background: C.amber } }, "Continue")
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterRewindStep, style: { background: C.amber } }, "Continue")),
+          shareIconBtn()
+        )
       )
     );
   }
@@ -10787,7 +10983,10 @@ function SessionComplete(_ref47) {
         )
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
-        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterLevelStep, style: { background: C.green } }, "Continue")
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterLevelStep, style: { background: C.green } }, "Continue")),
+          shareIconBtn()
+        )
       )
     );
   }
@@ -10827,7 +11026,10 @@ function SessionComplete(_ref47) {
         )
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
-        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterBadgeStep, glow: true }, "Continue")
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterBadgeStep, glow: true }, "Continue")),
+          shareIconBtn()
+        )
       )
     );
   }
@@ -10880,10 +11082,13 @@ function SessionComplete(_ref47) {
         )
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
-        /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: goStreakOrExit,
-          style: { background: "#FF8E2B", boxShadow: "0 8px 22px rgba(255,142,43,0.4)" }
-        }, "Continue")
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: goStreakOrExit,
+            style: { background: "#FF8E2B", boxShadow: "0 8px 22px rgba(255,142,43,0.4)" }
+          }, "Continue")),
+          shareIconBtn()
+        )
       )
     );
   }
@@ -10956,7 +11161,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
@@ -10964,7 +11169,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v154';
+  var CACHE_VERSION = 'memzy-v157';
 
   if (!('serviceWorker' in navigator)) return;
 
