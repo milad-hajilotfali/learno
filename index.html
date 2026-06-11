@@ -14,7 +14,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
-    html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden;overscroll-behavior:none}
+    html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden;overscroll-behavior:none;height:100%}
+    #root{position:fixed;inset:0;overflow:hidden}
     @keyframes spin{to{transform:rotate(360deg)}}
     #root{height:100vh;height:100dvh}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
@@ -401,6 +402,39 @@ function getPeep() {
 function rerollPeep() {
   try { localStorage.removeItem("memzy_peep"); } catch (e) {}
   return getPeep();
+}
+/* Full head/facial sets (from the avatar-builder prototype) for the 50-character picker */
+var PEEP_HEADS_FULL = ["afro","bangs","bangs2","bantuKnots","bear","bun","bun2","buns","cornrows","cornrows2","dreads1","dreads2","flatTop","flatTopLong","grayBun","grayMedium","grayShort","hijab","long","longAfro","longBangs","longCurly","medium1","medium2","medium3","mediumBangs","mediumBangs2","mediumBangs3","mediumStraight","mohawk","mohawk2","noHair1","noHair2","noHair3","pomp","shaved1","shaved2","shaved3","short1","short2","short3","short4","short5","turban","twists","twists2"];
+var PEEP_FACIAL_FULL = ["chin","full","full2","full3","full4","goatee1","goatee2","moustache1","moustache2","moustache3","moustache4","moustache5","moustache6","moustache7","moustache8","moustache9"];
+/* The 50 selectable characters — generated once, persisted so selection is stable */
+function getPeepChars() {
+  try {
+    var c = JSON.parse(localStorage.getItem("memzy_peep_chars"));
+    if (c && c.length === 50) return c;
+  } catch (e) {}
+  var out = [], seen = {}, guard = 0;
+  while (out.length < 50 && guard < 500) {
+    guard++;
+    var id = { head: peepRnd(PEEP_HEADS_FULL), skinColor: peepRnd(PEEP_SKINS), facialHair: Math.random() < 0.3 ? peepRnd(PEEP_FACIAL_FULL) : null };
+    var k = id.head + "|" + id.skinColor + "|" + (id.facialHair || "n");
+    if (seen[k]) continue;
+    seen[k] = true;
+    out.push(id);
+  }
+  try { localStorage.setItem("memzy_peep_chars", JSON.stringify(out)); } catch (e) {}
+  return out;
+}
+function peepKey(id) { return id.head + "|" + id.skinColor + "|" + (id.facialHair || "n"); }
+/* Select a character: keeps it + generates its 10 random styles */
+function setPeepFromChar(identity) {
+  var p = { identity: identity, variants: makePeepVariants(identity, 10) };
+  try { localStorage.setItem("memzy_peep", JSON.stringify(p)); } catch (e) {}
+  return p;
+}
+/* Same character, fresh 10 styles */
+function reshufflePeepStyles() {
+  var p = getPeep();
+  return setPeepFromChar(p.identity);
 }
 var CHAPTERS = {
   A1: [{
@@ -5400,14 +5434,23 @@ function Dashboard(_ref27) {
     return function () { document.removeEventListener("pointerdown", onPD, true); };
   }, [pathOpenCh]);
   useEffect(function () {
-    var el = curPathNodeRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") { setCurNodeVisible(true); return; }
-    var obs = new IntersectionObserver(function (entries) {
-      setCurNodeVisible(entries[0] ? entries[0].isIntersecting : true);
-    }, { threshold: 0 });
-    obs.observe(el);
-    return function () { obs.disconnect(); };
-  }, [curLevel, curChapter]);
+    var obs = null, t = null;
+    var attach = function attach() {
+      var el = curPathNodeRef.current;
+      if (!el || typeof IntersectionObserver === "undefined") {
+        /* node not rendered yet (data still loading) — retry shortly */
+        setCurNodeVisible(true);
+        t = setTimeout(attach, 400);
+        return;
+      }
+      obs = new IntersectionObserver(function (entries) {
+        setCurNodeVisible(entries[0] ? entries[0].isIntersecting : true);
+      }, { threshold: 0 });
+      obs.observe(el);
+    };
+    attach();
+    return function () { if (obs) obs.disconnect(); if (t) clearTimeout(t); };
+  }, [curLevel, curChapter, allCards, learnedIds, unlockedLevels]);
   /* Entering Home lands on the current chapter's node, centered — a B2
      learner shouldn't scroll six levels every visit. Re-centers when the
      selection changes (incl. the auto-advance below). */
@@ -5664,7 +5707,7 @@ function Dashboard(_ref27) {
         var buddySize = buddyBig ? 60 : 40;
         return /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
           buddyHere && /*#__PURE__*/React.createElement("div", {
-            style: { position: "absolute", top: "50%", left: "50%", marginTop: -buddySize / 2 - 4, marginLeft: off + (buddySide > 0 ? 126 : -126 - buddySize), zIndex: 2, pointerEvents: "none", opacity: buddyBig ? 1 : 0.92 }
+            style: { position: "absolute", top: "50%", left: "50%", marginTop: -buddySize / 2 - 4, marginLeft: off + (buddySide > 0 ? 126 : -126 - buddySize), zIndex: 2, pointerEvents: "none", opacity: buddyBig ? 1 : 0.92, animation: (buddySide > 0 ? "buddyInR" : "buddyInL") + " .55s cubic-bezier(.16,1,.3,1) both" }
           }, /*#__PURE__*/React.createElement("img", {
             className: buddyBig ? "avatar-float" : undefined,
             src: peepUrl(peep.variants[gIdx % peep.variants.length], 96),
@@ -5675,10 +5718,16 @@ function Dashboard(_ref27) {
             /*#__PURE__*/React.createElement("button", {
               ref: isCur ? curPathNodeRef : null,
               "data-path-keep": "1",
-              onClick: function onClick() {
+              onClick: function onClick(e) {
                 /* Peeking only opens the bubble — it NEVER moves the user's
                    place. Selection commits inside startChapterAt on Start. */
-                setPathOpenCh(openHere ? null : ch.id);
+                var willOpen = !openHere;
+                setPathOpenCh(willOpen ? ch.id : null);
+                /* Center the tile so the bubble never sinks under the tab bar */
+                if (willOpen) {
+                  var el = e.currentTarget;
+                  setTimeout(function () { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (er) {} }, 40);
+                }
               },
               className: isFrontier ? "press " + (cs.cracked ? "btn-glow-ring-amber" : "btn-glow-ring") : "press",
               style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "2px solid " + (openHere || isFrontier ? (cs.cracked ? C.amber : C.primary) : col.border), background: col.bg, cursor: "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + off + "px) rotate(" + (ci % 2 === 0 ? -1.6 : 1.6) + "deg)", boxShadow: openHere && !isFrontier ? "0 0 0 4px " + (cs.cracked ? C.amber + "30" : C.primarySoft) + ", 0 4px 14px rgba(28,26,46,0.08)" : isFrontier ? undefined : "0 3px 10px rgba(28,26,46,0.06)" }
@@ -5756,7 +5805,20 @@ function Dashboard(_ref27) {
       );
       return /*#__PURE__*/React.createElement("div", { key: lv }, banner, nodes);
     });
-    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } }, content);
+    var allDone = levelData.every(function (ld) {
+      return ld.csList.length > 0 && ld.csList.every(function (cs2) { return cs2.pct === 100; });
+    });
+    var finale = /*#__PURE__*/React.createElement("div", { key: "finale", style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "18px 0 10px" } },
+      /*#__PURE__*/React.createElement("div", {
+        className: allDone ? "avatar-float" : undefined,
+        style: { width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: allDone ? "linear-gradient(145deg,#FFD66B,#F5A623)" : C.surface, border: allDone ? "none" : "2px dashed #C9C5DD", boxShadow: allDone ? "0 10px 26px rgba(245,166,35,0.45)" : "none" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: allDone ? "trophy" : "flag-checkered", size: 24, color: allDone ? "#fff" : "#B9B5CC" })),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: allDone ? "#B45309" : C.sub, textAlign: "center" } },
+        allDone ? "Journey complete — you mastered it all!" : "The summit"),
+      !allDone && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#B9B5CC", textAlign: "center", maxWidth: 220, lineHeight: 1.5 } },
+        "Finish every chapter of every level to claim the trophy.")
+    );
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } }, content, finale);
   };
   /* Has today's streak been earned yet? (any-language activity counts) */
   var todayDone = isActiveDay(globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null);
@@ -6051,7 +6113,7 @@ function Dashboard(_ref27) {
      which is what pushed the old pill half off-screen.) */
   /* Smart decks — compact strip up top where it's always seen (the old
      full-size cards lived below the whole path and were never reached) */
-  /*#__PURE__*/React.createElement("div", { style: { position: "sticky", top: "calc(71px + env(safe-area-inset-top))", zIndex: 45, margin: "0 -20px", padding: "8px 20px 9px", background: "#F5F4FB", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, transform: stripHidden ? "translateY(-130%)" : "translateY(0)", opacity: stripHidden ? 0 : 1, pointerEvents: stripHidden ? "none" : "auto", transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .22s ease" } },
+  /*#__PURE__*/React.createElement("div", { style: { position: "sticky", top: "calc(71px + env(safe-area-inset-top))", zIndex: 45, margin: "0 -20px", padding: "9px 20px 11px", background: "#F5F4FB", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, transform: stripHidden ? "translateY(-130%)" : "translateY(0)", opacity: stripHidden ? 0 : 1, pointerEvents: stripHidden ? "none" : "auto", transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .22s ease" } },
     [{ k: "recharge", icon: "hourglass-half", label: "Rewind", count: rechargeCount, fg: "#B45309", bg: "linear-gradient(135deg,#FFF8EA,#FFF3DD)", bd: C.amber + "55" },
      { k: "review", icon: "rotate-left", label: "Review", count: reviewCount, fg: C.red, bg: C.surface, bd: C.red + "44" },
      { k: "marked", icon: "bookmark", label: "Saved", count: markedCount, fg: C.primary, bg: C.surface, bd: C.line }].map(function (d) {
@@ -6059,11 +6121,11 @@ function Dashboard(_ref27) {
         key: d.k,
         onClick: function onClick() { if (onOpenDeck) onOpenDeck(d.k); },
         className: "press",
-        style: { border: "1.5px solid " + d.bd, background: d.bg, borderRadius: 13, padding: "7px 6px", cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, position: "relative", minWidth: 0 }
+        style: { border: "1.5px solid " + d.bd, background: d.bg, borderRadius: 14, padding: "11px 8px", cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, position: "relative", minWidth: 0 }
       },
         d.count > 0 && /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: d.fg, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: "2px solid #F5F4FB" } }, d.count > 99 ? "99+" : d.count),
-        /*#__PURE__*/React.createElement(Icon, { name: d.icon, size: 13, color: d.fg }),
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: d.fg } }, d.label)
+        /*#__PURE__*/React.createElement(Icon, { name: d.icon, size: 15, color: d.fg }),
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 12.5, fontWeight: 800, color: d.fg } }, d.label)
       );
     })
   ),
@@ -6080,7 +6142,7 @@ function Dashboard(_ref27) {
       }, v);
     }),
     /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() { setPeep(rerollPeep()); },
+      onClick: function onClick() { setPeep(setPeepFromChar(peepRnd(getPeepChars()))); },
       className: "press",
       title: "New character",
       style: { width: 28, height: 26, borderRadius: 9, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", fontSize: 13, fontFamily: FONT }
@@ -7559,7 +7621,7 @@ function MyFlashcardsPage(_ref31) {
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, animation: "fadeIn .18s ease both" }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -9577,6 +9639,26 @@ function ProfilePage(_ref42) {
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
   var kb = useKeyboardInset();
+  /* Path character (Open Peeps): selected from the 50, with its 10 styles */
+  var _useState_mp = useState(getPeep),
+    _useState_mp2 = _slicedToArray(_useState_mp, 2),
+    myPeep = _useState_mp2[0],
+    setMyPeep = _useState_mp2[1];
+  var _useState_ss = useState(false),
+    _useState_ss2 = _slicedToArray(_useState_ss, 2),
+    showSettings = _useState_ss2[0],
+    setShowSettings = _useState_ss2[1];
+  var _useState_sx = useState(function () {
+    try { return localStorage.getItem("memzy_sfx") !== "0"; } catch (e) { return true; }
+  }),
+    _useState_sx2 = _slicedToArray(_useState_sx, 2),
+    sfx = _useState_sx2[0],
+    setSfx = _useState_sx2[1];
+  var toggleSfx = function toggleSfx() {
+    var v = !sfx;
+    setSfx(v);
+    try { localStorage.setItem("memzy_sfx", v ? "1" : "0"); } catch (e) {}
+  };
   /* Avatar selection is STAGED: picking in the edit modal only updates
      pendAvatar — nothing applies to the user or Supabase until Save. */
   var _useState_origAv = useState(user && user.avatar),
@@ -9686,14 +9768,16 @@ function ProfilePage(_ref42) {
       background: C.surface,
       borderBottom: "1px solid " + C.line
     }
-  }, /*#__PURE__*/React.createElement("h1", {
-    style: {
-      fontSize: 23,
-      fontWeight: 800,
-      color: C.ink,
-      margin: 0
-    }
-  }, "Profile")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+    /*#__PURE__*/React.createElement("h1", {
+      style: { fontSize: 23, fontWeight: 800, color: C.ink, margin: 0 }
+    }, "Profile"),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { setShowSettings(true); },
+      className: "press", "aria-label": "Settings",
+      style: { width: 34, height: 34, borderRadius: "50%", border: "1px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 14, color: C.sub }))
+  )), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
       background: C.surface,
@@ -9811,21 +9895,44 @@ function ProfilePage(_ref42) {
     }
   }, shareMsg), globalHistory && globalHistory.length > 0 && /*#__PURE__*/React.createElement(PointsChart, {
     history: globalHistory
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: onSignOut,
-    className: "press",
-    style: {
-      padding: 14,
-      borderRadius: 16,
-      border: "1.5px solid " + C.line,
-      background: C.surface,
-      color: C.red,
-      fontWeight: 800,
-      fontSize: 15,
-      cursor: "pointer",
-      fontFamily: FONT
-    }
-  }, "Sign out"), picker && /*#__PURE__*/React.createElement(AvatarPicker, {
+  }),
+  /* Settings sheet: sound effects (synced with session SFX) + sign out */
+  showSettings && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) setShowSettings(false); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in",
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement("h2", { style: { fontSize: 18, fontWeight: 800, color: C.ink, margin: 0 } }, "Settings"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setShowSettings(false); },
+            className: "press",
+            style: { width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub }))
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", borderRadius: 14, border: "1.5px solid " + C.line, marginBottom: 12 } },
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14.5, fontWeight: 800, color: C.ink } }, "Sound effects"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 600, color: C.sub, marginTop: 2 } }, "Swipe and reward sounds in sessions")
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: toggleSfx,
+            className: "press", "aria-label": "Toggle sound",
+            style: { width: 50, height: 30, borderRadius: 999, border: "none", background: sfx ? C.primary : C.line, cursor: "pointer", position: "relative", transition: "background .2s ease", flexShrink: 0 }
+          }, /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 3, left: sfx ? 23 : 3, width: 24, height: 24, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.25)", transition: "left .2s ease" } }))
+        ),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: onSignOut,
+          className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT }
+        }, "Sign out")
+      )
+    ), document.body), picker && /*#__PURE__*/React.createElement(AvatarPicker, {
     current: user && user.avatar,
     onPick: function onPick(a) {
       setPendAvatar(a);
@@ -9872,6 +9979,42 @@ function ProfilePage(_ref42) {
             )
           ),
           /* Name */
+          /*#__PURE__*/React.createElement("div", { style: { marginBottom: 18 } },
+            /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Your character"),
+            /*#__PURE__*/React.createElement("div", { style: { height: 196, overflowY: "auto", overscrollBehaviorY: "none", border: "1.5px solid " + C.line, borderRadius: 14, padding: 8, background: C.bg } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 } },
+                getPeepChars().map(function (chr, ci) {
+                  var on = peepKey(chr) === peepKey(myPeep.identity);
+                  return /*#__PURE__*/React.createElement("button", {
+                    key: ci,
+                    onClick: function onClick() { setMyPeep(setPeepFromChar(chr)); },
+                    className: "press",
+                    style: { background: on ? C.primarySoft : C.surface, borderRadius: 14, padding: 4, cursor: "pointer", border: on ? "2px solid " + C.primary : "2px solid " + C.line }
+                  }, /*#__PURE__*/React.createElement("img", {
+                    src: peepUrl(Object.assign({}, peepIdentityParams(chr), { face: "smile", accessoriesProbability: "0" }), 96),
+                    width: 64, height: 64, alt: "", loading: "lazy",
+                    style: { width: "100%", height: "auto", display: "block" }
+                  }));
+                })
+              )
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 7px" } },
+              /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.sub } }, "Your 10 styles"),
+              /*#__PURE__*/React.createElement("button", {
+                onClick: function onClick() { setMyPeep(reshufflePeepStyles()); },
+                className: "press",
+                style: { padding: "6px 13px", borderRadius: 999, border: "none", background: C.primary, color: "#fff", fontSize: 11.5, fontWeight: 800, cursor: "pointer", fontFamily: FONT }
+              }, "Shuffle")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4 } },
+              myPeep.variants.map(function (v, vi) {
+                return /*#__PURE__*/React.createElement("img", {
+                  key: vi, src: peepUrl(v, 80), width: 46, height: 46, alt: "", loading: "lazy",
+                  style: { flexShrink: 0, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, animation: "pop .25s ease both", animationDelay: vi * 0.03 + "s" }
+                });
+              })
+            )
+          ),
           /*#__PURE__*/React.createElement("div", null,
             /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6, fontFamily: FONT } }, "Name"),
             /*#__PURE__*/React.createElement("input", {
@@ -10517,8 +10660,16 @@ function SessionComplete(_ref47) {
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
           /*#__PURE__*/React.createElement(PingWrap, { color: C.primary + "66", radius: 28 },
             /*#__PURE__*/React.createElement("div", {
-              style: { width: 88, height: 88, borderRadius: 28, background: "linear-gradient(145deg,#6A5BFF,#5A4FE3)", boxShadow: "0 14px 32px rgba(90,79,227,0.38)", display: "flex", alignItems: "center", justifyContent: "center", animation: tier >= 1 ? "avatarFloat 3s ease-in-out infinite" : "none" }
-            }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 36, color: "#fff" }))
+              style: { width: 88, height: 88, borderRadius: 28, background: "linear-gradient(145deg,#6A5BFF,#5A4FE3)", boxShadow: "0 14px 32px rgba(90,79,227,0.38)", display: "flex", alignItems: "center", justifyContent: "center", animation: tier >= 1 ? "avatarFloat 3s ease-in-out infinite" : "none", overflow: "hidden" }
+            }, (function () {
+              /* A different style of the user's character celebrates each time */
+              var pp = getPeep();
+              if (pp && pp.variants && pp.variants.length) {
+                var v = pp.variants[Math.floor(Math.random() * pp.variants.length)];
+                return /*#__PURE__*/React.createElement("img", { src: peepUrl(v, 120), width: 78, height: 78, alt: "", style: { display: "block" } });
+              }
+              return /*#__PURE__*/React.createElement(Icon, { name: "star", size: 36, color: "#fff" });
+            })())
           )
         ),
         /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Points claimed!"),
@@ -10805,7 +10956,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
@@ -10813,7 +10964,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v153';
+  var CACHE_VERSION = 'memzy-v154';
 
   if (!('serviceWorker' in navigator)) return;
 
