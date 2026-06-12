@@ -679,11 +679,22 @@ var AVATARS = getPeepChars().map(peepAvatarVal); /* the 50 Open Peeps characters
    and Safari (with its collapsing toolbars) disagree about 100vh/dvh, so we
    measure instead. */
 (function () {
+  /* In standalone (Add to Home Screen) iOS reports a WRONG window.innerHeight
+     at launch and never fires resize to correct it — the old code baked that
+     wrong pixel height onto #root, leaving a gap under the tab bar. In
+     standalone the viewport is stable, so let the CSS 100dvh rule win. */
+  var standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   var syncH = function syncH() {
     var r = document.getElementById("root");
-    if (r) r.style.height = window.innerHeight + "px";
+    if (!r) return;
+    if (standalone) { r.style.height = ""; return; }
+    /* Browser Safari: toolbars collapse, so measure the visible viewport */
+    var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    r.style.height = h + "px";
   };
   window.addEventListener("resize", syncH);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", syncH);
   window.addEventListener("orientationchange", function () { setTimeout(syncH, 80); });
   syncH();
   setTimeout(syncH, 350);
@@ -1185,6 +1196,20 @@ function buildHistory() {
    accounts in the same browser doesn't suppress the page for the other user */
 function streakShownKey(userId) {
   return "memzy_streak_shown_" + (userId || "anon") + "_" + new Date().toDateString();
+}
+/* Per-user log of every point grant: when + how many + for what */
+function pointLogKey(userId) { return "memzy_point_log_" + (userId || "anon"); }
+function logPointEvent(userId, pts, reason) {
+  try {
+    var k = pointLogKey(userId);
+    var log = JSON.parse(localStorage.getItem(k) || "[]");
+    log.push({ t: new Date().toISOString(), p: pts, r: reason });
+    if (log.length > 200) log = log.slice(log.length - 200);
+    localStorage.setItem(k, JSON.stringify(log));
+  } catch (e) {}
+}
+function readPointLog(userId) {
+  try { return JSON.parse(localStorage.getItem(pointLogKey(userId)) || "[]"); } catch (e) { return []; }
 }
 function isActiveDay(d) {
   return !!(d && (d.active || d.points > 0));
@@ -1913,6 +1938,8 @@ function App() {
     setExamMode = _useState_exam2[1];
   /* Tracks correct swipes during exam round */
   var examCorrectRef = React.useRef(0);
+  /* Onboarding: index of the character picked before language selection */
+  var _useState_obc = useState(null), _useState_obc2 = _slicedToArray(_useState_obc, 2), obChar = _useState_obc2[0], setObChar = _useState_obc2[1];
   var _useState31 = useState([]),
     _useState32 = _slicedToArray(_useState31, 2),
     friends = _useState32[0],
@@ -2413,9 +2440,10 @@ function App() {
     setHistoryStack([]);
     setScreen("deck");
   };
-  var commitRound = function commitRound(pts) {
+  var commitRound = function commitRound(pts, reason) {
     var active = hadActivityRef.current;
     if (pts <= 0 && !active) return;
+    if (pts > 0) logPointEvent(userRef.current && userRef.current.id, pts, reason || "Practice round");
     var today = new Date().toISOString().slice(0,10);
     var currentUser = userRef.current;
     var currentLangs = selectedLangsRef.current;
@@ -2671,8 +2699,8 @@ function App() {
               setScreen("app");
             });
           } else {
-            /* New user — go through onboarding */
-            setScreen("language");
+            /* New user — go through onboarding (character first) */
+            setScreen("character");
           }
         });
         });
@@ -2964,11 +2992,45 @@ function App() {
             setScreen("app");
           });
         });
-      } else { setScreen("language"); }
+      } else { setScreen("character"); }
     }
   }), /*#__PURE__*/React.createElement(StepDots, {
     current: 0
   })));
+  if (screen === "character") {
+    var obChars = getPeepChars();
+    var confirmChar = function confirmChar() {
+      if (obChar == null) return;
+      var id = obChars[obChar];
+      var av = peepAvatarVal(id);
+      setPeepFromChar(id); /* buddy identity + fresh styles for the home path */
+      setUser(function (u) { return _objectSpread(_objectSpread({}, u || {}), {}, { avatar: av }); });
+      if (user && user.id) supabase.from("profiles").update({ avatar_emoji: av }).eq("id", user.id).then(function () {});
+      setScreen("language");
+    };
+    return /*#__PURE__*/React.createElement(Shell, null, /*#__PURE__*/React.createElement(StyleTag, null),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", height: "100%" } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "52px 24px 0" } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 38, marginBottom: 12 } }, "\uD83D\uDC4B"),
+          /*#__PURE__*/React.createElement("h1", { style: { fontSize: 30, fontWeight: 800, color: C.ink, margin: "0 0 6px", letterSpacing: -0.8, lineHeight: 1.15 } }, "Pick your", /*#__PURE__*/React.createElement("br", null), "character"),
+          /*#__PURE__*/React.createElement("p", { style: { color: C.sub, margin: "0 0 22px", fontSize: 15.5 } }, "Your buddy joins you on the journey \u2014 you can change it anytime in your profile."),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, paddingBottom: 16 } },
+            obChars.map(function (id, i) {
+              var on = obChar === i;
+              return /*#__PURE__*/React.createElement("button", {
+                key: i,
+                onClick: function onClick() { setObChar(i); },
+                className: "press",
+                style: { border: on ? "2.5px solid " + C.primary : "1.5px solid " + C.line, background: on ? C.primarySoft : C.surface, borderRadius: 18, padding: "10px 4px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: on ? "0 4px 14px " + C.primary + "33" : "none" }
+              }, /*#__PURE__*/React.createElement(Avatar, { seed: peepAvatarVal(id), size: 56 }));
+            }))),
+        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 24px calc(16px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface } },
+          /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: confirmChar,
+            style: obChar == null ? { background: C.line, color: C.sub, boxShadow: "none" } : undefined,
+            glow: obChar != null
+          }, "Continue"))));
+  }
   if (screen === "language") {
     var choose = function choose(l) {
       setSelectedLangs([l]);
@@ -3414,6 +3476,16 @@ function App() {
       passed: examPassed,
       level: examMode.level,
       prevLevel: examMode.prevLevel,
+      totalPoints: totalPoints,
+      dayStreak: dayStreak,
+      userId: user && user.id,
+      onBonusPoints: commitRound,
+      isFirstSessionToday: (function () {
+        var shown = false;
+        try { shown = localStorage.getItem(streakShownKey(user && user.id)) === "1"; } catch (e) {}
+        var ta = isActiveDay(globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null);
+        return !shown || !ta;
+      })(),
       onContinue: function onContinue() {
         if (examPassed) {
           setUnlockedLevels(function (ul) {
@@ -3758,6 +3830,7 @@ function App() {
       flex: 1,
       overflowX: "hidden",
       overflowY: tab === "profile" || tab === "friends" ? "hidden" : "auto",
+      overflowX: "hidden",
       overscrollBehaviorY: "none",
       WebkitOverflowScrolling: "touch",
       minHeight: 0
@@ -5266,7 +5339,9 @@ function StreakDialog(_ref24) {
 }
 function PointsDialog(_ref25) {
   var points = _ref25.points,
+    userId = _ref25.userId,
     onClose = _ref25.onClose;
+  var _useState_sub = useState("milestones"), _useState_sub2 = _slicedToArray(_useState_sub, 2), subTab = _useState_sub2[0], setSubTab = _useState_sub2[1];
   var idx = REWARDS.findIndex(function (r) { return r.at > points; });
   var next = idx >= 0 ? REWARDS[idx] : null;
   var prevAt = idx > 0 ? REWARDS[idx - 1].at : 0;
@@ -5288,10 +5363,44 @@ function PointsDialog(_ref25) {
           earned && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 800, color: C.ink, fontSize: 13 } }, earned.name))
       )
     ),
-    points >= REWARDS[REWARDS.length - 1].at && /*#__PURE__*/React.createElement("div", {
+    subTab === "milestones" && points >= REWARDS[REWARDS.length - 1].at && /*#__PURE__*/React.createElement("div", {
       style: { textAlign: "center", color: C.green, fontWeight: 800, fontSize: 13.5, marginBottom: 14 }
     }, "You've reached every milestone! \uD83C\uDF89"),
+    /* Sub-tabs keep the points tab compact: milestones OR history, never both */
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, background: C.bg, borderRadius: 12, padding: 4, marginBottom: 14 } },
+      [{ k: "milestones", icon: "trophy", label: "Milestones" }, { k: "history", icon: "clock-rotate-left", label: "History" }].map(function (t) {
+        var on = subTab === t.k;
+        return /*#__PURE__*/React.createElement("button", {
+          key: t.k,
+          onClick: function onClick() { setSubTab(t.k); },
+          className: "press",
+          style: { flex: 1, padding: "8px 0", borderRadius: 9, border: "none", background: on ? C.surface : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: FONT, boxShadow: on ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all .15s" }
+        },
+          /*#__PURE__*/React.createElement(Icon, { name: t.icon, size: 12, color: on ? C.primary : C.sub }),
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 12.5, fontWeight: on ? 800 : 600, color: on ? C.primary : C.sub } }, t.label)
+        );
+      })
+    ),
+    subTab === "history" && (function () {
+      var log = readPointLog(userId).slice().reverse();
+      return log.length === 0
+        ? /*#__PURE__*/React.createElement("div", { style: { background: C.bg, borderRadius: 14, padding: "18px 12px", textAlign: "center", color: C.sub, fontSize: 12.5, fontWeight: 600 } }, "Earn points and they'll show up here")
+        : /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
+            log.map(function (e, i) {
+              var d = new Date(e.t);
+              var ds = d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " \u00b7 " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+              return /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", borderBottom: i === log.length - 1 ? "none" : "1px solid " + C.line } },
+                /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 10, background: C.primarySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                  /*#__PURE__*/React.createElement(Icon, { name: "star", size: 12, color: C.primary })),
+                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, e.r),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 1 } }, ds)),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, fontWeight: 900, color: C.green, flexShrink: 0 } }, "+" + e.p)
+              );
+            }));
+    })(),
     /* Milestone table — each row carries its own progress bar */
+    subTab === "milestones" && /*#__PURE__*/React.createElement(React.Fragment, null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 } }, "Milestones"),
     /*#__PURE__*/React.createElement("div", null,
       REWARDS.map(function (r, ri) {
@@ -5320,7 +5429,7 @@ function PointsDialog(_ref25) {
           )
         );
       })
-    )
+    ))
   );
 }
 function LevelChapterPicker(_ref26) {
@@ -5892,7 +6001,18 @@ function Dashboard(_ref27) {
         /* Sit in the snake: halfway between this chapter's offset and the next one's */
         var gMirror = lvIdx % 2 === 0 ? 1 : -1;
         var gOff = Math.round((TILE_OFF[ci % TILE_OFF.length] + TILE_OFF[(ci + 1) % TILE_OFF.length]) / 2) * gMirror;
+        /* Character beside EVERY level's gift, on the roomier side (opposite
+           the zigzag): A1/B1/C1 right, A2/B2 left. Head leans INTO the screen:
+           right edge mirrors the image, left edge keeps it unflipped. */
+        var peekSide = gOff > 0 ? "l" : "r";
         var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : 1 } },
+          peekImgs[lvIdx] && /*#__PURE__*/React.createElement("img", {
+            src: peekImgs[lvIdx], width: 150, height: 150, alt: "",
+            style: Object.assign({ position: "absolute", top: "50%", zIndex: 1, pointerEvents: "none" },
+              peekSide === "r"
+                ? { right: -98, transform: "translateY(-50%) scaleX(-1) rotate(35deg)" }
+                : { left: -98, transform: "translateY(-50%) rotate(35deg)" })
+          }),
           /*#__PURE__*/React.createElement("button", {
             onClick: function onClick(e) {
               if (giftUsed) {
@@ -6127,28 +6247,23 @@ function Dashboard(_ref27) {
     peep = _useState_pp2[0],
     setPeep = _useState_pp2[1];
   var peekSideRef = useRef("r");
-  var _useState_pk = useState({ phase: "hidden", side: "r", v: 0 }),
-    _useState_pk2 = _slicedToArray(_useState_pk, 2),
-    peek = _useState_pk2[0],
-    setPeek = _useState_pk2[1];
-  var _useState_pks = useState({ v: -1, src: null }),
+  var _useState_pks = useState({}),
     _useState_pks2 = _slicedToArray(_useState_pks, 2),
-    peekImg = _useState_pks2[0],
-    setPeekImg = _useState_pks2[1];
+    peekImgs = _useState_pks2[0],
+    setPeekImgs = _useState_pks2[1];
   useEffect(function () {
+    /* One RANDOM style of the user's character per level, re-rolled on every
+       load/refresh; each renders IN the page beside its level's gift. */
     if (!peep.variants.length) return;
-    var url = peepUrl(peep.variants[peek.v % peep.variants.length], 300);
     var on = true;
-    unmaskPeep(url, function (u) { if (on) setPeekImg({ v: peek.v, src: u }); });
+    LEVELS_ORDER.forEach(function (_, li) {
+      var v = peep.variants[Math.floor(Math.random() * peep.variants.length)];
+      unmaskPeep(peepUrl(v, 300), function (u) {
+        if (on) setPeekImgs(function (m) { var n = Object.assign({}, m); n[li] = u; return n; });
+      });
+    });
     return function () { on = false; };
-  }, [peek.v, peep.variants.length]);
-  useEffect(function () {
-    /* STATIC peek (step 1): the character is permanently stuck to the screen
-       edge — no in/out animation, no timers. After the first paint the home
-       path has computed which side is roomier (peekSideRef), so sync it. */
-    if (!peep.variants.length) return;
-    setPeek({ phase: "in", side: peekSideRef.current, v: 0 });
-  }, [peep.variants.length, curLevel, curChapter, unlockedLevels && unlockedLevels.length]);
+  }, [peep.variants.length, peepKey(peep.identity)]);
   /* If the profile avatar is one of the 50 characters and differs from the
      stored buddy identity, adopt it (e.g. set on another device) */
   useEffect(function () {
@@ -6410,24 +6525,8 @@ function Dashboard(_ref27) {
   /* Peek character: fixed at a screen edge near mid-height, pivoting on its
      bottom corner like a door. Shows immediately (masked first, body when the
      unmasked SVG resolves), alternating sides. */
-  /* Peek character (STATIC step 1): stuck to one screen edge at mid-height,
-     tilted toward the path like the reference — no animation for now. */
-  peek.phase !== "hidden" && peep.variants.length > 0 && peekImg.src && ReactDOM.createPortal(
-    /*#__PURE__*/React.createElement("div", {
-      /* Anchor to the centered app column (max 440px), not the viewport edge */
-      style: Object.assign({ position: "fixed", top: "40%", width: 150, height: 150, zIndex: 96, pointerEvents: "none" },
-        peek.side === "r"
-          ? { right: "max(0px, calc(50% - 220px))" }
-          : { left: "max(0px, calc(50% - 220px))" })
-    }, /*#__PURE__*/React.createElement("img", {
-      src: peekImg.src,
-      width: 150, height: 150, alt: "",
-      style: {
-        display: "block",
-        transformOrigin: peek.side === "r" ? "100% 100%" : "0% 100%",
-        transform: peek.side === "r" ? "rotate(35deg)" : "scaleX(-1) rotate(35deg)"
-      }
-    })), document.body),
+  /* (Peek character now renders inside the home path, next to the frontier
+     gift — see renderHomePath.) */
   /* Level detail sheet: progress, cards, and per-level smart-deck counts */
   detailLv && (function () {
     var st = levelStats(detailLv);
@@ -6531,7 +6630,7 @@ function Dashboard(_ref27) {
                 onClick: function onClick() {
                   playSFX("claim");
                   var n = LEVEL_CLAIM_POINTS[claimLv] || 0;
-                  if (onBonusPoints) onBonusPoints(n);
+                  if (onBonusPoints) onBonusPoints(n, "Level reward \u00b7 " + claimLv);
                   var next = levelClaims.concat([claimLv]);
                   setLevelClaims(next);
                   try { localStorage.setItem("memzy_level_claims", JSON.stringify(next)); } catch (e) {}
@@ -6614,7 +6713,7 @@ function Dashboard(_ref27) {
                 /*#__PURE__*/React.createElement(PrimaryButton, {
                   onClick: function onClick() {
                     playSFX("claim");
-                    if (onBonusPoints) onBonusPoints(giftPrize);
+                    if (onBonusPoints) onBonusPoints(giftPrize, "Surprise gift \u00b7 " + giftLv);
                     var nextU = giftsUsed.concat([gid]);
                     setGiftsUsed(nextU);
                     var nextW = Object.assign({}, giftWon); nextW[gid] = giftPrize;
@@ -6718,7 +6817,7 @@ function Dashboard(_ref27) {
         /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "env(safe-area-inset-bottom)" } },
           dlg === "streak"
             ? /*#__PURE__*/React.createElement(StreakDialog, { history: globalHistory, streak: dayStreak, onClose: function onClose() { return setDlg(null); } })
-            : /*#__PURE__*/React.createElement(PointsDialog, { points: totalPoints, onClose: function onClose() { return setDlg(null); } })
+            : /*#__PURE__*/React.createElement(PointsDialog, { points: totalPoints, userId: user && user.id, onClose: function onClose() { return setDlg(null); } })
         )
       )
     ),
@@ -9413,7 +9512,7 @@ function FriendsPage(_ref37) {
     };
     var hasMore = !q && newestFirst.length > MAX_INLINE;
     return /*#__PURE__*/React.createElement(React.Fragment, null,
-      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
+      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden", flexShrink: 0 } },
         /*#__PURE__*/React.createElement("div", null,
           shown.map(function (u, i) { return row(u, !hasMore && i === shown.length - 1); })
         ),
@@ -10801,9 +10900,45 @@ function ExamComplete(_ref_ec) {
     passed = _ref_ec.passed,
     level = _ref_ec.level,
     prevLevel = _ref_ec.prevLevel,
+    totalPoints = _ref_ec.totalPoints || 0,
+    dayStreak = _ref_ec.dayStreak || 0,
+    isFirstSessionToday = _ref_ec.isFirstSessionToday,
+    userId = _ref_ec.userId,
+    onBonusPoints = _ref_ec.onBonusPoints,
     onContinue = _ref_ec.onContinue;
   var correctCu = useCountUp(correct, "examCorrect");
   var _dr = useState(false), drawn = _dr[0], setDrawn = _dr[1];
+  /* Pass flow: claim points -> streak (first time today) -> total -> result */
+  var _pg = useState(passed ? "claim" : "result"), examPage = _pg[0], setExamPage = _pg[1];
+  var examPtsCu = useCountUp(correct, "examPts"); /* exam pays 1 pt per correct answer */
+  var examTotalCu = useCountUp(examPage === "stats" ? totalPoints : 0, "examTotal");
+  var examStreakCu = useCountUp(dayStreak, "examStreak2");
+  var examBonusRef = useRef(false);
+  var streakGrantRef = useRef(false);
+  var examStreakBonus = Math.max(0, Math.min(dayStreak || 0, 10));
+  var claimExamPts = function claimExamPts() {
+    playSFX("claim");
+    if (!examBonusRef.current) {
+      examBonusRef.current = true;
+      if (onBonusPoints) onBonusPoints(correct, "Level exam \u00b7 " + level);
+    }
+    setExamPage(isFirstSessionToday ? "streak" : "stats");
+  };
+  var claimExamStreak = function claimExamStreak() {
+    playSFX("claim");
+    try { localStorage.setItem(streakShownKey(userId), "1"); } catch (e) {}
+    if (!streakGrantRef.current && examStreakBonus > 0) {
+      streakGrantRef.current = true;
+      if (onBonusPoints) onBonusPoints(examStreakBonus, "Daily streak \u00b7 day " + dayStreak);
+    }
+    setExamPage("stats");
+  };
+  useEffect(function () {
+    if (examPage === "streak") {
+      try { localStorage.setItem(streakShownKey(userId), "1"); } catch (e) {}
+      playSFX("streak");
+    }
+  }, [examPage]);
   useEffect(function () {
     if (passed) playFinishSFX();
     var t = setTimeout(function () { setDrawn(true); }, 350);
@@ -10812,7 +10947,7 @@ function ExamComplete(_ref_ec) {
   /* iOS standalone paints the Dynamic Island / status bar with the page bg —
      match it to this screen's gradient so the top isn't a white strip */
   useEffect(function () {
-    var bg = passed ? "#EDFFF5" : "#FFF2F2";
+    var bg = examPage === "claim" || examPage === "stats" ? "#F0EEFF" : examPage === "streak" ? "#FFF8EC" : passed ? "#EDFFF5" : "#FFF2F2";
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
     var el = document.createElement("div");
@@ -10824,7 +10959,7 @@ function ExamComplete(_ref_ec) {
       document.documentElement.style.background = C.bg;
       document.body.style.background = C.bg;
     };
-  }, [passed]);
+  }, [passed, examPage]);
   var pctW = drawn ? Math.round(correct / total * 100) : 0;
   var accent = passed ? "#2DBF72" : "#E05050";
   var capRef = useRef(null);
@@ -10849,6 +10984,100 @@ function ExamComplete(_ref_ec) {
       sharingRef.current = false;
     }, function () { sharingRef.current = false; setExamShareMsg(""); });
   };
+  var shareMsgRow = function shareMsgRow() {
+    return examShareMsg ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.green, fontWeight: 700, marginBottom: 10, textAlign: "center" } }, examShareMsg) : null;
+  };
+  var examShell = function examShell(bgGrad) {
+    return {
+      position: "relative", width: "100%", height: "100%",
+      display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "center",
+      background: bgGrad,
+      padding: "0 24px",
+      paddingTop: "calc(20px + env(safe-area-inset-top))",
+      paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+      overflow: "hidden"
+    };
+  };
+  var examShareBtn = /*#__PURE__*/React.createElement("button", {
+    onClick: doExamShare, className: "press", "aria-label": "Share",
+    style: { width: 56, height: 56, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 16, color: C.ink }));
+  /* PAGE: exam points earned */
+  if (examPage === "claim") {
+    return /*#__PURE__*/React.createElement("div", { key: "exclaim", className: "page-in", style: examShell("linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: C.primary, b: "#8B73F0" }),
+      /*#__PURE__*/React.createElement(GoldenSparks, { count: 20 }),
+      /*#__PURE__*/React.createElement(Watermark, { color: C.primary, top: "6%" }, "+" + correct),
+      /*#__PURE__*/React.createElement(Overline, { color: C.primary }, "Exam passed"),
+      /*#__PURE__*/React.createElement("div", { ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" } },
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement(PingWrap, { color: C.primary + "66", radius: 28 },
+            /*#__PURE__*/React.createElement("div", { style: { width: 96, height: 96, borderRadius: 28, background: "linear-gradient(145deg,#7C6CFF,#5A4FE3)", boxShadow: "0 14px 32px rgba(90,79,227,0.40)", display: "flex", alignItems: "center", justifyContent: "center" } },
+              /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 36, color: "#fff" })))),
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "You passed the exam!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".16s", fontSize: 12.5, color: C.sub, marginBottom: 20 } }, correct + "/" + total + " correct \u00b7 " + LEVEL_LABEL[level]),
+        /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%" } },
+          /*#__PURE__*/React.createElement(Burst, { colors: [C.primary, "#8B73F0", "#FFC24A", "#FFFFFF"] }),
+          /*#__PURE__*/React.createElement("div", { style: Object.assign(inkPanel({ padding: "26px 24px 20px" }), { animation: "scalePop .55s cubic-bezier(.16,1,.3,1) .22s both" }) },
+            /*#__PURE__*/React.createElement(Sheen, null),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 70, fontWeight: 900, color: "#fff", letterSpacing: -3, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "star", size: 36, color: "#B7ABFF" }), "+", examPtsCu),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#A7A2C9", fontWeight: 600, marginTop: 7 } }, "points for passing")))),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".42s", width: "100%", zIndex: 10 } },
+        shareMsgRow(),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: claimExamPts, glow: true }, "Claim " + correct + " point" + (correct === 1 ? "" : "s"))),
+          examShareBtn)));
+  }
+  /* PAGE: streak extended by the exam (first activity today) */
+  if (examPage === "streak") {
+    return /*#__PURE__*/React.createElement("div", { key: "exstreak", className: "page-in", style: examShell("linear-gradient(160deg,#FFF8EC 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: "#FFB938", b: "#FF7A3D" }),
+      /*#__PURE__*/React.createElement(Watermark, { color: "#FF9A2E", top: "5%" }, dayStreak),
+      /*#__PURE__*/React.createElement(Overline, { color: C.amber }, "Daily streak"),
+      /*#__PURE__*/React.createElement("div", { ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" } },
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".06s", marginBottom: 18 } },
+          /*#__PURE__*/React.createElement(PingWrap, { color: "#FF9A2E66", radius: 28 },
+            /*#__PURE__*/React.createElement("div", { style: { width: 88, height: 88, borderRadius: 28, background: "linear-gradient(145deg,#FFC24A,#FF8E2B)", boxShadow: "0 14px 32px rgba(255,150,40,0.38)", display: "flex", alignItems: "center", justifyContent: "center", animation: "avatarFloat 3s ease-in-out infinite" } },
+              /*#__PURE__*/React.createElement(Icon, { name: "fire", size: 38, color: "#fff" })))),
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 27, fontWeight: 900, color: C.amber, margin: "0 0 7px", letterSpacing: -0.7 } }, "Streak extended!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".16s", fontSize: 13.5, color: C.sub, marginBottom: 24, lineHeight: 1.4 } }, "The exam counts as today's practice \uD83D\uDD25"),
+        /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%" } },
+          /*#__PURE__*/React.createElement(Burst, { colors: ["#FFC24A", "#FF8E2B", "#FFD98A", "#FFFFFF"] }),
+          /*#__PURE__*/React.createElement("div", { style: Object.assign(inkPanel({ padding: "24px 24px 18px" }), { animation: "scalePop .55s cubic-bezier(.16,1,.3,1) .22s both" }) },
+            /*#__PURE__*/React.createElement(Sheen, null),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 76, fontWeight: 900, color: "#FFC24A", letterSpacing: -3.5, lineHeight: 1 } }, examStreakCu),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, color: "#A7A2C9", fontWeight: 600, marginTop: 5 } }, "day streak")))),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
+        shareMsgRow(),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: claimExamStreak, style: { background: C.amber }
+          }, examStreakBonus > 0 ? ("Claim " + examStreakBonus + " point" + (examStreakBonus === 1 ? "" : "s")) : "Continue")),
+          examShareBtn)));
+  }
+  /* PAGE: total points after exam */
+  if (examPage === "stats") {
+    return /*#__PURE__*/React.createElement("div", { key: "exstats", className: "page-in", style: examShell("linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: C.primary, b: "#8B73F0" }),
+      /*#__PURE__*/React.createElement(Watermark, { color: C.primary, top: "6%" }, totalPoints),
+      /*#__PURE__*/React.createElement(Overline, { color: C.primary }, "Your points"),
+      /*#__PURE__*/React.createElement("div", { ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" } },
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".1s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Points claimed!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".14s", fontSize: 12.5, color: C.sub, marginBottom: 18 } }, "Level exam rewards added"),
+        /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%" } },
+          /*#__PURE__*/React.createElement(Burst, { colors: [C.primary, "#8B73F0", "#FFC24A", "#FFFFFF"] }),
+          /*#__PURE__*/React.createElement("div", { style: Object.assign(inkPanel({ padding: "22px 24px 18px" }), { animation: "scalePop .55s cubic-bezier(.16,1,.3,1) .18s both" }) },
+            /*#__PURE__*/React.createElement(Sheen, null),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 64, fontWeight: 900, color: "#fff", letterSpacing: -2.5, lineHeight: 1 } }, examTotalCu),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "#A7A2C9", fontWeight: 600, marginTop: 6 } }, "total points")))),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
+        shareMsgRow(),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setExamPage("result"); } }, "Continue")),
+          examShareBtn)));
+  }
+  /* PAGE: result (level unlocked / not quite) */
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative", width: "100%", height: "100%",
@@ -11061,7 +11290,7 @@ function SessionComplete(_ref47) {
     playSFX("claim");
     if (!bonusGrantedRef.current && isFirstSessionToday && streakBonus > 0) {
       bonusGrantedRef.current = true;
-      if (onBonusPoints) onBonusPoints(streakBonus);
+      if (onBonusPoints) onBonusPoints(streakBonus, "Daily streak \u00b7 day " + dayStreak);
     }
     afterStreak();
   };
