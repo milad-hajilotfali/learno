@@ -53,7 +53,10 @@ var _React = React,
 
 /* ── SUPABASE CLIENT ── */
 var SUPA_URL = "https://bbnjytcxtwznhnfhbbof.supabase.co";
-var SUPA_KEY = "sb_publishable_I_Gy2DhPVV_1VgXoLcKAaQ_egiDsFJs";
+/* Legacy anon (public) JWT key. The newer sb_publishable_ key was not being
+   attached as the apikey header by this supabase-js build, causing auth to
+   fail with "No API key found in request". The anon JWT is sent reliably. */
+var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibmp5dGN4dHd6bmhuZmhiYm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Mjg0MTYsImV4cCI6MjA5NjUwNDQxNn0.Yg2HDMP93A-wOgQ1qI8qO14Sqmfrbk8RBa3TLZrA5Ck";
 var supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ── PROGRESS HELPERS ── */
@@ -408,9 +411,11 @@ var _peepUnmaskCache = {};
 function unmaskPeep(url, cb) {
   if (_peepUnmaskCache[url]) { cb(_peepUnmaskCache[url]); return; }
   fetch(url).then(function (r) { return r.text(); }).then(function (t) {
-    var clean = t.replace(/<clipPath[\s\S]*?<\/clipPath>/g, "")
-                 .replace(/clip-path="[^"]*"/g, "")
-                 .replace(/clip-path:[^;"']*/g, "");
+    /* Open Peeps clips the figure to a 704x704 viewbox + mask; the body is
+       drawn below that. Extend both downward so the whole bust/body shows. */
+    var clean = t
+      .replace('viewBox="0 0 704 704"', 'viewBox="-40 0 784 1220"')
+      .replace(/(<rect width="704" height=")704("[^>]*fill="#fff"\s*\/>)/, '$11220$2');
     var u = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(clean);
     _peepUnmaskCache[url] = u;
     cb(u);
@@ -1375,6 +1380,7 @@ function Shell(_ref5) {
     }, "height", "100%"), "width", "100%"), "display", "flex"), "justifyContent", "center"), "background", C.bg), "fontFamily", FONT), "overflow", "hidden")
   }, /*#__PURE__*/React.createElement("div", {
     className: anim || undefined,
+    id: "shell-root",
     style: {
       width: "100%",
       maxWidth: 440,
@@ -2138,11 +2144,23 @@ function App() {
       setCurChapter(p.ch);
     });
   };
+  var applyWords = function applyWords(words) {
+    WORDS.length = 0; WORDS.push.apply(WORDS, words);
+    setAllCards(words); setLearnedIds([]); setLearnedAt({}); setMarkedIds([]); setReviewIds([]); setQueue([]);
+  };
   var initData = function initData(langs, level) {
     return new Promise(function(resolve) {
       var lang = langs[0] || "de";
       /* Use words_fa table for Persian, words table for other languages */
       var table = lang === "fa" ? "words_fa" : "words";
+      /* Instant load from cache (only if it holds real data), then refresh from
+         the network in the background. Never cache or apply an empty list. */
+      var cacheKey = "memzy_words_" + lang;
+      var servedFromCache = false;
+      try {
+        var cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+        if (cached && cached.length > 10) { applyWords(cached); servedFromCache = true; resolve(); }
+      } catch (e) {}
       var selectCols = lang === "fa"
         ? "id,language,level,chapter,word,pron,translation,farsi,example,farsi_example,example_translation,note"
         : "id,language,level,chapter,word,pron,translation,example,example_translation,note,farsi";
@@ -2172,9 +2190,22 @@ function App() {
               exampleTranslation: w.example_translation, note: w.note,
               farsi: w.farsi || "", farsiExample: w.farsi_example || "" };
           });
-          WORDS.length = 0; WORDS.push.apply(WORDS, words);
-          setAllCards(words); setLearnedIds([]); setLearnedAt({}); setMarkedIds([]); setReviewIds([]); setQueue([]);
-          resolve();
+          /* Only cache & apply when the fetch actually returned data. A failed
+             or empty fetch must NOT wipe the cards or overwrite a good cache. */
+          if (words.length > 10) {
+            try { localStorage.setItem(cacheKey, JSON.stringify(words)); } catch (e) {}
+            if (servedFromCache) {
+              WORDS.length = 0; WORDS.push.apply(WORDS, words);
+              setAllCards(words);
+            } else {
+              applyWords(words);
+              resolve();
+            }
+          } else if (!servedFromCache) {
+            /* Nothing cached and fetch came back empty — resolve so the UI
+               doesn't hang, but leave any existing cards intact. */
+            resolve();
+          }
         });
     });
   };
@@ -2601,7 +2632,15 @@ function App() {
   };
   /* Session restore on page load */
   useEffect(function() {
+    var sessionResolved = false;
+    var loadGuard = setTimeout(function () {
+      /* Only bail to welcome if the session check truly never answered. A
+         slow-but-valid login is still loading its data and must NOT be bounced. */
+      if (!sessionResolved) setScreen(function (sc) { return sc === "loading" ? "welcome" : sc; });
+    }, 8000);
     supabase.auth.getSession().then(function(res) {
+      sessionResolved = true;
+      clearTimeout(loadGuard);
       var session = res.data.session;
       if (!session) { setScreen("welcome"); return; }
       if (session) {
@@ -2638,6 +2677,9 @@ function App() {
         });
         });
       }
+    }).catch(function () {
+      clearTimeout(loadGuard);
+      setScreen("welcome");
     });
     /* ── Password recovery ──
        supabase-js processes the email link's URL hash at page load and fires
@@ -3780,14 +3822,14 @@ function App() {
     expiredByChapter: rechargeInfo.byChapter,
     rechargeCount: rechargeInfo.ids.length,
     onStartRecharge: startRecharge,
-    onOpenDeck: function(type) { setOpenDeckType(type); _setTab("mywords"); }
+    onOpenDeck: function(type, level) { setOpenDeckType({ type: type, level: level || null }); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
     scrollRef: scrollRef,
     rechargeIds: rechargeInfo.ids,
     expiredByChapter: rechargeInfo.byChapter,
     onStartRecharge: startRecharge,
     deckResetKey: deckResetKey,
-    initialDeckScreen: openDeckType ? { type: openDeckType } : null,
+    initialDeckScreen: openDeckType ? { type: openDeckType.type, level: openDeckType.level || null } : null,
     onInitDeckScreenConsumed: function() { setOpenDeckType(null); },
     onBackToHome: function() { setOpenDeckType(null); _setTab("dashboard"); },
     customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }),
@@ -4163,6 +4205,16 @@ function AuthScreen(_ref16) {
     showPass = _useState_showPass2[0],
     setShowPass = _useState_showPass2[1];
   var valid = isReg ? name.trim() && email.includes("@") && pass.length >= 6 : email.includes("@") && pass.length >= 1;
+  var netErrMsg = function netErrMsg(err) {
+    if (location.protocol === "file:") {
+      return "Open the app from a web address (your GitHub Pages URL or http://localhost), not a downloaded file. Sign-in can't work from a file:// page.";
+    }
+    var m = (err && err.message ? err.message : String(err || "")).toLowerCase();
+    if (m.indexOf("fetch") !== -1 || m.indexOf("network") !== -1 || m.indexOf("load failed") !== -1) {
+      return "Can't reach the server. Check your connection (or any VPN/ad-blocker), then try again.";
+    }
+    return err && err.message ? err.message : "Something went wrong. Please try again.";
+  };
   var submit = function submit() {
     if (!valid || loading) return;
     setLoading(true); setAuthError("");
@@ -4178,6 +4230,9 @@ function AuthScreen(_ref16) {
             name: cap(name.trim() || u.email.split("@")[0]),
             avatar: randAvatar(), supaUser: u });
         } else { setAuthError("Check your email to confirm your account."); setLoading(false); }
+      }).catch(function (err) {
+        setLoading(false);
+        setAuthError(netErrMsg(err));
       });
     } else {
       supabase.auth.signInWithPassword({ email: email.trim(), password: pass })
@@ -4193,6 +4248,9 @@ function AuthScreen(_ref16) {
             supaUser: u, _loadProgress: true });
         });
         });
+      }).catch(function (err) {
+        setLoading(false);
+        setAuthError(netErrMsg(err));
       });
     }
   };
@@ -4422,7 +4480,7 @@ function TabBar(_ref19) {
       background: C.surface,
       paddingTop: 8,
       paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
-      zIndex: 10,
+      zIndex: 50,
       position: "relative"
     }
   }, items.map(function (it) {
@@ -5755,6 +5813,19 @@ function Dashboard(_ref27) {
         if (!locked) frontierId = ld.st.chs[i].id;
       });
     });
+    /* Which side the frontier level's surprise gift leans — the character
+       peeks from the OPPOSITE (roomier) edge */
+    var frontierGiftSide = (function () {
+      var fld = null;
+      levelData.forEach(function (ld) {
+        if (ld.st.chs.some(function (c2) { return c2.id === frontierId; })) fld = ld;
+      });
+      if (!fld) return "r";
+      var gMirror = fld.lvIdx % 2 === 0 ? 1 : -1;
+      var gOff = Math.round((TILE_OFF[2] + TILE_OFF[3 % TILE_OFF.length]) / 2) * gMirror;
+      /* Tiles lean one way -> character peeks from the OPPOSITE (roomier) edge */
+      return gOff > 0 ? "l" : "r";
+    })();
     var content = levelData.map(function (ld) {
       var lv = ld.lv, lvIdx = ld.lvIdx, st = ld.st, csList = ld.csList, chainLocked = ld.chainLocked, headLocked = ld.headLocked;
       var examOpen = pathOpenCh === "exam:" + lv;
@@ -5812,9 +5883,9 @@ function Dashboard(_ref27) {
         if (ci !== 2) return tile;
         /* Surprise gift after the 3rd chapter — one use, pick 1 of 3 cards */
         var giftId = lv + ":gift1";
-        /* Unlocks when its chapter reaches the unlock threshold, or the whole
-           level was opened by exam */
-        var giftAvail = cs.pct >= CHAPTER_UNLOCK_PCT * 100 || lvIdx <= maxExamIdx;
+        /* Unlocks ONLY when the chapter directly above it is unlocked —
+           starting a level via exam does not open the gift by itself */
+        var giftAvail = !lockedNode;
         var giftUsed = giftsUsed.indexOf(giftId) !== -1;
         var giftBubbleOpen = pathOpenCh === giftId;
         var giftLive = giftAvail && !giftUsed;
@@ -5824,7 +5895,11 @@ function Dashboard(_ref27) {
         var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : 1 } },
           /*#__PURE__*/React.createElement("button", {
             onClick: function onClick(e) {
-              if (giftUsed) return;
+              if (giftUsed) {
+                /* Re-open to show the already-won card, disabled */
+                setGiftPick(-1); setGiftPrize(0); setGiftLv(lv);
+                return;
+              }
               if (!giftAvail) {
                 /* Locked: explain how to unlock, like chapter bubbles */
                 var willOpen = !giftBubbleOpen;
@@ -5853,7 +5928,7 @@ function Dashboard(_ref27) {
           ),
           giftBubbleOpen && renderLockedBubble(
             { id: giftId, title: "Surprise gift" },
-            "Get \"" + ch.title + "\" to " + Math.round(CHAPTER_UNLOCK_PCT * 100) + "% (or pass the level exam) to open this gift.",
+            "Unlock \u201C" + ch.title + "\u201D first to open this gift.",
             "calc(50% + " + gOff + "px)")
         );
         return /*#__PURE__*/React.createElement(React.Fragment, { key: ch.id + "-f" }, tile, giftEl);
@@ -5891,7 +5966,9 @@ function Dashboard(_ref27) {
         bannerInner = /*#__PURE__*/React.createElement("div", {
           style: { borderRadius: 20, padding: "13px 15px", background: C.surface, border: "1px solid " + C.line, boxShadow: "0 4px 14px rgba(28,26,46,0.05)", position: "relative" }
         },
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+          /*#__PURE__*/React.createElement("div", {
+            onClick: headLocked ? undefined : function () { setDetailLv(lv); },
+            style: { display: "flex", alignItems: "center", gap: 12, cursor: headLocked ? "default" : "pointer" } },
             /*#__PURE__*/React.createElement("div", { style: { width: 44, height: 44, borderRadius: 14, background: headLocked ? "#EFEEF6" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: headLocked ? "#B9B5CC" : "#fff", flexShrink: 0 } },
               headLocked ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 14, color: "#B9B5CC" }) : lv),
             /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
@@ -5923,7 +6000,7 @@ function Dashboard(_ref27) {
     var allDone = levelData.every(function (ld) {
       return ld.csList.length > 0 && ld.csList.every(function (cs2) { return cs2.pct === 100; });
     });
-    var finale = /*#__PURE__*/React.createElement("div", { key: "finale", style: { padding: "10px 0 110px" } },
+    var finale = /*#__PURE__*/React.createElement("div", { key: "finale", style: { padding: "10px 0 90px" } },
       /*#__PURE__*/React.createElement("div", {
         className: allDone ? "avatar-float" : undefined,
         style: { borderRadius: 20, padding: "13px 15px", background: allDone ? "linear-gradient(145deg,#FFD66B,#F5A623)" : C.surface, border: allDone ? "none" : "1px solid " + C.line, boxShadow: allDone ? "0 12px 30px rgba(245,166,35,0.4)" : "0 4px 14px rgba(28,26,46,0.05)", display: "flex", alignItems: "center", gap: 12, opacity: allDone ? 1 : 0.75 }
@@ -5939,6 +6016,7 @@ function Dashboard(_ref27) {
         !allDone && /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 16, color: "#D6D3E4" })
       )
     );
+    peekSideRef.current = frontierGiftSide;
     return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, position: "relative" } }, content, finale);
   };
   /* Has today's streak been earned yet? (any-language activity counts) */
@@ -6006,12 +6084,27 @@ function Dashboard(_ref27) {
     _useState_cd2 = _slicedToArray(_useState_cd, 2),
     claimDone = _useState_cd2[0],
     setClaimDone = _useState_cd2[1];
+  /* Gift state is PER USER — a new account on the same device must start
+     with all gifts unopened (the old global keys leaked across accounts) */
+  var giftsUsedKey = "memzy_gifts_used_" + ((user && user.id) || "anon");
+  var giftWonKey = "memzy_gift_prizes_" + ((user && user.id) || "anon");
   var _useState_gu = useState(function () {
-    try { return JSON.parse(localStorage.getItem("memzy_gifts_used") || "[]"); } catch (e) { return []; }
+    try { return JSON.parse(localStorage.getItem("memzy_gifts_used_" + ((user && user.id) || "anon")) || "[]"); } catch (e) { return []; }
   }),
     _useState_gu2 = _slicedToArray(_useState_gu, 2),
     giftsUsed = _useState_gu2[0],
     setGiftsUsed = _useState_gu2[1];
+  var _useState_gw = useState(function () {
+    try { return JSON.parse(localStorage.getItem("memzy_gift_prizes_" + ((user && user.id) || "anon")) || "{}"); } catch (e) { return {}; }
+  }),
+    _useState_gw2 = _slicedToArray(_useState_gw, 2),
+    giftWon = _useState_gw2[0],
+    setGiftWon = _useState_gw2[1];
+  /* Reload gift state when the signed-in account changes */
+  useEffect(function () {
+    try { setGiftsUsed(JSON.parse(localStorage.getItem(giftsUsedKey) || "[]")); } catch (e) { setGiftsUsed([]); }
+    try { setGiftWon(JSON.parse(localStorage.getItem(giftWonKey) || "{}")); } catch (e) { setGiftWon({}); }
+  }, [user && user.id]);
   var _useState_gl = useState(null),
     _useState_gl2 = _slicedToArray(_useState_gl, 2),
     giftLv = _useState_gl2[0],
@@ -6024,50 +6117,38 @@ function Dashboard(_ref27) {
     _useState_gz2 = _slicedToArray(_useState_gz, 2),
     giftPrize = _useState_gz2[0],
     setGiftPrize = _useState_gz2[1];
+  /* Level detail sheet */
+  var _useState_ld = useState(null),
+    _useState_ld2 = _slicedToArray(_useState_ld, 2),
+    detailLv = _useState_ld2[0],
+    setDetailLv = _useState_ld2[1];
   var _useState_pp = useState(getPeep),
     _useState_pp2 = _slicedToArray(_useState_pp, 2),
     peep = _useState_pp2[0],
     setPeep = _useState_pp2[1];
+  var peekSideRef = useRef("r");
   var _useState_pk = useState({ phase: "hidden", side: "r", v: 0 }),
     _useState_pk2 = _slicedToArray(_useState_pk, 2),
     peek = _useState_pk2[0],
     setPeek = _useState_pk2[1];
-  var _useState_pks = useState(null),
+  var _useState_pks = useState({ v: -1, src: null }),
     _useState_pks2 = _slicedToArray(_useState_pks, 2),
-    peekSrc = _useState_pks2[0],
-    setPeekSrc = _useState_pks2[1];
+    peekImg = _useState_pks2[0],
+    setPeekImg = _useState_pks2[1];
   useEffect(function () {
-    if (peek.phase === "hidden" || !peep.variants.length) return;
+    if (!peep.variants.length) return;
     var url = peepUrl(peep.variants[peek.v % peep.variants.length], 300);
     var on = true;
-    unmaskPeep(url, function (u) { if (on) setPeekSrc(u); });
+    unmaskPeep(url, function (u) { if (on) setPeekImg({ v: peek.v, src: u }); });
     return function () { on = false; };
-  }, [peek.v, peek.phase !== "hidden"]);
+  }, [peek.v, peep.variants.length]);
   useEffect(function () {
-    /* The character peeks in, lingers ~2s, then swings out. Repeats on a timer
-       so it's reliably visible regardless of scroll. */
-    var t1 = null, t2 = null, t3 = null;
-    var show = function show() {
-      var side = Math.random() < 0.5 ? "l" : "r";
-      var v = Math.floor(Math.random() * 10);
-      setPeek({ phase: "in", side: side, v: v });
-      t2 = setTimeout(function () {
-        setPeek(function (p) { return { phase: "out", side: p.side, v: p.v }; });
-      }, 2000);
-      t3 = setTimeout(function () { setPeek(function (p) { return { phase: "hidden", side: p.side, v: p.v }; }); }, 2700);
-    };
-    var hide = function hide() {
-      clearTimeout(t2); clearTimeout(t3);
-      setPeek(function (p) { return p.phase === "hidden" ? p : { phase: "hidden", side: p.side, v: p.v }; });
-    };
-    var loop = null;
-    var tick = function tick() { show(); };
-    t1 = setTimeout(tick, 1500);
-    loop = setInterval(tick, 9000);
-    return function () {
-      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearInterval(loop);
-    };
-  }, [peep.variants.length]);
+    /* STATIC peek (step 1): the character is permanently stuck to the screen
+       edge — no in/out animation, no timers. After the first paint the home
+       path has computed which side is roomier (peekSideRef), so sync it. */
+    if (!peep.variants.length) return;
+    setPeek({ phase: "in", side: peekSideRef.current, v: 0 });
+  }, [peep.variants.length, curLevel, curChapter, unlockedLevels && unlockedLevels.length]);
   /* If the profile avatar is one of the 50 characters and differs from the
      stored buddy identity, adopt it (e.g. set on another device) */
   useEffect(function () {
@@ -6316,7 +6397,7 @@ function Dashboard(_ref27) {
      { k: "marked", icon: "bookmark", label: "Saved", count: markedCount, fg: C.primary, bg: C.surface, bd: C.line }].map(function (d) {
       return /*#__PURE__*/React.createElement("button", {
         key: d.k,
-        onClick: function onClick() { if (onOpenDeck) onOpenDeck(d.k); },
+        onClick: function onClick() { if (onOpenDeck) onOpenDeck(d.k, null); },
         className: "press",
         style: { border: "1.5px solid " + d.bd, background: d.bg, borderRadius: 14, padding: "11px 8px", cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, position: "relative", minWidth: 0 }
       },
@@ -6329,14 +6410,100 @@ function Dashboard(_ref27) {
   /* Peek character: fixed at a screen edge near mid-height, pivoting on its
      bottom corner like a door. Shows immediately (masked first, body when the
      unmasked SVG resolves), alternating sides. */
-  peek.phase !== "hidden" && peep.variants.length > 0 && ReactDOM.createPortal(
+  /* Peek character (STATIC step 1): stuck to one screen edge at mid-height,
+     tilted toward the path like the reference — no animation for now. */
+  peek.phase !== "hidden" && peep.variants.length > 0 && peekImg.src && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
-      style: Object.assign({ position: "fixed", top: "40%", width: 150, height: 150, zIndex: 96, pointerEvents: "none", overflow: "hidden" }, peek.side === "r" ? { right: 0 } : { left: 0 })
+      /* Anchor to the centered app column (max 440px), not the viewport edge */
+      style: Object.assign({ position: "fixed", top: "40%", width: 150, height: 150, zIndex: 96, pointerEvents: "none" },
+        peek.side === "r"
+          ? { right: "max(0px, calc(50% - 220px))" }
+          : { left: "max(0px, calc(50% - 220px))" })
     }, /*#__PURE__*/React.createElement("img", {
-      src: peekSrc || peepUrl(peep.variants[peek.v % peep.variants.length], 300),
+      src: peekImg.src,
       width: 150, height: 150, alt: "",
-      style: { display: "block", transformOrigin: peek.side === "r" ? "100% 100%" : "0% 100%", animation: "peekSwing" + (peek.phase === "in" ? "In" : "Out") + (peek.side === "r" ? "R" : "L") + (peek.phase === "in" ? " .7s cubic-bezier(.34,1.4,.4,1)" : " .5s ease-in") + " both" }
+      style: {
+        display: "block",
+        transformOrigin: peek.side === "r" ? "100% 100%" : "0% 100%",
+        transform: peek.side === "r" ? "rotate(35deg)" : "scaleX(-1) rotate(35deg)"
+      }
     })), document.body),
+  /* Level detail sheet: progress, cards, and per-level smart-deck counts */
+  detailLv && (function () {
+    var st = levelStats(detailLv);
+    var lvIds = {};
+    (CHAPTERS[detailLv] || []).forEach(function (ch) { lvIds[ch.id] = true; });
+    var inLv = function inLv(id) {
+      var c = (allCards || []).filter(function (x) { return x.id === id; })[0];
+      return c && lvIds[c.chapter];
+    };
+    var nReview = (reviewIds || []).filter(inLv).length;
+    var nSaved = (markedIds || []).filter(inLv).length;
+    var nRewind = (CHAPTERS[detailLv] || []).reduce(function (a, ch) { return a + ((expiredByChapter && expiredByChapter[ch.id]) || 0); }, 0);
+    var statRow = function statRow(icon, color, label, val, deckType) {
+      var tappable = !!deckType && val > 0;
+      return /*#__PURE__*/React.createElement("div", {
+        onClick: tappable ? function () { setDetailLv(null); if (onOpenDeck) onOpenDeck(deckType, detailLv); } : undefined,
+        className: tappable ? "press" : undefined,
+        style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + C.line, background: C.surface, cursor: tappable ? "pointer" : "default" } },
+        /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 36, borderRadius: 11, background: color + "1a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: icon, size: 15, color: color })),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13.5, fontWeight: 700, color: C.ink } }, label),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 15, fontWeight: 800, color: C.ink } }, val),
+          tappable && /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: C.sub })
+        )
+      );
+    };
+    return ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+        onClick: function onClick(e) { if (e.target === e.currentTarget) setDetailLv(null); }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          className: "sheet-in",
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, position: "relative" }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setDetailLv(null); },
+            className: "press", "aria-label": "Close",
+            style: { position: "absolute", top: 16, right: 16, zIndex: 2, width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub })),
+          /* Header: compact progress ring + level name */
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 16, marginBottom: 18, paddingRight: 36 } },
+            (function () {
+              var sz = 66, r = 27, circ = 2 * Math.PI * r;
+              return /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: sz, height: sz, flexShrink: 0 } },
+                /*#__PURE__*/React.createElement("svg", { width: sz, height: sz, style: { position: "absolute", inset: 0, transform: "rotate(-90deg)" } },
+                  /*#__PURE__*/React.createElement("circle", { cx: sz / 2, cy: sz / 2, r: r, stroke: C.line, strokeWidth: 6, fill: "none" }),
+                  /*#__PURE__*/React.createElement("circle", { cx: sz / 2, cy: sz / 2, r: r, stroke: C.primary, strokeWidth: 6, fill: "none", strokeLinecap: "round", strokeDasharray: circ, strokeDashoffset: circ * (1 - st.pct / 100), style: { transition: "stroke-dashoffset .6s cubic-bezier(.16,1,.3,1)" } })
+                ),
+                /*#__PURE__*/React.createElement("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: C.ink, letterSpacing: -0.5 } }, st.pct + "%")
+              );
+            })(),
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 20, fontWeight: 900, color: C.ink, letterSpacing: -0.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, LEVEL_LABEL[detailLv]),
+              /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6 } },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: C.primary, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 999, background: C.primarySoft } }, detailLv),
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: C.sub } }, st.done + " of " + st.total + " cards")
+              )
+            )
+          ),
+          /* Slim progress bar */
+          /*#__PURE__*/React.createElement("div", { style: { height: 8, borderRadius: 6, background: C.line, overflow: "hidden", marginBottom: 4 } },
+            /*#__PURE__*/React.createElement("div", { style: { width: st.pct + "%", height: "100%", borderRadius: 6, background: "linear-gradient(90deg," + C.primary + ",#7C6CFF)", transition: "width .6s cubic-bezier(.16,1,.3,1)" } })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: C.sub, letterSpacing: 0.6, textTransform: "uppercase", margin: "20px 2px 10px" } }, "Your cards"),
+          /* Stat rows */
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 9 } },
+            statRow("hourglass-half", C.amber, "Cards to rewind", nRewind, "recharge"),
+            statRow("rotate-left", C.red, "Cards to review", nReview, "review"),
+            statRow("bookmark", C.primary, "Saved cards", nSaved, "marked")
+          )
+        )
+      ), document.body);
+  })(),
   /* Level-bonus claim sheet */
   claimLv && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
@@ -6382,10 +6549,17 @@ function Dashboard(_ref27) {
       )
     ), document.body),
   /* Surprise gift: pick 1 of 3 lottery cards */
-  giftLv && ReactDOM.createPortal(
+  giftLv && (function () {
+    var gid = giftLv + ":gift1";
+    var alreadyWon = giftsUsed.indexOf(gid) !== -1;
+    var wonPrize = giftWon[gid];
+    /* If already claimed, the won card is shown face-up and disabled */
+    var revealIdx = alreadyWon ? 1 : giftPick;
+    var revealPrize = alreadyWon ? wonPrize : giftPrize;
+    return ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
       style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
-      onClick: function onClick(e) { if (e.target === e.currentTarget && giftPick === -1) setGiftLv(null); }
+      onClick: function onClick(e) { if (e.target === e.currentTarget && (revealIdx === -1 || alreadyWon)) setGiftLv(null); }
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
@@ -6397,63 +6571,68 @@ function Dashboard(_ref27) {
           className: "press", "aria-label": "Close",
           style: { position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
         }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub })),
-        /*#__PURE__*/React.createElement("h2", { style: { fontSize: 19, fontWeight: 900, color: C.ink, margin: "0 0 5px", letterSpacing: -0.4 } }, "Pick a card"),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.sub, marginBottom: 18 } }, "One of these hides your surprise"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 18 } },
+        /*#__PURE__*/React.createElement("h2", { style: { fontSize: 19, fontWeight: 900, color: C.ink, margin: "0 0 5px", letterSpacing: -0.4 } }, alreadyWon ? "Already claimed" : "Pick a card"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.sub, marginBottom: 20 } }, alreadyWon ? "You already opened this gift" : "One of these hides your reward"),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 11, marginBottom: 20, justifyContent: "center" } },
           [0, 1, 2].map(function (i) {
-            var flipped = giftPick === i;
-            return /*#__PURE__*/React.createElement("div", { key: i, className: "flip-wrap", style: { flex: 1, height: 118, opacity: giftPick !== -1 && !flipped ? 0.45 : 1, transition: "opacity .3s ease" } },
+            var flipped = revealIdx === i;
+            var dim = (revealIdx !== -1 && !flipped) || alreadyWon && !flipped;
+            return /*#__PURE__*/React.createElement("div", { key: i, className: "flip-wrap", style: { flex: 1, maxWidth: 104, aspectRatio: "2 / 3", opacity: dim ? 0.4 : 1, transition: "opacity .3s ease" } },
               /*#__PURE__*/React.createElement("button", {
                 onClick: function onClick() {
-                  if (giftPick !== -1) return;
+                  if (revealIdx !== -1 || alreadyWon) return;
                   playSFX("finish2");
                   setGiftPrize(GIFT_PRIZES[Math.floor(Math.random() * GIFT_PRIZES.length)]);
                   setGiftPick(i);
                 },
                 className: "flip-inner" + (flipped ? " flip-go" : ""),
-                style: { width: "100%", border: "none", background: "transparent", cursor: giftPick === -1 ? "pointer" : "default", padding: 0 }
+                style: { width: "100%", height: "100%", border: "none", background: "transparent", cursor: (revealIdx === -1 && !alreadyWon) ? "pointer" : "default", padding: 0 }
               },
-                /*#__PURE__*/React.createElement("span", { className: "flip-face", style: { background: "linear-gradient(160deg,#FF8FB1,#F5A623)", boxShadow: "0 6px 16px rgba(245,120,140,0.35)", overflow: "hidden" } },
+                /* FRONT — playful lottery ticket */
+                /*#__PURE__*/React.createElement("span", { className: "flip-face", style: { background: "linear-gradient(160deg,#7C6CFF,#5A4FE3)", boxShadow: "0 8px 20px rgba(90,79,227,0.4)", overflow: "hidden", padding: "10px 6px" } },
+                  /* Low-opacity dot pattern over the card */
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(rgba(255,255,255,0.16) 1.6px, transparent 1.6px)", backgroundSize: "13px 13px", pointerEvents: "none" } }),
                   /*#__PURE__*/React.createElement("span", { className: "btn-shine" }),
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed rgba(255,255,255,0.6)", pointerEvents: "none" } }),
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 12, left: 13, opacity: 0.75 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 8, color: "#fff" })),
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 22, right: 14, opacity: 0.55 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 6, color: "#fff" })),
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", bottom: 22, left: 16, opacity: 0.55 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 6, color: "#fff" })),
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", bottom: 13, right: 12, opacity: 0.75 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 8, color: "#fff" })),
-                  /*#__PURE__*/React.createElement("span", { className: "gift-wiggle", style: { width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.28)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px rgba(0,0,0,0.12)" } },
-                    /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 17, color: "#fff" })),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.95)", letterSpacing: 1.5, textTransform: "uppercase", marginTop: 7 } }, "Memzy"),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 7.5, fontWeight: 800, color: "rgba(255,255,255,0.8)", letterSpacing: 2, textTransform: "uppercase", marginTop: 1 } }, "Lottery")),
-                /*#__PURE__*/React.createElement("span", { className: "flip-face flip-back", style: { background: "linear-gradient(160deg,#FFF6E3,#FFE9C2)", border: "2px solid " + C.amber, overflow: "hidden" } },
-                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed " + C.amber + "88", pointerEvents: "none" } }),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "#B45309", letterSpacing: 1.5, textTransform: "uppercase" } }, "Winner"),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 23, fontWeight: 900, color: "#B45309", margin: "2px 0" } }, "+" + giftPrize),
-                  /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 800, color: "#D98E1B" } },
-                    /*#__PURE__*/React.createElement(Icon, { name: "star", size: 9, color: "#D98E1B" }), "points"))
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 6, borderRadius: 11, border: "1.5px dashed rgba(255,255,255,0.5)", pointerEvents: "none" } }),
+                  /*#__PURE__*/React.createElement("span", { style: { margin: "12px 0", filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.25))", display: "flex" } },
+                    /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 36, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,0.95)", letterSpacing: 0.5 } }, "Tap to reveal")),
+                /* BACK — winning ticket */
+                /*#__PURE__*/React.createElement("span", { className: "flip-face flip-back", style: { background: "linear-gradient(160deg,#FFD66B,#F5A623)", overflow: "hidden", padding: "10px 6px" } },
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 6, borderRadius: 11, border: "1.5px dashed rgba(255,255,255,0.7)", pointerEvents: "none" } }),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8, fontWeight: 900, color: "#fff", letterSpacing: 2, textTransform: "uppercase" } }, "You won"),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 30, fontWeight: 900, color: "#fff", margin: "6px 0 2px", textShadow: "0 2px 6px rgba(0,0,0,0.15)" } }, "+" + (revealPrize || 0)),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,0.95)", letterSpacing: 1, textTransform: "uppercase" } }, "points"))
               )
             );
           })
         ),
-        giftPick !== -1
-          ? /*#__PURE__*/React.createElement("div", { style: { animation: "riseIn .45s cubic-bezier(.16,1,.3,1) .45s both" } },
-              /*#__PURE__*/React.createElement(PrimaryButton, {
-                onClick: function onClick() {
-                  if (onBonusPoints) onBonusPoints(giftPrize);
-                  var gid = giftLv + ":gift1";
-                  var next = giftsUsed.concat([gid]);
-                  setGiftsUsed(next);
-                  try { localStorage.setItem("memzy_gifts_used", JSON.stringify(next)); } catch (e) {}
-                  setGiftLv(null);
-                },
-                glow: true
-              }, "Claim +" + giftPrize + " pts")
-            )
-          : /*#__PURE__*/React.createElement("div", { style: { height: 50 } })
+        alreadyWon
+          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setGiftLv(null); }, style: { background: C.line, color: C.sub } }, "Already claimed")
+          : revealIdx !== -1
+            ? /*#__PURE__*/React.createElement("div", { style: { animation: "riseIn .45s cubic-bezier(.16,1,.3,1) .45s both" } },
+                /*#__PURE__*/React.createElement(PrimaryButton, {
+                  onClick: function onClick() {
+                    playSFX("claim");
+                    if (onBonusPoints) onBonusPoints(giftPrize);
+                    var nextU = giftsUsed.concat([gid]);
+                    setGiftsUsed(nextU);
+                    var nextW = Object.assign({}, giftWon); nextW[gid] = giftPrize;
+                    setGiftWon(nextW);
+                    try { localStorage.setItem(giftsUsedKey, JSON.stringify(nextU)); localStorage.setItem(giftWonKey, JSON.stringify(nextW)); } catch (e) {}
+                    setGiftLv(null);
+                  },
+                  glow: true
+                }, "Claim +" + giftPrize + " pts")
+              )
+            : /*#__PURE__*/React.createElement("div", { style: { height: 50 } })
       )
-    ), document.body),
+    ), document.body);
+  })(),
   /* Jump tile is always available; when the rescue banner is up, the tile
      stacks ABOVE it instead of overlapping (or disappearing) */
   jumpMounted && ReactDOM.createPortal((function () {
+    /* portal into the shell so the tab bar (z50) can sit above the tile (z8) */
     var ch = (CHAPTERS[curLevel] || []).filter(function (c2) { return c2.id === curChapter; })[0];
     if (!ch) return null;
     var cards = allCards.filter(function (c) { return c.chapter === ch.id; });
@@ -6469,7 +6648,7 @@ function Dashboard(_ref27) {
         setPathOpenCh(curChapter);
       },
       className: cracked ? "press btn-glow-ring-amber" : "press btn-glow-ring",
-      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: showRescue ? "calc(160px + env(safe-area-inset-bottom))" : "calc(78px + env(safe-area-inset-bottom))", zIndex: 95, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, animation: (jumpExiting ? "jumpTileOut .34s ease-in both" : "jumpTileIn .5s cubic-bezier(.16,1,.3,1) both"), fontFamily: FONT, cursor: "pointer", textAlign: "left", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: showRescue ? "calc(182px + env(safe-area-inset-bottom))" : "calc(78px + env(safe-area-inset-bottom))", zIndex: 8, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, animation: (jumpExiting ? "jumpTileOut .42s cubic-bezier(.16,1,.3,1) both" : "jumpTileIn .42s cubic-bezier(.16,1,.3,1) both"), fontFamily: FONT, cursor: "pointer", textAlign: "left" }
     },
       /*#__PURE__*/React.createElement("span", { style: { width: 38, height: 38, borderRadius: 13, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
         /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: "#fff" })),
@@ -6495,7 +6674,7 @@ function Dashboard(_ref27) {
         cracked && /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,0.85)", marginTop: 2 } }, "+" + (expired + (cards.length - done)) + " pts")
       )
     );
-  })(), document.body),
+  })(), (document.getElementById("shell-root") || document.body)),
   renderHomePath(),
  (dlg === "streak" || dlg === "points") && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
@@ -7210,6 +7389,11 @@ function MyFlashcardsPage(_ref31) {
     _useState82 = _slicedToArray(_useState81, 2),
     deckScreen = _useState82[0],
     setDeckScreen = _useState82[1];
+  /* Level filter for smart decks (Review/Saved/Rewind), seeded from navigation */
+  var _useState_dl = useState((initialDeckScreen && initialDeckScreen.level) || null),
+    _useState_dl2 = _slicedToArray(_useState_dl, 2),
+    deckLevel = _useState_dl2[0],
+    setDeckLevel = _useState_dl2[1];
   var pageScrollRef = _ref31.scrollRef;
   var kb = useKeyboardInset();
   /* Opening a deck (or going back) starts that view at the top */
@@ -7247,7 +7431,7 @@ function MyFlashcardsPage(_ref31) {
   var _useState_renameVal = useState(""), _useState_renameVal2 = _slicedToArray(_useState_renameVal, 2),
     renameVal = _useState_renameVal2[0], setRenameVal = _useState_renameVal2[1];
   useEffect(function() {
-    if (initialDeckScreen && onInitDeckScreenConsumed) onInitDeckScreenConsumed();
+    if (initialDeckScreen && onInitDeckScreenConsumed) { setDeckLevel(initialDeckScreen.level || null); onInitDeckScreenConsumed(); }
   }, []);
   /* Decks tab re-tapped → pop back to the decks root */
   var deckResetKey = _ref31.deckResetKey;
@@ -7717,7 +7901,14 @@ function MyFlashcardsPage(_ref31) {
         open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
       );
     }
-    var dsCards = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : ds.type === "recharge" ? rechargeCards : customCards;
+    var dsCardsAll = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : ds.type === "recharge" ? rechargeCards : customCards;
+    /* Which levels actually have cards in this deck (for the filter chips) */
+    var dsLevelsPresent = LEVELS_ORDER.filter(function (L) {
+      return dsCardsAll.some(function (c) { return c.level === L; });
+    });
+    var dsCards = (deckLevel && ds.type !== "mine")
+      ? dsCardsAll.filter(function (c) { return c.level === deckLevel; })
+      : dsCardsAll;
     var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : ds.type === "recharge" ? COL_RECHARGE : COL_MINE;
     var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "\u21ba" : ds.type === "recharge" ? "hourglass-half" : "plus";
     var dsLabel = ds.type === "marked" ? "Marked" : ds.type === "review" ? "Review" : ds.type === "recharge" ? "Rewind" : "My Cards";
@@ -7766,12 +7957,24 @@ function MyFlashcardsPage(_ref31) {
             "Spaced repetition tracks your learning, bringing words back at expanding intervals. Lock vocabulary into long-term memory and score points with every rewind.")
         )
       ),
+      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge") && dsLevelsPresent.length > 1 && /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", gap: 7, padding: "12px 16px 2px", overflowX: "auto", WebkitOverflowScrolling: "touch" }
+      },
+        [{ k: null, label: "All" }].concat(dsLevelsPresent.map(function (L) { return { k: L, label: L }; })).map(function (chip) {
+          var active = (deckLevel || null) === chip.k;
+          return /*#__PURE__*/React.createElement("button", {
+            key: chip.label, className: "press",
+            onClick: function () { setDeckLevel(chip.k); },
+            style: { flexShrink: 0, padding: "7px 15px", borderRadius: 999, border: "1.5px solid " + (active ? dsColorObj.text : C.line), background: active ? dsColorObj.text : C.surface, color: active ? "#fff" : C.sub, fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
+          }, chip.label);
+        })
+      ),
       SearchBar,
       /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 28px", display: "flex", flexDirection: "column", gap: 8 } },
         filteredDs.length === 0
           ? ((ds.type === "review" || ds.type === "marked" || ds.type === "recharge" || ds.type === "mine") && dsCards.length === 0 && !s
               ? /*#__PURE__*/React.createElement(EmptyDeckState, { type: ds.type })
-              : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, s ? "No matches." : dsEmpty))
+              : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, s ? "No matches." : (deckLevel ? "No " + deckLevel + " cards here." : dsEmpty)))
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
       adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
@@ -9189,7 +9392,10 @@ function FriendsPage(_ref37) {
     var newestFirst = ordered.slice().reverse();
     /* Render everything; the card clips to available height so tall screens
        show more rows and short screens never hide the footer */
-    var shown = q ? filteredFriends : newestFirst;
+    /* Show a handful of friends inline; the card sizes to its rows instead of
+       stretching to fill the page. "See all" only appears when there's more. */
+    var MAX_INLINE = 4;
+    var shown = q ? filteredFriends : newestFirst.slice(0, MAX_INLINE);
     var row = function row(u, isLast) {
       return /*#__PURE__*/React.createElement("div", {
         key: u.id,
@@ -9205,13 +9411,13 @@ function FriendsPage(_ref37) {
         )
       );
     };
-    var hasMore = !q && newestFirst.length > 0;
+    var hasMore = !q && newestFirst.length > MAX_INLINE;
     return /*#__PURE__*/React.createElement(React.Fragment, null,
-      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } },
-        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minHeight: 0, overflowY: "hidden" } },
-          shown.map(function (u, i) { return row(u, i === shown.length - 1); })
+      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, border: "1px solid " + C.line, borderRadius: 16, overflow: "hidden" } },
+        /*#__PURE__*/React.createElement("div", null,
+          shown.map(function (u, i) { return row(u, !hasMore && i === shown.length - 1); })
         ),
-        /* "See all" is pinned to the bottom of the table */
+        /* "See all" appears only when more friends exist than shown inline */
         hasMore && /*#__PURE__*/React.createElement("button", {
           onClick: function onClick() { setShowAllFriends(true); },
           className: "press",
@@ -10621,6 +10827,28 @@ function ExamComplete(_ref_ec) {
   }, [passed]);
   var pctW = drawn ? Math.round(correct / total * 100) : 0;
   var accent = passed ? "#2DBF72" : "#E05050";
+  var capRef = useRef(null);
+  var sharingRef = useRef(false);
+  var _useState_examShareMsg = useState(""), _useState_examShareMsg2 = _slicedToArray(_useState_examShareMsg, 2), examShareMsg = _useState_examShareMsg2[0], setExamShareMsg = _useState_examShareMsg2[1];
+  var doExamShare = function doExamShare() {
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    var msg = passed
+      ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy! \uD83C\uDF89 " + correct + "/" + total + " correct. memzy.app"
+      : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy \uD83D\uDCAA " + correct + "/" + total + ". memzy.app";
+    setExamShareMsg("Preparing...");
+    Promise.resolve(shareImage(capRef.current, msg, "memzy-exam.png", passed ? "#EDFFF5" : "#FFF2F2")).then(function (r) {
+      if (r !== "shared" && r !== "downloaded") {
+        try {
+          if (navigator.share) { navigator.share({ text: msg }).catch(function () {}); r = "shared"; }
+          else if (navigator.clipboard) { navigator.clipboard.writeText(msg).catch(function () {}); r = "copied"; }
+        } catch (e2) {}
+      }
+      setExamShareMsg(r === "shared" ? "" : r === "downloaded" ? "Image saved!" : r === "copied" ? "Copied!" : "Could not share");
+      setTimeout(function () { setExamShareMsg(""); }, 2200);
+      sharingRef.current = false;
+    }, function () { sharingRef.current = false; setExamShareMsg(""); });
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative", width: "100%", height: "100%",
@@ -10636,6 +10864,8 @@ function ExamComplete(_ref_ec) {
   /*#__PURE__*/React.createElement(Watermark, { color: accent, top: "5%" }, correct),
   /*#__PURE__*/React.createElement(Overline, { color: passed ? "#1A8A52" : "#D94040" }, "Level exam"),
   /*#__PURE__*/React.createElement("div", {
+    ref: capRef,
+    "data-capture": "1",
     style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
   },
     /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".06s", marginBottom: 18 } },
@@ -10689,20 +10919,16 @@ function ExamComplete(_ref_ec) {
   /*#__PURE__*/React.createElement("div", {
     className: "rise",
     style: { animationDelay: ".4s", width: "100%", zIndex: 10 }
-  }, /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+  },
+    examShareMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.green, fontWeight: 700, marginBottom: 10, textAlign: "center" } }, examShareMsg),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
     /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
       /*#__PURE__*/React.createElement(PrimaryButton, {
         onClick: onContinue,
         style: passed ? { background: "#2DBF72" } : undefined
       }, passed ? ("Go to " + LEVEL_LABEL[level]) : "Back to Home")),
     /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() {
-        var msg = passed
-          ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy! \uD83C\uDF89"
-          : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy \uD83D\uDCAA";
-        if (navigator.share) { navigator.share({ text: msg }).catch(function () {}); }
-        else if (navigator.clipboard) { navigator.clipboard.writeText(msg).catch(function () {}); }
-      },
+      onClick: doExamShare,
       className: "press", "aria-label": "Share",
       style: { width: 56, height: 56, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
     }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 16, color: C.ink }))
@@ -10732,12 +10958,13 @@ function SessionComplete(_ref47) {
        but still get a closing stats screen — only aborted sessions exit
        silently (forceExit never reaches this component on 0 points) */
     if (points > 0) return "claim";
-    if (_ref47.chapterCompleted) return "chapter";
-    if (_ref47.levelUnlock) return "level";
+    if (_ref47.isFirstSessionToday && _ref47.dayStreak > 0) return "streak";
     return "stats";
   }), _useState_page2 = _slicedToArray(_useState_page, 2), page = _useState_page2[0], setPage = _useState_page2[1];
   var _useState_shareMsg = useState(""), _useState_shareMsg2 = _slicedToArray(_useState_shareMsg, 2), shareMsg = _useState_shareMsg2[0], setShareMsg = _useState_shareMsg2[1];
   var ptsCu = useCountUp(points, "roundPts");
+  /* totalPoints is live: once the streak bonus is claimed (commitRound),
+     the prop already includes it — never add it again here */
   var totalCu = useCountUp(page === "stats" ? totalPoints : 0, "roundTotal");
   /* One random style of the user's character per celebration */
   var pickCeleb = function pickCeleb() {
@@ -10776,7 +11003,7 @@ function SessionComplete(_ref47) {
      keep it in sync with each page's gradient so the top is never a white strip */
   /* Zero-point rounds: resolve to streak page or exit without rendering anything */
   useEffect(function () {
-    if (page === "streakcheck") goStreakOrExit();
+    if (page === "streakcheck") onContinue();
   }, [page]);
   /* Sound effects per end-screen step */
   useEffect(function () {
@@ -10823,10 +11050,21 @@ function SessionComplete(_ref47) {
   var streakBonus = Math.max(0, Math.min(dayStreak || 0, 10));
   var bonusGrantedRef = useRef(false);
   useEffect(function () {
-    if (page !== "streak" || bonusGrantedRef.current || !isFirstSessionToday || streakBonus <= 0) return;
-    bonusGrantedRef.current = true;
-    if (onBonusPoints) onBonusPoints(streakBonus);
+    if (page !== "streak") return;
+    /* Mark the streak screen as seen today as soon as it shows, so it never
+       reappears on a later session — even if the app is closed here. */
+    try { localStorage.setItem(streakShownKey(userId), "1"); } catch (e) {}
   }, [page]);
+  /* Claim button on the streak page: grants day-N bonus (capped at 10), then
+     moves on to the total-points page which now includes it */
+  var claimStreak = function claimStreak() {
+    playSFX("claim");
+    if (!bonusGrantedRef.current && isFirstSessionToday && streakBonus > 0) {
+      bonusGrantedRef.current = true;
+      if (onBonusPoints) onBonusPoints(streakBonus);
+    }
+    afterStreak();
+  };
   var knownPct = totalCards > 0 ? Math.round(knownCards / totalCards * 100) : 0;
   var mins = Math.floor((sessionSeconds || 0) / 60);
   var secs = (sessionSeconds || 0) % 60;
@@ -10866,18 +11104,13 @@ function SessionComplete(_ref47) {
     Promise.resolve(doShare()).then(function () { sharingRef.current = false; }, function () { sharingRef.current = false; });
   };
   /* Flow helpers */
-  var goStreakOrExit = function goStreakOrExit() {
-    if (isFirstSessionToday && dayStreak > 0) {
-      /* Mark streak page as shown for today (for THIS user) */
-      try { localStorage.setItem(streakShownKey(userId), "1"); } catch (e) {}
-      setPage("streak");
-    } else {
-      onContinue();
-    }
+  var afterStreak = function afterStreak() {
+    try { localStorage.setItem(streakShownKey(userId), "1"); } catch (e) {}
+    setPage("stats");
   };
   var afterBadgeStep = function afterBadgeStep() {
     if (crossed.length > 0) setPage("badge");
-    else goStreakOrExit();
+    else onContinue();
   };
   var afterLevelStep = function afterLevelStep() {
     if (levelUnlock) setPage("level");
@@ -10935,6 +11168,8 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement(Watermark, { color: C.primary, top: "6%" }, points),
       /*#__PURE__*/React.createElement(Overline, { color: C.primary }, "Session complete"),
       /*#__PURE__*/React.createElement("div", {
+        ref: capRef,
+        "data-capture": "1",
         style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 12 } },
@@ -10962,7 +11197,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".42s", width: "100%", zIndex: 10 } },
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
           /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, {
-            onClick: function onClick() { playSFX("claim"); setPage("stats"); },
+            onClick: function onClick() { playSFX("claim"); setPage(isFirstSessionToday && dayStreak > 0 ? "streak" : "stats"); },
             glow: tier >= 1
           }, "Claim " + points + " point" + (points === 1 ? "" : "s"))),
           shareIconBtn()
@@ -11042,7 +11277,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement(Watermark, { color: "#E8A020", top: "6%" }, "\u2713"),
       /*#__PURE__*/React.createElement(Overline, { color: "#B45309" }, "Rewind complete"),
       /*#__PURE__*/React.createElement("div", {
-        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+        ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
           /*#__PURE__*/React.createElement(PingWrap, { color: C.amber + "66", radius: 28 },
@@ -11082,7 +11317,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement(Watermark, { color: C.green, top: "6%" }, "100%"),
       /*#__PURE__*/React.createElement(Overline, { color: C.green }, "Chapter complete"),
       /*#__PURE__*/React.createElement("div", {
-        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+        ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
           /*#__PURE__*/React.createElement(PingWrap, { color: C.green + "66", radius: 28 },
@@ -11124,7 +11359,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement(Watermark, { color: "#E8A020", top: "6%" }, levelUnlock ? levelUnlock.next : ""),
       /*#__PURE__*/React.createElement(Overline, { color: "#B45309" }, "Level unlocked"),
       /*#__PURE__*/React.createElement("div", {
-        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+        ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
           /*#__PURE__*/React.createElement(PingWrap, { color: "#F2B43A66", radius: 28 },
@@ -11165,7 +11400,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement(Aurora, { a: "#FFB938", b: C.primary }),
       /*#__PURE__*/React.createElement(Overline, { color: C.amber }, "Milestone reached"),
       /*#__PURE__*/React.createElement("div", {
-        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+        ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
       },
         /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%", display: "flex", justifyContent: "center" } },
           /*#__PURE__*/React.createElement(Burst, { colors: ["#FFC24A", "#FF8E2B", C.primary, "#FFFFFF"] }),
@@ -11209,7 +11444,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
           /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, {
-            onClick: goStreakOrExit,
+            onClick: onContinue,
             style: { background: "#FF8E2B", boxShadow: "0 8px 22px rgba(255,142,43,0.4)" }
           }, "Continue")),
           shareIconBtn()
@@ -11253,13 +11488,7 @@ function SessionComplete(_ref47) {
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 76, fontWeight: 900, color: "#FFC24A", letterSpacing: -3.5, lineHeight: 1 } }, streakCu),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, color: "#A7A2C9", fontWeight: 600, marginTop: 5 } }, "day streak")
     )),
-    isFirstSessionToday && streakBonus > 0 && /*#__PURE__*/React.createElement("div", {
-      className: "rise",
-      style: { animationDelay: ".5s", display: "inline-flex", alignItems: "center", gap: 7, alignSelf: "center", marginTop: 14, padding: "9px 16px", borderRadius: 999, background: "linear-gradient(135deg,#FFD66B,#F5A623)", boxShadow: "0 6px 18px rgba(245,166,35,0.35)" }
-    },
-      /*#__PURE__*/React.createElement(Icon, { name: "star", size: 13, color: "#fff" }),
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 800, color: "#fff" } }, "+" + streakBonus + " streak bonus")
-    ),
+
     /* Last 7 days strip */
     /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".36s", display: "flex", justifyContent: "space-between", width: "100%", padding: "0 4px" } },
       weekDays.map(function (d, i) {
@@ -11284,70 +11513,42 @@ function SessionComplete(_ref47) {
     /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".5s", display: "flex", gap: 10, alignItems: "stretch" } },
       /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
         /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: onContinue,
+          onClick: claimStreak,
           style: { background: C.amber }
-        }, "Continue")
+        }, (isFirstSessionToday && streakBonus > 0)
+          ? ("Claim " + streakBonus + " point" + (streakBonus === 1 ? "" : "s"))
+          : "Continue")
       ),
       shareIconBtn()
     )
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{0%{opacity:0;transform:translateY(110%)}60%{opacity:1;transform:translateY(-6%)}100%{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(120%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(58deg)}to{opacity:1;transform:rotate(-30deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(-30deg)}to{opacity:0;transform:rotate(58deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(-58deg)}to{opacity:1;transform:scaleX(-1) rotate(30deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(30deg)}to{opacity:0;transform:scaleX(-1) rotate(-58deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{from{opacity:0;transform:translateY(130%)}to{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(130%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(82deg)}60%{opacity:1;transform:rotate(28deg)}to{opacity:1;transform:rotate(35deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(35deg)}to{opacity:0;transform:rotate(82deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(82deg)}60%{opacity:1;transform:scaleX(-1) rotate(28deg)}to{opacity:1;transform:scaleX(-1) rotate(35deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(35deg)}to{opacity:0;transform:scaleX(-1) rotate(82deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
 </script>
-<!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
+<!-- No service worker. Quietly unregister any leftover one from older
+     builds; do NOT wipe caches and do NOT reload (a forced reload broke
+     local file:// loading). -->
 <script>
-(function() {
-  var CACHE_VERSION = 'memzy-v164';
-
-  if (!('serviceWorker' in navigator)) return;
-
-  // Inline the SW as a blob so no separate sw.js file is needed
-  var swCode = `
-const CACHE = '${CACHE_VERSION}';
-self.addEventListener('install', e => {
-  self.skipWaiting();
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
-self.addEventListener('fetch', e => {
-  // Network-first: always try network, fall back to cache
-  e.respondWith(
-    fetch(e.request).then(res => {
-      if (res && res.status === 200) {
-        var clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
-});
-  `;
-
-  var blob = new Blob([swCode], { type: 'application/javascript' });
-  var swUrl = URL.createObjectURL(blob);
-
-  navigator.serviceWorker.register(swUrl).then(function(reg) {
-    // Check for updates every time the page loads
-    reg.update();
-    reg.addEventListener('updatefound', function() {
-      var newSW = reg.installing;
-      newSW.addEventListener('statechange', function() {
-        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-          // New version ready — reload to get fresh content
-          window.location.reload();
-        }
-      });
-    });
-  }).catch(function() {});
+(function () {
+  try {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
+      }).catch(function () {});
+    }
+  } catch (e) {}
+  /* One-time: clear any empty/partial word cache saved by an earlier build. */
+  try {
+    if (!localStorage.getItem('memzy_cache_fix_v1')) {
+      localStorage.removeItem('memzy_words_de');
+      localStorage.removeItem('memzy_words_fa');
+      localStorage.setItem('memzy_cache_fix_v1', '1');
+    }
+  } catch (e) {}
 })();
 </script>
 </body>
