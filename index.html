@@ -15,7 +15,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden;overscroll-behavior:none;height:100%}
-    #root{position:fixed;inset:0;overflow:hidden}
+    #root{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;overflow:hidden}
     @keyframes spin{to{transform:rotate(360deg)}}
     #root{height:100vh;height:100dvh}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
@@ -3686,6 +3686,7 @@ function App() {
     ref: scrollRef,
     style: {
       flex: 1,
+      overflowX: "hidden",
       overflowY: tab === "profile" || tab === "friends" ? "hidden" : "auto",
       overscrollBehaviorY: "none",
       WebkitOverflowScrolling: "touch",
@@ -5634,7 +5635,10 @@ function Dashboard(_ref27) {
     ));
   };
   /* Progress bar split into round segments — each segment is one ~10-card round */
-  var segBar = function segBar(done, total, fillColor, trackColor, mt) {
+  var segBar = function segBar(done, total, fillColor, trackColor, mt, faded) {
+    /* faded: how many of `done` have expired — drawn as a translucent tail so
+       the user sees exactly how much rewinding restores the chapter */
+    var healthy = Math.max(0, done - (faded || 0));
     var rs = roundSizeFor(total);
     var nSeg = Math.max(1, Math.ceil(total / rs));
     var segs = [];
@@ -5642,10 +5646,14 @@ function Dashboard(_ref27) {
       var segLen = Math.min(rs, total - i * rs);
       if (segLen <= 0) continue;
       var fill = Math.max(0, Math.min(1, (done - i * rs) / segLen));
+      var hFill = Math.max(0, Math.min(1, (healthy - i * rs) / segLen));
       segs.push(/*#__PURE__*/React.createElement("span", {
         key: i,
-        style: { display: "block", flex: segLen, height: "100%", borderRadius: 3, background: trackColor, overflow: "hidden" }
-      }, /*#__PURE__*/React.createElement("span", { style: { display: "block", width: fill * 100 + "%", height: "100%", background: fillColor } })));
+        style: { display: "block", flex: segLen, height: "100%", borderRadius: 3, background: trackColor, overflow: "hidden", position: "relative" }
+      },
+        /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 0, width: fill * 100 + "%", background: fillColor, opacity: 0.35 } }),
+        /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 0, width: hFill * 100 + "%", background: fillColor } })
+      ));
     }
     return /*#__PURE__*/React.createElement("span", { style: { display: "flex", gap: 2.5, height: 4, marginTop: mt == null ? 6 : mt } }, segs);
   };
@@ -5708,30 +5716,15 @@ function Dashboard(_ref27) {
         var lockedNode = chainLocked[ci];
         var isCur = !lockedNode && lv === curLevel && ch.id === curChapter;
         var isFrontier = ch.id === frontierId;
-        var off = TILE_OFF[ci % TILE_OFF.length];
+        /* Every other level mirrors the zigzag so the path doesn't repeat */
+        var off = TILE_OFF[ci % TILE_OFF.length] * (lvIdx % 2 === 0 ? 1 : -1);
         var col = nodeColors(lockedNode, cs);
         var openHere = pathOpenCh === ch.id;
         var lockMsg = ci === 0
           ? "Pass the level exam above \u2014 or finish " + (lvIdx > 0 ? LEVELS_ORDER[lvIdx - 1] : "") + " \u2014 to unlock this chapter."
           : "Reach " + Math.round(CHAPTER_UNLOCK_PCT * 100) + "% in \u201C" + st.chs[ci - 1].title + "\u201D to unlock this chapter.";
         var gIdx = lvIdx * 10 + ci;
-        var buddyHere = buddy !== "off" && peep.variants.length > 0 && (
-          (buddy === "A" && isFrontier) ||
-          (buddy === "B" && isFrontier) ||
-          (buddy === "C" && !lockedNode && (isFrontier || ci % 3 === 1))
-        );
-        var buddyBig = isFrontier;
-        var buddySide = off > 0 ? -1 : 1; /* stand on the roomier side */
-        var buddySize = buddyBig ? 60 : 40;
         var tile = /*#__PURE__*/React.createElement("div", { key: ch.id, style: { position: "relative", marginBottom: 14, zIndex: openHere ? 97 : 1 } },
-          buddyHere && /*#__PURE__*/React.createElement("div", {
-            style: { position: "absolute", top: "50%", left: "50%", marginTop: -buddySize / 2 - 4, marginLeft: off + (buddySide > 0 ? 126 : -126 - buddySize), zIndex: 2, pointerEvents: "none", opacity: buddyBig ? 1 : 0.92, animation: (buddySide > 0 ? "buddyInR" : "buddyInL") + " .55s cubic-bezier(.16,1,.3,1) both" }
-          }, /*#__PURE__*/React.createElement("img", {
-            className: buddyBig ? "avatar-float" : undefined,
-            src: peepUrl(peep.variants[gIdx % peep.variants.length], 96),
-            width: buddySize, height: buddySize, alt: "",
-            style: { display: "block", borderRadius: "50%", background: C.surface, border: "2px solid " + (buddyBig ? C.primary + "55" : C.line), boxShadow: "0 3px 10px rgba(28,26,46,0.10)", transform: buddySide > 0 ? "scaleX(-1)" : undefined }
-          })),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
             /*#__PURE__*/React.createElement("button", {
               ref: isCur ? curPathNodeRef : null,
@@ -5756,7 +5749,9 @@ function Dashboard(_ref27) {
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, ch.title),
                 segBar(cs.done, cs.cards.length,
                   lockedNode ? "#B9B5CC" : cs.cracked ? C.amber : cs.pct === 100 ? "#fff" : C.primary,
-                  cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.3)" : C.line)
+                  cs.pct === 100 && !cs.cracked && !lockedNode ? "rgba(255,255,255,0.3)" : C.line,
+                  undefined,
+                  cs.cracked ? cs.expired : 0)
               ),
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 } },
                 /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: lockedNode ? "#B9B5CC" : cs.cracked ? "#B45309" : cs.pct === 100 ? "#fff" : C.sub } }, cs.pct, "%"),
@@ -5770,28 +5765,49 @@ function Dashboard(_ref27) {
         if (ci !== 2) return tile;
         /* Surprise gift after the 3rd chapter — one use, pick 1 of 3 cards */
         var giftId = lv + ":gift1";
-        var giftAvail = !lockedNode;
+        /* Unlocks when its chapter reaches the unlock threshold, or the whole
+           level was opened by exam */
+        var giftAvail = cs.pct >= CHAPTER_UNLOCK_PCT * 100 || lvIdx <= maxExamIdx;
         var giftUsed = giftsUsed.indexOf(giftId) !== -1;
+        var giftBubbleOpen = pathOpenCh === giftId;
         var giftLive = giftAvail && !giftUsed;
-        var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", style: { display: "flex", justifyContent: "center", marginBottom: 14 } },
+        /* Sit in the snake: halfway between this chapter's offset and the next one's */
+        var gMirror = lvIdx % 2 === 0 ? 1 : -1;
+        var gOff = Math.round((TILE_OFF[ci % TILE_OFF.length] + TILE_OFF[(ci + 1) % TILE_OFF.length]) / 2) * gMirror;
+        var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : 1 } },
           /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() {
-              if (!giftLive) return;
+            onClick: function onClick(e) {
+              if (giftUsed) return;
+              if (!giftAvail) {
+                /* Locked: explain how to unlock, like chapter bubbles */
+                var willOpen = !giftBubbleOpen;
+                setPathOpenCh(willOpen ? giftId : null);
+                if (willOpen) {
+                  var el = e.currentTarget;
+                  setTimeout(function () { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (er) {} }, 40);
+                }
+                return;
+              }
               setGiftPick(-1); setGiftPrize(0); setGiftLv(lv);
             },
             "data-path-keep": "1",
             className: "press",
-            style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "none", cursor: giftLive ? "pointer" : "default", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(0px) rotate(" + (ci % 2 === 0 ? 1.6 : -1.6) + "deg)", background: giftUsed || !giftAvail ? "#EFEEF6" : "linear-gradient(135deg,#FF8FB1,#F5A623)", boxShadow: giftLive ? "0 6px 18px rgba(245,120,140,0.4)" : "none", overflow: "hidden" }
+            "data-path-keep": "1",
+            style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: giftUsed ? "2px solid " + C.green + "55" : "none", cursor: giftUsed ? "default" : "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + gOff + "px) rotate(" + (ci % 2 === 0 ? 1.6 : -1.6) + "deg)", background: giftUsed ? C.surface : !giftAvail ? "#EFEEF6" : "linear-gradient(135deg,#FF8FB1,#F5A623)", boxShadow: giftLive ? "0 6px 18px rgba(245,120,140,0.4)" : "none", overflow: "hidden" }
           },
             /* perforated ticket edge */
-            /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 4, borderRadius: 14, border: "1.5px dashed " + (giftLive ? "rgba(255,255,255,0.55)" : "#D6D3E4"), pointerEvents: "none" } }),
-            /*#__PURE__*/React.createElement("span", { className: giftLive ? "gift-wiggle" : undefined, style: { width: 40, height: 40, borderRadius: 13, background: giftLive ? "rgba(255,255,255,0.25)" : "#E3E1EE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-              /*#__PURE__*/React.createElement(Icon, { name: giftUsed ? "box-open" : "gift", size: 17, color: giftLive ? "#fff" : "#B9B5CC" })),
+            !giftUsed && /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 4, borderRadius: 14, border: "1.5px dashed " + (giftLive ? "rgba(255,255,255,0.55)" : "#D6D3E4"), pointerEvents: "none" } }),
+            /*#__PURE__*/React.createElement("span", { className: giftLive ? "gift-wiggle" : undefined, style: { width: 40, height: 40, borderRadius: 13, background: giftUsed ? C.greenSoft : giftLive ? "rgba(255,255,255,0.25)" : "#E3E1EE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: giftUsed ? "check" : giftAvail ? "gift" : "lock", size: giftUsed ? 15 : 17, color: giftUsed ? C.green : giftLive ? "#fff" : "#B9B5CC" })),
             /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0 } },
-              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13, fontWeight: 800, color: giftLive ? "#fff" : "#B9B5CC" } }, giftUsed ? "Gift opened" : "Surprise gift"),
-              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 10.5, fontWeight: 700, color: giftLive ? "rgba(255,255,255,0.85)" : "#C9C5DD", marginTop: 2 } }, giftUsed ? "See you at the next one" : giftAvail ? "Pick a card \u00b7 1 try" : "Unlock this chapter first")),
-            !giftUsed && /*#__PURE__*/React.createElement(Icon, { name: "star", size: 13, color: giftLive ? "rgba(255,255,255,0.9)" : "#C9C5DD" })
-          )
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13, fontWeight: 800, color: giftUsed ? C.ink : giftLive ? "#fff" : "#B9B5CC" } }, giftUsed ? "Gift opened" : "Surprise gift"),
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 10.5, fontWeight: 700, color: giftUsed ? C.sub : giftLive ? "rgba(255,255,255,0.85)" : "#C9C5DD", marginTop: 2 } }, giftUsed ? "Prize collected \u2713" : giftAvail ? "Pick a card \u00b7 1 try" : "Locked \u00b7 tap to see how")),
+            !giftUsed && /*#__PURE__*/React.createElement(Icon, { name: giftAvail ? "star" : "circle-question", size: 13, color: giftLive ? "rgba(255,255,255,0.9)" : "#C9C5DD" })
+          ),
+          giftBubbleOpen && renderLockedBubble(
+            { id: giftId, title: "Surprise gift" },
+            "Get \"" + ch.title + "\" to " + Math.round(CHAPTER_UNLOCK_PCT * 100) + "% (or pass the level exam) to open this gift.",
+            "calc(50% + " + gOff + "px)")
         );
         return /*#__PURE__*/React.createElement(React.Fragment, { key: ch.id + "-f" }, tile, giftEl);
       });
@@ -5808,7 +5824,14 @@ function Dashboard(_ref27) {
       };
       var unlockBtn = function unlockBtn(softStyle) {
         return /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { setPathOpenCh(examOpen ? null : "exam:" + lv); },
+          onClick: function onClick(e) {
+            var willOpen = !examOpen;
+            setPathOpenCh(willOpen ? "exam:" + lv : null);
+            if (willOpen) {
+              var el = e.currentTarget;
+              setTimeout(function () { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (er) {} }, 40);
+            }
+          },
           "data-path-keep": "1",
           className: "press",
           style: Object.assign({ marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 },
@@ -5818,16 +5841,9 @@ function Dashboard(_ref27) {
       var bannerInner;
       {
         /* Level box — neutral card with monogram + progress ring (final) */
-        var frontierInLv = st.chs.some(function (c2) { return c2.id === frontierId; });
         bannerInner = /*#__PURE__*/React.createElement("div", {
           style: { borderRadius: 20, padding: "13px 15px", background: C.surface, border: "1px solid " + C.line, boxShadow: "0 4px 14px rgba(28,26,46,0.05)", position: "relative" }
         },
-          buddy === "B" && !headLocked && peep.variants.length > 0 && /*#__PURE__*/React.createElement("img", {
-            className: frontierInLv ? "avatar-float" : undefined,
-            src: peepUrl(peep.variants[lvIdx % peep.variants.length], 96),
-            width: 46, height: 46, alt: "",
-            style: { position: "absolute", top: -26, right: 16, display: "block", zIndex: 1, borderRadius: "50%", background: C.surface, border: "2px solid " + C.line, boxShadow: "0 3px 10px rgba(28,26,46,0.10)" }
-          }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
             /*#__PURE__*/React.createElement("div", { style: { width: 44, height: 44, borderRadius: 14, background: headLocked ? "#EFEEF6" : C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: headLocked ? "#B9B5CC" : "#fff", flexShrink: 0 } },
               headLocked ? /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 14, color: "#B9B5CC" }) : lv),
@@ -5926,14 +5942,42 @@ function Dashboard(_ref27) {
 
   /* scroll animation disabled */
   var headerRef = useRef(null);
-  /* DEV: path-buddy placement off/A/B/C + character reroll — remove once decided */
-  var _useState_bd = useState(function () {
-    try { return localStorage.getItem("memzy_buddy") || "A"; } catch (e) { return "A"; }
-  }),
-    _useState_bd2 = _slicedToArray(_useState_bd, 2),
-    buddy = _useState_bd2[0],
-    setBuddy = _useState_bd2[1];
-  useEffect(function () { try { localStorage.setItem("memzy_buddy", buddy); } catch (e) {} }, [buddy]);
+  /* Character peek-in: a random style of the user's character slides in from
+     a screen edge near the frontier, waits, and slides back out */
+  var _useState_pk = useState({ phase: "hidden", side: "r", v: 0 }),
+    _useState_pk2 = _slicedToArray(_useState_pk, 2),
+    peek = _useState_pk2[0],
+    setPeek = _useState_pk2[1];
+  useEffect(function () {
+    /* The character peeks in 2s after the user stops scrolling, lingers,
+       slides back out, and hides instantly while scrolling */
+    var sc = pageScrollRef && pageScrollRef.current;
+    var t2 = null, t3 = null, idle = null;
+    var show = function show() {
+      var side = Math.random() < 0.5 ? "l" : "r";
+      var v = Math.floor(Math.random() * 10);
+      setPeek({ phase: "in", side: side, v: v });
+      t2 = setTimeout(function () {
+        setPeek(function (p) { return { phase: "out", side: p.side, v: p.v }; });
+      }, 4600);
+      t3 = setTimeout(function () { setPeek(function (p) { return { phase: "hidden", side: p.side, v: p.v }; }); }, 5400);
+    };
+    var hide = function hide() {
+      clearTimeout(t2); clearTimeout(t3);
+      setPeek(function (p) { return p.phase === "hidden" ? p : { phase: "hidden", side: p.side, v: p.v }; });
+    };
+    var onScroll = function onScroll() {
+      hide();
+      clearTimeout(idle);
+      idle = setTimeout(show, 2000);
+    };
+    idle = setTimeout(show, 2000);
+    if (sc) sc.addEventListener("scroll", onScroll, { passive: true });
+    return function () {
+      if (sc) sc.removeEventListener("scroll", onScroll);
+      clearTimeout(idle); clearTimeout(t2); clearTimeout(t3);
+    };
+  }, []);
   /* Level unlock bonus + surprise gifts (both one-time, persisted) */
   var _useState_lc = useState(function () {
     try { return JSON.parse(localStorage.getItem("memzy_level_claims") || "[]"); } catch (e) { return []; }
@@ -6229,19 +6273,15 @@ function Dashboard(_ref27) {
       );
     })
   ),
-  /* DEV: path-buddy switcher — remove once decided */
-  /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, justifyContent: "center" } },
-    /*#__PURE__*/React.createElement("span", { style: { fontSize: 10.5, fontWeight: 700, color: C.sub } }, "Buddy:"),
-    ["off", "A", "B", "C"].map(function (v) {
-      var on = buddy === v;
-      return /*#__PURE__*/React.createElement("button", {
-        key: v,
-        onClick: function onClick() { setBuddy(v); },
-        className: "press",
-        style: { minWidth: 28, height: 26, padding: "0 7px", borderRadius: 9, border: "1.5px solid " + (on ? C.primary : C.line), background: on ? C.primarySoft : C.surface, color: on ? C.primary : C.sub, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: FONT }
-      }, v);
-    })
-  ),
+  /* Edge-peeking character: fixed at the screen edge, head-first */
+  peek.phase !== "hidden" && peep.variants.length > 0 && ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: Object.assign({ position: "fixed", top: "38%", zIndex: 90, pointerEvents: "none", animation: "peek" + (peek.phase === "in" ? "In" : "Out") + (peek.side === "r" ? "R" : "L") + (peek.phase === "in" ? " .8s" : " .7s") + " cubic-bezier(.34,1.3,.5,1) both" }, peek.side === "r" ? { right: 0 } : { left: 0 })
+    }, /*#__PURE__*/React.createElement("img", {
+      src: peepUrl(peep.variants[peek.v % peep.variants.length], 280),
+      width: 184, height: 184, alt: "",
+      style: { display: "block", transform: "rotate(" + (peek.side === "l" ? 90 : -90) + "deg)" }
+    })), document.body),
   /* Level-bonus claim sheet */
   claimLv && ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
@@ -6267,6 +6307,7 @@ function Dashboard(_ref27) {
                 "You reached " + claimLv + " \u00b7 " + LEVEL_LABEL[claimLv] + " \u2014 here's a little gift."),
               /*#__PURE__*/React.createElement(PrimaryButton, {
                 onClick: function onClick() {
+                  playSFX("claim");
                   var n = LEVEL_CLAIM_POINTS[claimLv] || 0;
                   if (onBonusPoints) onBonusPoints(n);
                   var next = levelClaims.concat([claimLv]);
@@ -6310,6 +6351,7 @@ function Dashboard(_ref27) {
               /*#__PURE__*/React.createElement("button", {
                 onClick: function onClick() {
                   if (giftPick !== -1) return;
+                  playSFX("finish2");
                   setGiftPrize(GIFT_PRIZES[Math.floor(Math.random() * GIFT_PRIZES.length)]);
                   setGiftPick(i);
                 },
@@ -6317,10 +6359,16 @@ function Dashboard(_ref27) {
                 style: { width: "100%", border: "none", background: "transparent", cursor: giftPick === -1 ? "pointer" : "default", padding: 0 }
               },
                 /*#__PURE__*/React.createElement("span", { className: "flip-face", style: { background: "linear-gradient(160deg,#FF8FB1,#F5A623)", boxShadow: "0 6px 16px rgba(245,120,140,0.35)", overflow: "hidden" } },
+                  /*#__PURE__*/React.createElement("span", { className: "btn-shine" }),
                   /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed rgba(255,255,255,0.6)", pointerEvents: "none" } }),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.85)", letterSpacing: 1.5, textTransform: "uppercase" } }, "Memzy"),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 30, fontWeight: 900, color: "#fff", margin: "2px 0", textShadow: "0 2px 6px rgba(0,0,0,0.12)" } }, "?"),
-                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.85)", letterSpacing: 1.5, textTransform: "uppercase" } }, "Lottery")),
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 12, left: 13, opacity: 0.75 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 8, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 22, right: 14, opacity: 0.55 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 6, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", bottom: 22, left: 16, opacity: 0.55 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 6, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", bottom: 13, right: 12, opacity: 0.75 } }, /*#__PURE__*/React.createElement(Icon, { name: "star", size: 8, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { className: "gift-wiggle", style: { width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.28)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px rgba(0,0,0,0.12)" } },
+                    /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 17, color: "#fff" })),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "rgba(255,255,255,0.95)", letterSpacing: 1.5, textTransform: "uppercase", marginTop: 7 } }, "Memzy"),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 7.5, fontWeight: 800, color: "rgba(255,255,255,0.8)", letterSpacing: 2, textTransform: "uppercase", marginTop: 1 } }, "Lottery")),
                 /*#__PURE__*/React.createElement("span", { className: "flip-face flip-back", style: { background: "linear-gradient(160deg,#FFF6E3,#FFE9C2)", border: "2px solid " + C.amber, overflow: "hidden" } },
                   /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 5, borderRadius: 10, border: "1.5px dashed " + C.amber + "88", pointerEvents: "none" } }),
                   /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 900, color: "#B45309", letterSpacing: 1.5, textTransform: "uppercase" } }, "Winner"),
@@ -8741,7 +8789,7 @@ function FriendsPage(_ref37) {
      (e.g. after unfollowing) the previous profiles stay rendered, so the section
      doesn't unmount and the See-all sheet doesn't replay its slide-up animation. */
   var loadingFriends = !friendsLoaded || (friends && friends.length > 0 && !fpLoaded && friendProfiles.length === 0);
-  var myFriends = friendProfiles;
+  var myFriends = friendProfiles.filter(function (u) { return !currentUser || u.id !== currentUser.id; });
   var discover = q.length >= 2 ? searchResults : suggestedUsers.filter(function(u) { return !friends.includes(u.id); });
   var filteredFriends = myFriends.filter(function(u) { return !q || u.name.toLowerCase().includes(q.toLowerCase()); });
   var MEDAL = ["#F59E0B", "#94A3B8", "#CD7F32"];
@@ -9158,7 +9206,7 @@ function FriendsPage(_ref37) {
     ),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 } }, "No friends yet"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, lineHeight: 1.55, maxWidth: 250, margin: "0 auto" } },
-      "Follow learners below \u2014 you'll see their streaks, send hearts, and race them on the leaderboard."),
+      "Follow friends to compete on the leaderboard!"),
     /*#__PURE__*/React.createElement("div", {
       style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, background: C.primarySoft, borderRadius: 10, padding: "6px 12px" }
     },
@@ -9166,7 +9214,118 @@ function FriendsPage(_ref37) {
       /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: C.primary } }, "Find learners below")
     )
   )),
-  tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden" } },
+  tab === "leaderboard" && (function () {
+    var entries = lastWeekEntries();
+    if (!entries.length) return null;
+    return ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { setShowLastWeek(true); },
+        className: "press",
+        style: {
+          position: "fixed",
+          left: 16,
+          right: 16,
+          margin: "0 auto",
+          bottom: "calc(80px + env(safe-area-inset-bottom))",
+          width: "auto",
+          maxWidth: 400,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "15px 12px 15px 14px",
+          border: "1px solid #F2C063",
+          borderRadius: 18,
+          background: "linear-gradient(135deg,#FFF8EC,#FFFDF6)",
+          boxShadow: "0 10px 30px rgba(232,160,32,0.28), 0 2px 8px rgba(28,26,46,0.10)",
+          cursor: "pointer",
+          fontFamily: FONT,
+          textAlign: "left",
+          zIndex: 90,
+          animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both"
+        }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          style: { width: 42, height: 42, borderRadius: 13, background: "linear-gradient(145deg,#FFC24A,#FF8E2B)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(255,150,40,0.35)" }
+        }, /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 18, color: "#fff" })),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: C.ink } }, "Last week's top 3"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 2 } }, "Tap to see the results")
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", flexShrink: 0 } },
+          entries.map(function (e, i2) {
+            return /*#__PURE__*/React.createElement("div", {
+              key: e.id,
+              style: { marginLeft: i2 === 0 ? 0 : -8, borderRadius: "50%", border: "2px solid #FFF8EC", zIndex: 3 - i2, position: "relative" }
+            }, /*#__PURE__*/React.createElement(Avatar, { seed: e.avatar, size: 26 }));
+          })
+        ),
+        /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: C.sub })
+      ),
+      document.body
+    );
+  })(), showLastWeek && (function () {
+    var entries = lastWeekEntries();
+    var medalGrad = ["linear-gradient(145deg,#FFD56A,#E8A020)", "linear-gradient(145deg,#C9D2DE,#8E9BAC)", "linear-gradient(145deg,#E2A06B,#B06A35)"];
+    var rankLabel = ["1st", "2nd", "3rd"];
+    return /*#__PURE__*/React.createElement(Sheet, {
+      onClose: function onClose() { setShowLastWeek(false); },
+      title: "Last week's results"
+    },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginBottom: 16, lineHeight: 1.5 } },
+        (lbTab === "worldwide" ? "The top learners worldwide" : "Your friends' top performers") + " from last week" + (function () {
+          var r = lastWeek && lastWeek.range;
+          var fmt = function (s) {
+            var pr = s.split("-");
+            return MONTHS[parseInt(pr[1], 10) - 1] + " " + parseInt(pr[2], 10);
+          };
+          return r ? " (" + fmt(r.from) + " \u2013 " + fmt(r.to) + ")" : "";
+        })() + ":"
+      ),
+      entries.length === 0
+        ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "20px 0", fontSize: 13.5 } }, "No results recorded last week.")
+        : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+            entries.map(function (e, i) {
+              var first = i === 0;
+              return /*#__PURE__*/React.createElement("div", {
+                key: e.id,
+                className: "rise press",
+                onClick: function onClick() { if (e.prof) setSel(e.prof); },
+                style: {
+                  animationDelay: (0.05 + i * 0.08) + "s",
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: first ? "16px 14px" : "12px 14px",
+                  borderRadius: 18,
+                  border: "1.5px solid " + (first ? "#F2C063" : C.line),
+                  background: first ? "linear-gradient(135deg,#FFF8EC,#FFFDF6)" : C.surface,
+                  boxShadow: first ? "0 6px 20px rgba(232,160,32,0.18)" : "none",
+                  cursor: "pointer"
+                }
+              },
+                /*#__PURE__*/React.createElement("div", {
+                  style: { width: first ? 38 : 32, height: first ? 38 : 32, borderRadius: "50%", background: medalGrad[i], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(28,26,46,0.18)" }
+                }, /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: first ? 15 : 12, color: "#fff" })),
+                /*#__PURE__*/React.createElement(Avatar, { seed: e.avatar, size: first ? 46 : 38 }),
+                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: first ? 16 : 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, e.name),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, fontWeight: 600 } }, rankLabel[i] + " place")
+                ),
+                /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", flexShrink: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: first ? 19 : 16, fontWeight: 900, color: first ? "#B45309" : C.ink } }, e.pts),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, "pts")
+                )
+              );
+            })
+          )
+    );
+  })(), showHearts && /*#__PURE__*/React.createElement(HeartsDialog, {
+    hearts: receivedHearts,
+    follows: followNotifs,
+    following: friends,
+    onFollowBack: onAdd,
+    sentAtTo: sentAtTo,
+    onSendBack: function onSendBack(toId, heartId) { if (_onSendHeartBack) _onSendHeartBack(toId, heartId); },
+    onClose: function onClose() { return setShowHearts(false); }
+  }), tab === "leaderboard" && /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderRadius: 18, border: "1px solid " + C.line, overflow: "hidden", marginBottom: 86 } },
     /* Airy header: calm title row, then unmistakable chip tabs */
     /*#__PURE__*/React.createElement("div", { style: { padding: "16px 16px", borderBottom: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 13 } },
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
@@ -9285,117 +9444,6 @@ function FriendsPage(_ref37) {
     onClose: function onClose() {
       return setSel(null);
     }
-  }), tab === "leaderboard" && (function () {
-    var entries = lastWeekEntries();
-    if (!entries.length) return null;
-    return ReactDOM.createPortal(
-      /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() { setShowLastWeek(true); },
-        className: "press",
-        style: {
-          position: "fixed",
-          left: 16,
-          right: 16,
-          margin: "0 auto",
-          bottom: "calc(80px + env(safe-area-inset-bottom))",
-          width: "auto",
-          maxWidth: 400,
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "15px 12px 15px 14px",
-          border: "1px solid #F2C063",
-          borderRadius: 18,
-          background: "linear-gradient(135deg,#FFF8EC,#FFFDF6)",
-          boxShadow: "0 10px 30px rgba(232,160,32,0.28), 0 2px 8px rgba(28,26,46,0.10)",
-          cursor: "pointer",
-          fontFamily: FONT,
-          textAlign: "left",
-          zIndex: 90,
-          animation: "riseIn .45s cubic-bezier(.16,1,.3,1) both"
-        }
-      },
-        /*#__PURE__*/React.createElement("div", {
-          style: { width: 42, height: 42, borderRadius: 13, background: "linear-gradient(145deg,#FFC24A,#FF8E2B)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(255,150,40,0.35)" }
-        }, /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: 18, color: "#fff" })),
-        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: C.ink } }, "Last week's top 3"),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.sub, fontWeight: 600, marginTop: 2 } }, "Tap to see the results")
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", flexShrink: 0 } },
-          entries.map(function (e, i2) {
-            return /*#__PURE__*/React.createElement("div", {
-              key: e.id,
-              style: { marginLeft: i2 === 0 ? 0 : -8, borderRadius: "50%", border: "2px solid #FFF8EC", zIndex: 3 - i2, position: "relative" }
-            }, /*#__PURE__*/React.createElement(Avatar, { seed: e.avatar, size: 26 }));
-          })
-        ),
-        /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: C.sub })
-      ),
-      document.body
-    );
-  })(), showLastWeek && (function () {
-    var entries = lastWeekEntries();
-    var medalGrad = ["linear-gradient(145deg,#FFD56A,#E8A020)", "linear-gradient(145deg,#C9D2DE,#8E9BAC)", "linear-gradient(145deg,#E2A06B,#B06A35)"];
-    var rankLabel = ["1st", "2nd", "3rd"];
-    return /*#__PURE__*/React.createElement(Sheet, {
-      onClose: function onClose() { setShowLastWeek(false); },
-      title: "Last week's results"
-    },
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginBottom: 16, lineHeight: 1.5 } },
-        (lbTab === "worldwide" ? "The top learners worldwide" : "Your friends' top performers") + " from last week" + (function () {
-          var r = lastWeek && lastWeek.range;
-          var fmt = function (s) {
-            var pr = s.split("-");
-            return MONTHS[parseInt(pr[1], 10) - 1] + " " + parseInt(pr[2], 10);
-          };
-          return r ? " (" + fmt(r.from) + " \u2013 " + fmt(r.to) + ")" : "";
-        })() + ":"
-      ),
-      entries.length === 0
-        ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "20px 0", fontSize: 13.5 } }, "No results recorded last week.")
-        : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
-            entries.map(function (e, i) {
-              var first = i === 0;
-              return /*#__PURE__*/React.createElement("div", {
-                key: e.id,
-                className: "rise press",
-                onClick: function onClick() { if (e.prof) setSel(e.prof); },
-                style: {
-                  animationDelay: (0.05 + i * 0.08) + "s",
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: first ? "16px 14px" : "12px 14px",
-                  borderRadius: 18,
-                  border: "1.5px solid " + (first ? "#F2C063" : C.line),
-                  background: first ? "linear-gradient(135deg,#FFF8EC,#FFFDF6)" : C.surface,
-                  boxShadow: first ? "0 6px 20px rgba(232,160,32,0.18)" : "none",
-                  cursor: "pointer"
-                }
-              },
-                /*#__PURE__*/React.createElement("div", {
-                  style: { width: first ? 38 : 32, height: first ? 38 : 32, borderRadius: "50%", background: medalGrad[i], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(28,26,46,0.18)" }
-                }, /*#__PURE__*/React.createElement(Icon, { name: "trophy", size: first ? 15 : 12, color: "#fff" })),
-                /*#__PURE__*/React.createElement(Avatar, { seed: e.avatar, size: first ? 46 : 38 }),
-                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: first ? 16 : 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, e.name),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, fontWeight: 600 } }, rankLabel[i] + " place")
-                ),
-                /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", flexShrink: 0 } },
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: first ? 19 : 16, fontWeight: 900, color: first ? "#B45309" : C.ink } }, e.pts),
-                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600 } }, "pts")
-                )
-              );
-            })
-          )
-    );
-  })(), showHearts && /*#__PURE__*/React.createElement(HeartsDialog, {
-    hearts: receivedHearts,
-    follows: followNotifs,
-    following: friends,
-    onFollowBack: onAdd,
-    sentAtTo: sentAtTo,
-    onSendBack: function onSendBack(toId, heartId) { if (_onSendHeartBack) _onSendHeartBack(toId, heartId); },
-    onClose: function onClose() { return setShowHearts(false); }
   }));
 }
 function UserRow(_ref39) {
@@ -9567,8 +9615,7 @@ function FriendDetailDialog(_ref40) {
       gap: 6,
       flexWrap: "wrap"
     }
-  }, /*#__PURE__*/React.createElement("span", null, isSelf ? "This is you" : isFriend ? "Following" : followsYou ? "Follows you" : "Not following"),
-  badge && /*#__PURE__*/React.createElement("span", {
+  }, badge && /*#__PURE__*/React.createElement("span", {
     style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 11, fontWeight: 800, borderRadius: 8, padding: "2px 7px" }
   }, /*#__PURE__*/React.createElement(Icon, { name: badge.icon, size: 10, color: "#B45309" }), badge.name))), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
@@ -10686,9 +10733,14 @@ function SessionComplete(_ref47) {
   var pageBg = page === "badge" || page === "streak" || page === "level" || page === "rewinddone" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : "#F0EEFF";
   /* iOS standalone: paint the status-bar area in the page color too */
   useEffect(function () {
-    var prev = document.documentElement.style.background;
+    var prevH = document.documentElement.style.background;
+    var prevB = document.body.style.background;
     document.documentElement.style.background = pageBg;
-    return function () { document.documentElement.style.background = prev || "#F5F4FB"; };
+    document.body.style.background = pageBg;
+    return function () {
+      document.documentElement.style.background = prevH || "#F5F4FB";
+      document.body.style.background = prevB || "#F5F4FB";
+    };
   }, [pageBg]);
   useEffect(function () {
     var bg = pageBg;
@@ -10725,7 +10777,14 @@ function SessionComplete(_ref47) {
             return shareImage(capRef.current, text, "memzy-result.png", C.bg);
           case 1:
             r = _context1.v;
-            setShareMsg(r === "shared" ? "" : r === "downloaded" ? "Image saved!" : "Could not share");
+            if (r !== "shared" && r !== "downloaded") {
+              /* Pages without a capture node (or lib missing): share text */
+              try {
+                if (navigator.share) { navigator.share({ text: text }).catch(function () {}); r = "shared"; }
+                else if (navigator.clipboard) { navigator.clipboard.writeText(text); r = "copied"; }
+              } catch (e2) {}
+            }
+            setShareMsg(r === "shared" ? "" : r === "downloaded" ? "Image saved!" : r === "copied" ? "Copied!" : "Could not share");
             setTimeout(function () { return setShareMsg(""); }, 2200);
           case 2:
             return _context1.a(2);
@@ -11161,7 +11220,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekInR{from{opacity:0;transform:translateX(118%)}to{opacity:1;transform:translateX(28%)}}\n  @keyframes peekOutR{from{opacity:1;transform:translateX(28%)}to{opacity:0;transform:translateX(122%)}}\n  @keyframes peekInL{from{opacity:0;transform:translateX(-118%)}to{opacity:1;transform:translateX(-28%)}}\n  @keyframes peekOutL{from{opacity:1;transform:translateX(-28%)}to{opacity:0;transform:translateX(-122%)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
@@ -11169,7 +11228,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
 <!-- Cache-busting service worker — bump CACHE_VERSION on every deploy -->
 <script>
 (function() {
-  var CACHE_VERSION = 'memzy-v157';
+  var CACHE_VERSION = 'memzy-v161';
 
   if (!('serviceWorker' in navigator)) return;
 
