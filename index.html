@@ -902,6 +902,49 @@ var AZURE_TTS_URL = "https://eastus.tts.speech.microsoft.com/cognitiveservices/v
 /* Persian voice: Farid (male) — fixed choice */
 function _faVoice() { return "fa-IR-FaridNeural"; }
 
+/* In-memory TTS cache: the ~1s delay was a fresh network round-trip on every
+   tap. Cache decoded MP3 ArrayBuffers (and a ready blob URL) by text+lang so a
+   repeat — or a prefetched word — plays instantly. */
+var _ttsCache = {};        /* key -> { buf, url } */
+var _ttsInflight = {};     /* key -> Promise<ArrayBuffer> */
+var _TTS_CACHE_MAX = 80;
+function _ttsKey(text, tl) { return tl + "::" + text; }
+function _ttsFetchBuf(text, tl) {
+  var key = _ttsKey(text, tl);
+  if (_ttsCache[key]) return Promise.resolve(_ttsCache[key].buf);
+  if (_ttsInflight[key]) return _ttsInflight[key];
+  var p = new Promise(function (res, rej) {
+    var ok = function (buf) {
+      var keys = Object.keys(_ttsCache);
+      if (keys.length >= _TTS_CACHE_MAX) { try { URL.revokeObjectURL(_ttsCache[keys[0]].url); } catch (_) {} delete _ttsCache[keys[0]]; }
+      var url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+      _ttsCache[key] = { buf: buf, url: url };
+      res(buf);
+    };
+    if (tl === "fa") {
+      var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'><voice name='" + _faVoice() + "'>" +
+        "<prosody rate='-8%'>" + text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + "</prosody></voice></speak>";
+      fetch(AZURE_TTS_URL, { method: "POST", headers: { "Ocp-Apim-Subscription-Key": _ak, "Content-Type": "application/ssml+xml", "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3" }, body: ssml })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(ok).catch(rej);
+    } else if (tl === "de") {
+      fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + _gk, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: { text: text }, voice: { languageCode: "de-DE", name: "de-DE-Wavenet-F" }, audioConfig: { audioEncoding: "MP3", speakingRate: 0.9 } }) })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (data) { var bin = atob(data.audioContent); var b = new ArrayBuffer(bin.length); var v = new Uint8Array(b); for (var i = 0; i < bin.length; i++) v[i] = bin.charCodeAt(i); ok(b); }).catch(rej);
+    } else {
+      fetch("https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9")
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(ok).catch(rej);
+    }
+  });
+  _ttsInflight[key] = p;
+  p.then(function () { delete _ttsInflight[key]; }, function () { delete _ttsInflight[key]; });
+  return p;
+}
+/* Warm the cache ahead of time (e.g. when a card mounts) so the first tap is instant */
+function prefetchTTS(text, langCode) {
+  if (!text || !text.trim()) return;
+  var tl = langCode && langCode.startsWith("fa") ? "fa" : langCode && langCode.startsWith("de") ? "de" : (langCode || "en").slice(0, 2);
+  _ttsFetchBuf(text.trim(), tl).catch(function () {});
+}
 function spNet(text, tl) {
   return new Promise(function(res, rej) {
     try {
@@ -919,53 +962,18 @@ function spNet(text, tl) {
         if (pr && pr.catch) pr.catch(rej);
       };
 
-      var doFetch = function() {
-        if (tl === "fa") {
-          var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'><voice name='" + _faVoice() + "'>" +
-            "<prosody rate='-8%'>" +
-            text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") +
-            "</prosody></voice></speak>";
-          fetch(AZURE_TTS_URL, {
-            method: "POST",
-            headers: {
-              "Ocp-Apim-Subscription-Key": _ak,
-              "Content-Type": "application/ssml+xml",
-              "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3"
-            },
-            body: ssml
-          })
-          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-          .then(function(buf) { doPlay(buf); })
-          .catch(rej);
-        } else if (tl === "de") {
-          fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + _gk, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              input: { text: text },
-              voice: { languageCode: "de-DE", name: "de-DE-Wavenet-F" },
-              audioConfig: { audioEncoding: "MP3", speakingRate: 0.9 }
-            })
-          })
-          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-          .then(function(data) {
-            var binary = atob(data.audioContent);
-            var buf = new ArrayBuffer(binary.length);
-            var view = new Uint8Array(buf);
-            for (var i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
-            doPlay(buf);
-          })
-          .catch(rej);
-        } else {
-          var url = "https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9";
-          fetch(url)
-            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-            .then(function(buf) { doPlay(buf); })
-            .catch(rej);
-        }
-      };
-
-      doFetch();
+      /* Cached blob URL? play it straight away (no network) */
+      var key = _ttsKey(text, tl);
+      if (_ttsCache[key]) {
+        if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
+        _au.src = _ttsCache[key].url;
+        _au.onended = function () { res(); };
+        _au.onerror = function (e) { rej(e); };
+        var prc = _au.play();
+        if (prc && prc.catch) prc.catch(rej);
+        return;
+      }
+      _ttsFetchBuf(text, tl).then(function (buf) { doPlay(buf); }).catch(rej);
     } catch(e) { rej(e); }
   });
 }
@@ -1840,6 +1848,8 @@ function GoldenSparks(_refS) {
 /* ════════════ APP ════════════ */
 function App() {
   var _queue$;
+  var _queue$b;
+  var _queue$c;
   var _useState7 = useState("loading"),
     _useState8 = _slicedToArray(_useState7, 2),
     screen = _useState8[0],
@@ -2509,6 +2519,19 @@ function App() {
       speak(sayWordOf(c), langMeta[c.language].ttsLang);
     }
   }, [screen, (_queue$ = queue[0]) === null || _queue$ === void 0 ? void 0 : _queue$.id, deckSettings.autoSpeak, flipped]);
+  /* Warm the TTS cache for the current + next card so tapping "hear" is instant
+     (the ~1s delay was a cold network fetch on every press). */
+  useEffect(function () {
+    if (screen !== "deck") return;
+    [queue[0], queue[1]].forEach(function (c) {
+      if (!c) return;
+      var m = langMeta[c.language];
+      if (!m) return;
+      prefetchTTS(sayWordOf(c), m.ttsLang);
+      var ex = sayExOf(c);
+      if (ex) prefetchTTS(ex, m.ttsLang);
+    });
+  }, [screen, (_queue$b = queue[0]) === null || _queue$b === void 0 ? void 0 : _queue$b.id, (_queue$c = queue[1]) === null || _queue$c === void 0 ? void 0 : _queue$c.id]);
   var commitSwipe = function commitSwipe(dir) {
     setQueue(function (q) {
       if (!q.length) return q;
@@ -6016,7 +6039,7 @@ function Dashboard(_ref27) {
                 /*#__PURE__*/React.createElement("img", {
                   src: peekImgs[lvIdx], width: 180, height: 180, alt: "",
                   "data-peek-img": "1",
-                  style: { display: "block", opacity: 0, transformOrigin: "50% 50%", transform: "rotate(82deg)", willChange: "transform, opacity" }
+                  style: { display: "block", opacity: 0, transformOrigin: "50% 100%", transform: "rotate(82deg)", willChange: "transform, opacity" }
                 })
               ),
               bub && /*#__PURE__*/React.createElement("div", {
@@ -11043,12 +11066,7 @@ function ExamComplete(_ref_ec) {
     var bg = examPage === "claim" || examPage === "stats" ? "#F0EEFF" : examPage === "streak" ? "#FFF8EC" : passed ? "#EDFFF5" : "#FFF2F2";
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
-    var el = document.createElement("div");
-    el.style.cssText = "position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);z-index:250;pointer-events:none";
-    el.style.background = bg;
-    document.body.appendChild(el);
     return function () {
-      document.body.removeChild(el);
       document.documentElement.style.background = C.bg;
       document.body.style.background = C.bg;
     };
@@ -11357,14 +11375,10 @@ function SessionComplete(_ref47) {
       document.body.style.background = C.bg;
     };
   }, [page]);
-  /* Fixed strip so the Dynamic Island / status bar always matches this screen */
-  useEffect(function () {
-    var el = document.createElement("div");
-    el.style.cssText = "position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);z-index:250;pointer-events:none";
-    el.style.background = pageBg;
-    document.body.appendChild(el);
-    return function () { document.body.removeChild(el); };
-  }, [pageBg]);
+  /* No separate status-bar filler strip: the screen container is height:100%
+     of the screen-height root, so its own gradient already paints under the
+     status bar \u2014 exactly like Home and the other working pages. The body
+     background (set above) prevents any flash during transitions. */
   var capRef = useRef(null);
   var sharingRef = useRef(false);
   /* Daily streak reward: day N gives N points, capped at 10. Granted once,
