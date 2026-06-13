@@ -259,7 +259,12 @@ var CRACK_EXPIRED_PCT = 0.5;
 var CHAPTER_UNLOCK_PCT = 0.8;
 /* One-time bonus for unlocking a level */
 var LEVEL_CLAIM_POINTS = { A2: 50, B1: 100, B2: 150, C1: 250 };
-var CHAPTER_COMPLETE_POINTS = 10; /* bonus for finishing every card of a chapter */
+var CHAPTER_COMPLETE_POINTS = 10;
+/* Greeting words shown in the character-peek speech bubble, per language */
+var PEEK_GREETINGS = {
+  de: [["Hallo", "Hello"], ["Moin", "Hi \u2013 Northern Germany"], ["Servus", "Hi / Bye \u2013 Southern Germany"], ["Hi", "Hi"], ["Hey", "Hey"], ["Guten Morgen", "Good Morning"], ["Guten Tag", "Good Day"], ["Guten Abend", "Good evening"], ["Mahlzeit", "Greeting around lunchtime"]],
+  fa: [["Salam", "Hello"], ["Dorood", "Greetings"], ["Chetori?", "How are you? / Informal"], ["Khoubi?", "Are you fine? / Informal"], ["Khosh oomadi", "Welcome"], ["Chakeram", "Slang greeting"], ["Mokhlesam", "Slang greeting"]]
+}; /* bonus for finishing every card of a chapter */
 /* Surprise gift after the 3rd chapter of each level: pick 1 of 3 cards */
 var GIFT_PRIZES = [10, 15, 25];
 /* Every chapter is served in exactly this many rounds; the round size is
@@ -787,6 +792,7 @@ function _getAudioCtx() {
 }
 
 var _primed = false;
+var _speakGen = 0; /* bumps each speak() call; stale calls never fall back to synth */
 function primeTTS() {
   if (_primed) return;
   _primed = true;
@@ -945,13 +951,14 @@ function prefetchTTS(text, langCode) {
   var tl = langCode && langCode.startsWith("fa") ? "fa" : langCode && langCode.startsWith("de") ? "de" : (langCode || "en").slice(0, 2);
   _ttsFetchBuf(text.trim(), tl).catch(function () {});
 }
-function spNet(text, tl) {
+function spNet(text, tl, gen) {
   return new Promise(function(res, rej) {
     try {
       if (_audioSource) { try { _audioSource.stop(); } catch(_) {} _audioSource = null; }
       if (_au) { try { _au.pause(); _au.src = ""; } catch(_) {} _au = null; }
 
       var doPlay = function(arrayBuf) {
+        if (gen != null && gen !== _speakGen) { return rej(new Error("superseded")); }
         var blob = new Blob([arrayBuf], { type: "audio/mpeg" });
         var url = URL.createObjectURL(blob);
         if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
@@ -965,6 +972,7 @@ function spNet(text, tl) {
       /* Cached blob URL? play it straight away (no network) */
       var key = _ttsKey(text, tl);
       if (_ttsCache[key]) {
+        if (gen != null && gen !== _speakGen) { return rej(new Error("superseded")); }
         if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
         _au.src = _ttsCache[key].url;
         _au.onended = function () { res(); };
@@ -998,8 +1006,15 @@ function spSynth(text, langCode) {
 function speak(text, langCode) {
   if (!text || !text.trim()) return;
   primeTTS();
+  var gen = ++_speakGen;
+  /* Cancel any device-voice utterance still going, so cloud + device can't overlap */
+  try { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); } catch (_) {}
   var tl = langCode.startsWith("fa") ? "fa" : langCode.startsWith("de") ? "de" : langCode.slice(0, 2);
-  spNet(text, tl).catch(function() { spSynth(text, langCode); });
+  spNet(text, tl, gen).catch(function () {
+    /* Only fall back to the device voice if THIS is still the latest request.
+       A later speak() interrupting us rejects this promise too \u2014 ignore that. */
+    if (gen === _speakGen) spSynth(text, langCode);
+  });
 }
 var sayWordOf = function sayWordOf(c) {
   if (c.language === "fa") {
@@ -6028,27 +6043,43 @@ function Dashboard(_ref27) {
         var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", ref: registerPeekEl(lvIdx), "data-peek-lv": lvIdx, style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : peekBubble && peekBubble.lv === lvIdx ? 6 : 1 } },
           peekImgs[lvIdx] && (function () {
             var bub = peekBubble && peekBubble.lv === lvIdx ? peekBubble : null;
-            return /*#__PURE__*/React.createElement("div", {
-              onClick: function onClick() { onPeekTap(lv, lvIdx); },
-              style: Object.assign({ position: "absolute", top: "50%", marginTop: -90, width: 180, height: 180, zIndex: 2, cursor: "pointer" },
-                peekSide === "r" ? { right: -118 } : { left: -118 })
-            },
-              /* Mirror lives on the parent; the img below only rotates, driven
-                 directly by the scroll handler (data-peek-img) */
-              /*#__PURE__*/React.createElement("div", { style: { width: 180, height: 180, transform: peekSide === "r" ? "scaleX(-1)" : "none" } },
-                /*#__PURE__*/React.createElement("img", {
-                  src: peekImgs[lvIdx], width: 180, height: 180, alt: "",
-                  "data-peek-img": "1",
-                  style: { display: "block", opacity: 0, transformOrigin: "50% 100%", transform: "rotate(82deg)", willChange: "transform, opacity" }
-                })
-              ),
-              bub && /*#__PURE__*/React.createElement("div", {
-                style: Object.assign({ position: "absolute", top: -30, background: "#fff", border: "1.5px solid " + C.line, borderRadius: 14, padding: "8px 12px", boxShadow: "0 8px 24px rgba(28,26,46,0.18)", animation: "scalePop .3s cubic-bezier(.2,.8,.2,1) both", textAlign: "left" },
-                  peekSide === "r" ? { right: 110 } : { left: 110 })
+            /* Lean (rotation) lives on the OUTER rotating layer - scroll-driven and
+               "perfect", so untouched. The facing flip (scaleX) sits on the INNER img
+               only, so the right side faces INTO the app without disturbing the lean.
+               Bubble is a sibling positioned in front of the leaned-in head. */
+            return /*#__PURE__*/React.createElement(React.Fragment, null,
+              /*#__PURE__*/React.createElement("div", {
+                onClick: function onClick() { onPeekTap(lv, lvIdx); },
+                style: Object.assign({ position: "absolute", top: "50%", marginTop: -110, width: 180, height: 180, zIndex: 2, cursor: "pointer" },
+                  peekSide === "r" ? { right: -180 } : { left: -180 })
               },
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 } }, bub.text),
-                bub.sub ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 } }, bub.sub) : null
-              )
+                /*#__PURE__*/React.createElement("div", {
+                  "data-peek-img": "1",
+                  "data-peek-dir": peekSide === "r" ? "-1" : "1",
+                  style: { width: 180, height: 180, opacity: 0, transformOrigin: peekSide === "r" ? "0% 100%" : "100% 100%", transform: "rotate(0deg)", willChange: "transform, opacity" }
+                },
+                  /*#__PURE__*/React.createElement("img", {
+                    src: peekImgs[lvIdx], width: 180, height: 180, alt: "",
+                    style: { display: "block", transform: peekSide === "r" ? "scaleX(-1)" : "none" }
+                  })
+                )
+              ),
+              bub && (function () {
+                /* Speech bubble in FRONT of the character (to the inner side, at
+                   head height), with a tail pointing back toward the head. */
+                var onR = peekSide === "r";
+                return /*#__PURE__*/React.createElement("div", {
+                  key: bub.n,
+                  className: "peek-bubble" + (bubbleClosing ? " peek-bubble-out" : ""),
+                  style: Object.assign({ position: "absolute", top: "50%", marginTop: -181, zIndex: 8, background: "#fff", border: "1.5px solid " + C.line, borderRadius: 16, padding: "9px 14px", boxShadow: "0 10px 28px rgba(28,26,46,0.20)", textAlign: "left", maxWidth: 200, transformOrigin: onR ? "100% 100%" : "0% 100%" },
+                    onR ? { right: 24 } : { left: 24 })
+                },
+                  /* tail: points down toward the head (bubble sits up & inward of it) */
+                  /*#__PURE__*/React.createElement("div", { style: Object.assign({ position: "absolute", bottom: -7, width: 13, height: 13, background: "#fff", borderRight: "1.5px solid " + C.line, borderBottom: "1.5px solid " + C.line }, onR ? { right: 16, transform: "rotate(45deg)" } : { left: 16, transform: "rotate(45deg)" }) }),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 } }, bub.text),
+                  bub.sub ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.sub, fontWeight: 600, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 } }, bub.sub) : null
+                );
+              })()
             );
           })(),
           /*#__PURE__*/React.createElement("button", {
@@ -6310,8 +6341,32 @@ function Dashboard(_ref27) {
      (2) tap -> speech bubble with a learned word from that level (+ TTS)
      (4) easter egg: 5 quick taps -> party wiggle */
   var _useState_pkb = useState(null), _useState_pkb2 = _slicedToArray(_useState_pkb, 2), peekBubble = _useState_pkb2[0], setPeekBubble = _useState_pkb2[1];
+  var _useState_pkc = useState(false), _useState_pkc2 = _slicedToArray(_useState_pkc, 2), bubbleClosing = _useState_pkc2[0], setBubbleClosing = _useState_pkc2[1];
   var peekElsRef = useRef({});
-  var peekBubbleTimerRef = useRef(null);
+  var peekHideTimerRef = useRef(null);  /* 3s visible timer */
+  var peekExitTimerRef = useRef(null);  /* pop-out duration */
+  var peekBubbleNRef = useRef(0);       /* bumps each tap -> remounts bubble -> replays pop-in */
+  var peekBubbleRef = useRef(false);    /* true while a bubble is open (scroll/outside dismiss) */
+  /* Close = play the pop-OUT animation, then unmount. Uses only stable refs +
+     setState, so capturing it in a []-deps effect stays correct. */
+  var closeBubble = function closeBubble() {
+    if (!peekBubbleRef.current) return;
+    peekBubbleRef.current = false;
+    clearTimeout(peekHideTimerRef.current);
+    clearTimeout(peekExitTimerRef.current);
+    setBubbleClosing(true);
+    peekExitTimerRef.current = setTimeout(function () { setBubbleClosing(false); setPeekBubble(null); }, 190);
+  };
+  useEffect(function () {
+    var onDoc = function onDoc(e) {
+      if (!peekBubbleRef.current) return;
+      /* a tap on a peek is handled by its own onClick (switches the word) */
+      if (e.target && e.target.closest && e.target.closest("[data-peek-img]")) return;
+      closeBubble();
+    };
+    document.addEventListener("pointerdown", onDoc, true);
+    return function () { document.removeEventListener("pointerdown", onDoc, true); };
+  }, []);
   var peekWordQueueRef = useRef({}); /* lvIdx -> shuffled learned cards; popped per tap */
   var registerPeekEl = function registerPeekEl(li) {
     return function (el) { if (el) peekElsRef.current[li] = el; };
@@ -6330,11 +6385,20 @@ function Dashboard(_ref27) {
       var img = el.querySelector("[data-peek-img]");
       if (!img) return;
       var r = el.getBoundingClientRect();
-      var cy = r.top + r.height / 2 - sr.top;
-      var edge = Math.min(cy, vh - cy);
-      var t = Math.max(0, Math.min(1, edge / 200));
-      img.style.opacity = String(Math.min(1, t * 1.6));
-      img.style.transform = "rotate(" + (82 - 47 * t) + "deg)";
+      var cy = r.top + r.height / 2 - sr.top;   /* element center within the viewport */
+      /* p = how centered the element is: 1 at the exact middle, 0 at top/bottom edge.
+         The lean follows p directly, so the character rotates IN as it approaches
+         the middle and back OUT along the same path as it leaves \\u2014 in step with
+         the finger, no easing/overshoot. */
+      var u = (vh - cy) / vh;
+      var ramp;
+      if (u < 0.3) ramp = u / 0.3;
+      else if (u > 0.7) ramp = (1 - u) / 0.3;
+      else ramp = 1;
+      ramp = Math.max(0, Math.min(1, ramp));
+      var dir = Number(img.getAttribute("data-peek-dir")) || 1; /* +1 left, -1 right */
+      img.style.opacity = String(ramp);
+      img.style.transform = "rotate(" + (dir * 35 * ramp) + "deg)";
     });
   };
   useEffect(function () { updatePeeks(); }); /* keep pose intact across re-renders */
@@ -6343,6 +6407,7 @@ function Dashboard(_ref27) {
     if (!sc) return;
     var raf = null;
     var onS = function onS() {
+      if (peekBubbleRef.current) closeBubble();
       if (raf) return;
       raf = requestAnimationFrame(function () { raf = null; updatePeeks(); });
     };
@@ -6355,31 +6420,26 @@ function Dashboard(_ref27) {
     };
   }, [pageScrollRef && pageScrollRef.current]);
   var onPeekTap = function onPeekTap(lv, lvIdx) {
-    /* Bubble cycles a SHUFFLED QUEUE of this level's learned words — every
-       word appears once before any repeats. No sound (turned off). */
+    /* Bubble shows greeting words for the selected language, cycled through a
+       shuffled queue so each appears once before repeating. No sound. */
     var lang0 = (selectedLangs && selectedLangs[0]) || "de";
-    var text, sub;
-    var lvLearned = allCards.filter(function (c) { return c.level === lv && learnedIds.includes(c.id); });
-    if (lvLearned.length) {
-      var qx = peekWordQueueRef.current[lvIdx];
-      if (!qx || !qx.length) {
-        qx = lvLearned.slice();
-        for (var si = qx.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var tp = qx[si]; qx[si] = qx[sj]; qx[sj] = tp; }
-        peekWordQueueRef.current[lvIdx] = qx;
-      }
-      var c = qx.pop();
-      text = c.word;
-      sub = c.translation || "";
-    } else {
-      var cheers = lang0 === "fa"
-        ? ["Sal\u00e2m! \uD83D\uDC4B", "\u00c2farin!", "Bezan berim!"]
-        : ["Hallo! \uD83D\uDC4B", "Weiter so!", "Los geht's!"];
-      text = cheers[Math.floor(Math.random() * cheers.length)];
-      sub = "";
+    var list = PEEK_GREETINGS[lang0] || PEEK_GREETINGS.de;
+    var qx = peekWordQueueRef.current.greet;
+    if (!qx || !qx.length || peekWordQueueRef.current.greetLang !== lang0) {
+      qx = list.slice();
+      for (var si = qx.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var tp = qx[si]; qx[si] = qx[sj]; qx[sj] = tp; }
+      peekWordQueueRef.current.greet = qx;
+      peekWordQueueRef.current.greetLang = lang0;
     }
-    setPeekBubble({ lv: lvIdx, text: text, sub: sub });
-    clearTimeout(peekBubbleTimerRef.current);
-    peekBubbleTimerRef.current = setTimeout(function () { setPeekBubble(null); }, 3000);
+    var g = qx.pop();
+    var text = g[0], sub = g[1];
+    clearTimeout(peekHideTimerRef.current);
+    clearTimeout(peekExitTimerRef.current);
+    setBubbleClosing(false);
+    var nn = ++peekBubbleNRef.current;
+    setPeekBubble({ lv: lvIdx, text: text, sub: sub, n: nn });
+    peekBubbleRef.current = true;
+    peekHideTimerRef.current = setTimeout(function () { closeBubble(); }, 3000);
   };
   /* If the profile avatar is one of the 50 characters and differs from the
      stored buddy identity, adopt it (e.g. set on another device) */
@@ -11876,7 +11936,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{from{opacity:0;transform:translateY(130%)}to{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(130%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(82deg)}60%{opacity:1;transform:rotate(28deg)}to{opacity:1;transform:rotate(35deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(35deg)}to{opacity:0;transform:rotate(82deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(82deg)}60%{opacity:1;transform:scaleX(-1) rotate(28deg)}to{opacity:1;transform:scaleX(-1) rotate(35deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(35deg)}to{opacity:0;transform:scaleX(-1) rotate(82deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes peekParty{0%,100%{transform:rotate(0) scale(1)}30%{transform:rotate(-14deg) scale(1.15)}60%{transform:rotate(10deg) scale(1.18)}}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease}\n  .press:active{transform:scale(0.95)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{from{opacity:0;transform:translateY(130%)}to{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(130%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(82deg)}60%{opacity:1;transform:rotate(28deg)}to{opacity:1;transform:rotate(35deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(35deg)}to{opacity:0;transform:rotate(82deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(82deg)}60%{opacity:1;transform:scaleX(-1) rotate(28deg)}to{opacity:1;transform:scaleX(-1) rotate(35deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(35deg)}to{opacity:0;transform:scaleX(-1) rotate(82deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes peekBubblePop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}\n.peek-bubble{animation:peekBubblePop .26s cubic-bezier(.34,1.56,.64,1) both}\n@keyframes peekBubbleOut{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.4)}}\n.peek-bubble-out{animation:peekBubbleOut .19s cubic-bezier(.5,0,.75,.4) both}\n@keyframes peekParty{0%,100%{transform:rotate(0) scale(1)}30%{transform:rotate(-14deg) scale(1.15)}60%{transform:rotate(10deg) scale(1.18)}}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
