@@ -678,8 +678,22 @@ var AVATARS = getPeepChars().map(peepAvatarVal); /* the 50 Open Peeps characters
 /* Keep #root exactly the height of the *visible* viewport: standalone PWAs
    and Safari (with its collapsing toolbars) disagree about 100vh/dvh, so we
    measure instead. */
-/* No JS viewport-height syncing: the working build proves plain CSS
-   100vh/100dvh on #root is correct on iOS, in-browser and standalone. */
+(function () {
+  /* black-translucent + standalone: this iOS sizes 100vh/dvh SHORT of the real
+     screen (the gap under the tab bar). The standalone webview IS exactly the
+     physical screen, so pin #root to screen.height there. In-browser Safari is
+     left to plain CSS (proven correct). */
+  var standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  if (!standalone) return;
+  var syncH = function syncH() {
+    var r = document.getElementById("root");
+    if (r) r.style.height = window.screen.height + "px";
+  };
+  window.addEventListener("orientationchange", function () { setTimeout(syncH, 120); });
+  syncH();
+  setTimeout(syncH, 300);
+})();
 var avatarURL = function avatarURL(seed) {
   var str = String(seed || "");
   if (str.indexOf("peep:") === 0) {
@@ -5988,31 +6002,26 @@ function Dashboard(_ref27) {
            the zigzag): A1/B1/C1 right, A2/B2 left. Head leans INTO the screen:
            right edge mirrors the image, left edge keeps it unflipped. */
         var peekSide = gOff > 0 ? "l" : "r";
-        var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", ref: registerPeekEl(lvIdx), "data-peek-lv": lvIdx, style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : (peekBubble && peekBubble.lv === lvIdx) || peekParty === lvIdx ? 6 : 1 } },
+        var giftEl = /*#__PURE__*/React.createElement("div", { key: ch.id + "-gift", ref: registerPeekEl(lvIdx), "data-peek-lv": lvIdx, style: { display: "flex", justifyContent: "center", marginBottom: 14, position: "relative", zIndex: giftBubbleOpen ? 97 : peekBubble && peekBubble.lv === lvIdx ? 6 : 1 } },
           peekImgs[lvIdx] && (function () {
-            var vis = peekVis[lvIdx]; /* undefined = not yet on screen */
-            var isParty = peekParty === lvIdx;
             var bub = peekBubble && peekBubble.lv === lvIdx ? peekBubble : null;
-            /* The mirror lives on a PARENT layer (flips in place, center origin)
-               so both sides share the same plain swing keyframes; the final pose
-               equals the proven static one: [scaleX(-1)] rotate(35deg) at \u00b198 */
-            var anim = vis === undefined ? "none"
-              : vis ? "peekSwingInR .7s cubic-bezier(.34,1.4,.4,1) both"
-                    : "peekSwingOutR .5s ease-in both";
             return /*#__PURE__*/React.createElement("div", {
               onClick: function onClick() { onPeekTap(lv, lvIdx); },
-              style: Object.assign({ position: "absolute", top: "50%", marginTop: -75, width: 150, height: 150, zIndex: 2, cursor: "pointer", animation: isParty ? "peekParty .9s cubic-bezier(.34,1.56,.64,1) both" : "none" },
-                peekSide === "r" ? { right: -98 } : { left: -98 })
+              style: Object.assign({ position: "absolute", top: "50%", marginTop: -90, width: 180, height: 180, zIndex: 2, cursor: "pointer" },
+                peekSide === "r" ? { right: -118 } : { left: -118 })
             },
-              /*#__PURE__*/React.createElement("div", { style: { width: 150, height: 150, transform: peekSide === "r" ? "scaleX(-1)" : "none" } },
+              /* Mirror lives on the parent; the img below only rotates, driven
+                 directly by the scroll handler (data-peek-img) */
+              /*#__PURE__*/React.createElement("div", { style: { width: 180, height: 180, transform: peekSide === "r" ? "scaleX(-1)" : "none" } },
                 /*#__PURE__*/React.createElement("img", {
-                  src: peekImgs[lvIdx], width: 150, height: 150, alt: "",
-                  style: { display: "block", opacity: vis === undefined ? 0 : 1, transformOrigin: "50% 50%", animation: anim }
+                  src: peekImgs[lvIdx], width: 180, height: 180, alt: "",
+                  "data-peek-img": "1",
+                  style: { display: "block", opacity: 0, transformOrigin: "50% 50%", transform: "rotate(82deg)", willChange: "transform, opacity" }
                 })
               ),
               bub && /*#__PURE__*/React.createElement("div", {
-                style: Object.assign({ position: "absolute", top: -26, background: "#fff", border: "1.5px solid " + C.line, borderRadius: 14, padding: "8px 12px", boxShadow: "0 8px 24px rgba(28,26,46,0.18)", animation: "scalePop .3s cubic-bezier(.2,.8,.2,1) both", textAlign: "left" },
-                  peekSide === "r" ? { right: 92 } : { left: 92 })
+                style: Object.assign({ position: "absolute", top: -30, background: "#fff", border: "1.5px solid " + C.line, borderRadius: 14, padding: "8px 12px", boxShadow: "0 8px 24px rgba(28,26,46,0.18)", animation: "scalePop .3s cubic-bezier(.2,.8,.2,1) both", textAlign: "left" },
+                  peekSide === "r" ? { right: 110 } : { left: 110 })
               },
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 } }, bub.text),
                 bub.sub ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: C.sub, fontWeight: 600, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 } }, bub.sub) : null
@@ -6277,75 +6286,74 @@ function Dashboard(_ref27) {
      (1) swing in/out as their gift row scrolls into/out of view
      (2) tap -> speech bubble with a learned word from that level (+ TTS)
      (4) easter egg: 5 quick taps -> party wiggle */
-  var _useState_pkv = useState({}), _useState_pkv2 = _slicedToArray(_useState_pkv, 2), peekVis = _useState_pkv2[0], setPeekVis = _useState_pkv2[1];
   var _useState_pkb = useState(null), _useState_pkb2 = _slicedToArray(_useState_pkb, 2), peekBubble = _useState_pkb2[0], setPeekBubble = _useState_pkb2[1];
-  var _useState_pkp = useState(null), _useState_pkp2 = _slicedToArray(_useState_pkp, 2), peekParty = _useState_pkp2[0], setPeekParty = _useState_pkp2[1];
-  var peekObsRef = useRef(null);
   var peekElsRef = useRef({});
-  var peekTapsRef = useRef({});
   var peekBubbleTimerRef = useRef(null);
-  var peekLastSaidRef = useRef({}); /* lvIdx -> last spoken text (avoid repeats) */
+  var peekWordQueueRef = useRef({}); /* lvIdx -> shuffled learned cards; popped per tap */
   var registerPeekEl = function registerPeekEl(li) {
-    return function (el) {
-      if (!el) return;
-      if (!peekObsRef.current && typeof IntersectionObserver !== "undefined") {
-        peekObsRef.current = new IntersectionObserver(function (entries) {
-          entries.forEach(function (en) {
-            var li2 = Number(en.target.getAttribute("data-peek-lv"));
-            setPeekVis(function (m) {
-              if (m[li2] === en.isIntersecting) return m;
-              var n = Object.assign({}, m); n[li2] = en.isIntersecting; return n;
-            });
-          });
-        }, { threshold: 0.25 });
-      }
-      if (peekElsRef.current[li] !== el) {
-        peekElsRef.current[li] = el;
-        if (peekObsRef.current) peekObsRef.current.observe(el);
-      }
-    };
+    return function (el) { if (el) peekElsRef.current[li] = el; };
   };
+  /* SCROLL-DRIVEN peeks: the pose follows the scroll position directly — no
+     time-based easing. Swings in as its row nears the viewport, out as it
+     leaves, exactly in step with the user's finger. */
+  var updatePeeks = function updatePeeks() {
+    var sc = pageScrollRef && pageScrollRef.current;
+    if (!sc) return;
+    var sr = sc.getBoundingClientRect();
+    var vh = sc.clientHeight;
+    Object.keys(peekElsRef.current).forEach(function (k) {
+      var el = peekElsRef.current[k];
+      if (!el || !el.isConnected) return;
+      var img = el.querySelector("[data-peek-img]");
+      if (!img) return;
+      var r = el.getBoundingClientRect();
+      var cy = r.top + r.height / 2 - sr.top;
+      var edge = Math.min(cy, vh - cy);
+      var t = Math.max(0, Math.min(1, edge / 200));
+      img.style.opacity = String(Math.min(1, t * 1.6));
+      img.style.transform = "rotate(" + (82 - 47 * t) + "deg)";
+    });
+  };
+  useEffect(function () { updatePeeks(); }); /* keep pose intact across re-renders */
   useEffect(function () {
-    return function () { if (peekObsRef.current) peekObsRef.current.disconnect(); };
-  }, []);
+    var sc = pageScrollRef && pageScrollRef.current;
+    if (!sc) return;
+    var raf = null;
+    var onS = function onS() {
+      if (raf) return;
+      raf = requestAnimationFrame(function () { raf = null; updatePeeks(); });
+    };
+    sc.addEventListener("scroll", onS, { passive: true });
+    window.addEventListener("resize", onS);
+    return function () {
+      sc.removeEventListener("scroll", onS);
+      window.removeEventListener("resize", onS);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [pageScrollRef && pageScrollRef.current]);
   var onPeekTap = function onPeekTap(lv, lvIdx) {
-    /* Easter egg: 5 taps within 2.5s -> party wiggle (no points; economy stays clean) */
-    var now = Date.now();
-    var taps = (peekTapsRef.current[lvIdx] || []).filter(function (t) { return now - t < 2500; });
-    taps.push(now);
-    peekTapsRef.current[lvIdx] = taps;
-    if (taps.length >= 5) {
-      peekTapsRef.current[lvIdx] = [];
-      setPeekBubble(null);
-      setPeekParty(lvIdx);
-      setTimeout(function () { setPeekParty(null); }, 950);
-      return;
-    }
-    /* Speech bubble: a random LEARNED word from this level (micro-review),
-       else a spoken cheer. Never repeat the previous pick for this character. */
+    /* Bubble cycles a SHUFFLED QUEUE of this level's learned words — every
+       word appears once before any repeats. No sound (turned off). */
     var lang0 = (selectedLangs && selectedLangs[0]) || "de";
-    var last = peekLastSaidRef.current[lvIdx];
+    var text, sub;
     var lvLearned = allCards.filter(function (c) { return c.level === lv && learnedIds.includes(c.id); });
-    var text, sub, say;
     if (lvLearned.length) {
-      var pool = lvLearned.length > 1 ? lvLearned.filter(function (c) { return c.word !== last; }) : lvLearned;
-      var c = pool[Math.floor(Math.random() * pool.length)];
+      var qx = peekWordQueueRef.current[lvIdx];
+      if (!qx || !qx.length) {
+        qx = lvLearned.slice();
+        for (var si = qx.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var tp = qx[si]; qx[si] = qx[sj]; qx[sj] = tp; }
+        peekWordQueueRef.current[lvIdx] = qx;
+      }
+      var c = qx.pop();
       text = c.word;
       sub = c.translation || "";
-      say = sayWordOf(c);
     } else {
-      /* Cheers carry a speakable form: Farsi script for fa (TTS can't read Finglish) */
       var cheers = lang0 === "fa"
-        ? [{ t: "Sal\u00e2m! \uD83D\uDC4B", s: "\u0633\u0644\u0627\u0645" }, { t: "\u00c2farin!", s: "\u0622\u0641\u0631\u06cc\u0646" }, { t: "Bezan berim!", s: "\u0628\u0632\u0646 \u0628\u0631\u06cc\u0645" }]
-        : [{ t: "Hallo! \uD83D\uDC4B", s: "Hallo" }, { t: "Weiter so!", s: "Weiter so" }, { t: "Los geht's!", s: "Los geht's" }];
-      var cpool = cheers.filter(function (ch2) { return ch2.t !== last; });
-      var pick = cpool[Math.floor(Math.random() * cpool.length)];
-      text = pick.t;
+        ? ["Sal\u00e2m! \uD83D\uDC4B", "\u00c2farin!", "Bezan berim!"]
+        : ["Hallo! \uD83D\uDC4B", "Weiter so!", "Los geht's!"];
+      text = cheers[Math.floor(Math.random() * cheers.length)];
       sub = "";
-      say = pick.s;
     }
-    peekLastSaidRef.current[lvIdx] = text;
-    try { if (say) speak(say, lang0); } catch (e) {}
     setPeekBubble({ lv: lvIdx, text: text, sub: sub });
     clearTimeout(peekBubbleTimerRef.current);
     peekBubbleTimerRef.current = setTimeout(function () { setPeekBubble(null); }, 3000);
