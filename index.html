@@ -250,7 +250,7 @@ function wordInterval(v) { return REWIND_LADDER[Math.min(laStage(v), REWIND_LADD
    Note: the aged dates are saved back, so each load with the flag on pushes
    the dates another 31 days into the past (harmless — already expired).
    ⚠️ SET BACK TO 0 BEFORE RELEASING. */
-var RECHARGE_DEMO_DAYS = 31;
+var RECHARGE_DEMO_DAYS = 0;
 /* A chapter renders "cracked" when learned >= CRACK_LEARNED_PCT of its cards
    AND at least CRACK_EXPIRED_PCT of its cards have expired */
 var CRACK_LEARNED_PCT = 0.8;
@@ -263,7 +263,7 @@ var CHAPTER_COMPLETE_POINTS = 10;
 /* Greeting words shown in the character-peek speech bubble, per language */
 var PEEK_GREETINGS = {
   de: [["Hallo", "Hello"], ["Moin", "Hi \u2013 Northern Germany"], ["Servus", "Hi / Bye \u2013 Southern Germany"], ["Hi", "Hi"], ["Hey", "Hey"], ["Guten Morgen", "Good Morning"], ["Guten Tag", "Good Day"], ["Guten Abend", "Good evening"], ["Mahlzeit", "Greeting around lunchtime"]],
-  fa: [["Salam", "Hello"], ["Dorood", "Greetings"], ["Chetori?", "How are you? / Informal"], ["Khoubi?", "Are you fine? / Informal"], ["Khosh oomadi", "Welcome"], ["Chakeram", "Slang greeting"], ["Mokhlesam", "Slang greeting"]]
+  fa: [["Salam", "Hello", "سلام"], ["Dorood", "Greetings", "درود"], ["Chetori?", "How are you? / Informal", "چطوری؟"], ["Khoubi?", "Are you fine? / Informal", "خوبی؟"], ["Khosh oomadi", "Welcome", "خوش اومدی"], ["Chakeram", "Slang greeting", "چاکرم"], ["Mokhlesam", "Slang greeting", "مخلصم"]]
 }; /* bonus for finishing every card of a chapter */
 /* Surprise gift after the 3rd chapter of each level: pick 1 of 3 cards */
 var GIFT_PRIZES = [10, 15, 25];
@@ -879,15 +879,26 @@ function unlockSFX() {
     } catch (e) {}
   });
 }
-/* Global mute, persisted across sessions (toggled in Session settings) */
+/* Global mute, persisted across sessions. Two independent toggles:
+   - _sfxEnabled  → swipe ticks (frequent)
+   - _celebEnabled → end-screen / reward sounds (rare, rewarding) */
 var _sfxEnabled = true;
+var _celebEnabled = true;
 try { _sfxEnabled = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
+try { _celebEnabled = localStorage.getItem("memzy_celeb_sfx") !== "0"; } catch (e) {}
 function setSFXEnabled(on) {
   _sfxEnabled = !!on;
   try { localStorage.setItem("memzy_sfx", on ? "1" : "0"); } catch (e) {}
 }
+function setCelebEnabled(on) {
+  _celebEnabled = !!on;
+  try { localStorage.setItem("memzy_celeb_sfx", on ? "1" : "0"); } catch (e) {}
+}
+/* Sounds played on the end screens / rewards — gated by the Celebration
+   toggle. Everything else (swipe ticks) is gated by the Swipe-sounds toggle. */
+var _CELEB_SOUNDS = { finish1: 1, finish2: 1, finish3: 1, claim: 1, streak: 1, badge: 1 };
 function playSFX(name) {
-  if (!_sfxEnabled) return;
+  if (_CELEB_SOUNDS[name] ? !_celebEnabled : !_sfxEnabled) return;
   try {
     preloadSFX();
     var a = _sfx[name];
@@ -955,7 +966,12 @@ function spNet(text, tl, gen) {
   return new Promise(function(res, rej) {
     try {
       if (_audioSource) { try { _audioSource.stop(); } catch(_) {} _audioSource = null; }
-      if (_au) { try { _au.pause(); _au.src = ""; } catch(_) {} _au = null; }
+      /* Reuse the primed (iOS-unlocked) audio element across calls. Nulling it
+         and creating a fresh Audio() every time made the first play() sluggish
+         on iPhone — a new element isn't warmed/unlocked by the initial gesture,
+         so iOS stalls before it starts. Just stop the previous clip and reuse. */
+      if (_au) { try { _au.pause(); } catch(_) {} }
+      else { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
 
       var doPlay = function(arrayBuf) {
         if (gen != null && gen !== _speakGen) { return rej(new Error("superseded")); }
@@ -1183,6 +1199,9 @@ function _shareImage() {
         case 9:
           _context14.p = 9;
           _t4 = _context14.v;
+          /* User dismissed the native share sheet — treat as done, never fall
+             back to a second (text-only) share popup. */
+          if (_t4 && (_t4.name === "AbortError" || _t4.name === "NotAllowedError")) return _context14.a(2, "shared");
           return _context14.a(2, "error");
       }
     }, _callee14, null, [[1, 9]]);
@@ -1927,13 +1946,15 @@ function App() {
     globalHistory = _useState_gh2[0],
     setGlobalHistory = _useState_gh2[1];
   var _useState25 = useState(function() {
-      var sfxOn = true;
+      var sfxOn = true, celebOn = true;
       try { sfxOn = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
+      try { celebOn = localStorage.getItem("memzy_celeb_sfx") !== "0"; } catch (e) {}
       return {
         autoSpeak: false,
         onlyUnknown: true,
         showEnglishFirst: false,
-        sfx: sfxOn
+        sfx: sfxOn,
+        celebSfx: celebOn
       };
     }),
     _useState26 = _slicedToArray(_useState25, 2),
@@ -2008,6 +2029,12 @@ function App() {
   var _useState_customDecks = useState(function () {
     try { return JSON.parse(localStorage.getItem("memzy_custom_decks") || "[]"); } catch (e) { return []; }
   }), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
+  /* Non-null = a request for the Home path to scroll to the current chapter +
+     open its bubble (Home tab re-tap, and "Take me there" from a locked deck).
+     Dashboard consumes it back to null once handled, so a normal return to the
+     Home tab (Dashboard remounts) never triggers a spurious jump. */
+  var _useState_homeJump = useState(null), _useState_homeJump2 = _slicedToArray(_useState_homeJump, 2),
+    homeJump = _useState_homeJump2[0], setHomeJump = _useState_homeJump2[1];
   useEffect(function () {
     try { localStorage.setItem("memzy_custom_decks", JSON.stringify(customDecks)); } catch (e) {}
   }, [customDecks]);
@@ -2192,6 +2219,19 @@ function App() {
       setCurChapter(p.ch);
     });
   };
+  /* Custom cards live only in allCards, which initData replaces on every
+     language switch/reload — so persist them separately and re-merge them
+     back into allCards (filtered by language) whenever words are applied. */
+  var CUSTOM_CARDS_KEY = "memzy_custom_cards";
+  var loadCustomCardsLS = function loadCustomCardsLS() {
+    try { var a = JSON.parse(localStorage.getItem(CUSTOM_CARDS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  };
+  var saveCustomCardsLS = function saveCustomCardsLS(arr) {
+    try { localStorage.setItem(CUSTOM_CARDS_KEY, JSON.stringify(arr)); } catch (e) {}
+  };
+  var customForLang = function customForLang(lang) {
+    return loadCustomCardsLS().filter(function (c) { return c.language === lang; });
+  };
   var applyWords = function applyWords(words) {
     WORDS.length = 0; WORDS.push.apply(WORDS, words);
     setAllCards(words); setLearnedIds([]); setLearnedAt({}); setMarkedIds([]); setReviewIds([]); setQueue([]);
@@ -2207,7 +2247,7 @@ function App() {
       var servedFromCache = false;
       try {
         var cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
-        if (cached && cached.length > 10) { applyWords(cached); servedFromCache = true; resolve(); }
+        if (cached && cached.length > 10) { applyWords(cached.concat(customForLang(lang))); servedFromCache = true; resolve(); }
       } catch (e) {}
       var selectCols = lang === "fa"
         ? "id,language,level,chapter,word,pron,translation,farsi,example,farsi_example,example_translation,note"
@@ -2244,9 +2284,9 @@ function App() {
             try { localStorage.setItem(cacheKey, JSON.stringify(words)); } catch (e) {}
             if (servedFromCache) {
               WORDS.length = 0; WORDS.push.apply(WORDS, words);
-              setAllCards(words);
+              setAllCards(words.concat(customForLang(lang)));
             } else {
-              applyWords(words);
+              applyWords(words.concat(customForLang(lang)));
               resolve();
             }
           } else if (!servedFromCache) {
@@ -2419,14 +2459,16 @@ function App() {
     startSession(pool);
   };
   var startReview = function startReview() {
-    return startSession(allCards.filter(function (c) {
+    startSession(allCards.filter(function (c) {
       return reviewIds.includes(c.id);
     }));
+    sessionKindRef.current = "review";
   };
   var startMarked = function startMarked() {
-    return startSession(allCards.filter(function (c) {
+    startSession(allCards.filter(function (c) {
       return markedIds.includes(c.id);
     }));
+    sessionKindRef.current = "marked";
   };
   /* Start a Recharge session: every expired word across all chapters and
      levels, oldest timestamps first, capped at 30 cards per session.
@@ -2441,6 +2483,32 @@ function App() {
     });
     startSession(pool.slice(0, 30));
     sessionKindRef.current = "rewind";
+  };
+  /* Play a My Cards / custom-deck session. Custom cards (chapter "custom") are
+     gated from paying in the swipe handler, so this round earns no points and
+     ends on the "Round finished" screen — exactly the intended behaviour. */
+  var startCardsSession = function startCardsSession(pool) {
+    if (!pool || !pool.length) { showToast("This deck is empty"); return; }
+    startSession(_toConsumableArray(pool));
+    sessionKindRef.current = "custom";
+  };
+  /* Navigate Home and jump to a chapter (or just the current one). Used by the
+     Home tab re-tap and the locked-deck "Take me there" button. */
+  var jumpHome = function jumpHome(lv, chId) {
+    if (lv) setCurLevel(lv);
+    if (chId) setCurChapter(chId);
+    setExamMode(null);
+    _setTab("dashboard");
+    setScreen("app");
+    setHomeJump(Date.now());
+  };
+  /* Full-chapter practice from the decks page — all cards at once, pays
+     normally (unlike the Home path's bite-size 1/3 rounds). */
+  var startChapterFull = function startChapterFull(lv, chId) {
+    setCurLevel(lv); setCurChapter(chId);
+    var cards = allCards.filter(function (c) { return !c.custom && c.chapter === chId; });
+    if (!cards.length) { showToast("This chapter has no cards yet"); return; }
+    startSession(_toConsumableArray(cards));
   };
   /* Start level-unlock exam: 30 random cards from previous level */
   var startLevelExam = function startLevelExam(lockedLevel) {
@@ -2665,11 +2733,13 @@ function App() {
     });
   };
   var addCard = function addCard(card) {
+    if (card && card.custom) { var _arr = loadCustomCardsLS(); _arr.push(card); saveCustomCardsLS(_arr); }
     return setAllCards(function (p) {
       return [].concat(_toConsumableArray(p), [card]);
     });
   };
   var deleteCard = function deleteCard(id) {
+    saveCustomCardsLS(loadCustomCardsLS().filter(function (c) { return c.id !== id; }));
     setAllCards(function (p) {
       return p.filter(function (c) {
         return c.id !== id;
@@ -3566,6 +3636,7 @@ function App() {
       level: curLevel,
       chapterTitle: chap === null || chap === void 0 ? void 0 : chap.title,
       rewindCompleted: sessionKindRef.current === "rewind" && rechargeInfo.ids.length === 0,
+      reviewCompleted: sessionKindRef.current === "review" && reviewIds.length === 0,
       onContinue: exitToApp,
       userAvatar: user && user.avatar,
       totalCards: (function(){ var pool = queue.concat(historyStack); return pool.length || historyStack.length; }()),
@@ -3785,8 +3856,18 @@ function App() {
           return _objectSpread(_objectSpread({}, s), {}, { sfx: v });
         });
       },
-      label: "Sound effects",
-      sub: "Swipes, round finish, streaks and rewards"
+      label: "Swipe sounds",
+      sub: "A tick on every card swipe"
+    }), /*#__PURE__*/React.createElement(Toggle, {
+      on: deckSettings.celebSfx,
+      onChange: function onChange(v) {
+        setCelebEnabled(v);
+        setDeckSettings(function (s) {
+          return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v });
+        });
+      },
+      label: "Celebration sounds",
+      sub: "Round finish, streaks and rewards"
     }), !examMode && /*#__PURE__*/React.createElement(Toggle, {
       on: deckSettings.onlyUnknown,
       onChange: function onChange(v) {
@@ -3929,6 +4010,8 @@ function App() {
     expiredByChapter: rechargeInfo.byChapter,
     rechargeCount: rechargeInfo.ids.length,
     onStartRecharge: startRecharge,
+    homeJump: homeJump,
+    onConsumeJump: function() { setHomeJump(null); },
     onOpenDeck: function(type, level) { setOpenDeckType({ type: type, level: level || null }); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
     scrollRef: scrollRef,
@@ -3953,15 +4036,26 @@ function App() {
     curLevel: curLevel,
     curChapter: curChapter,
     onResult: function onResult(id, known) {
+      /* Single-card swipe pays like a session: a SYSTEM card that is unlearned
+         OR expired earns 1 point on a right swipe. Custom cards never pay, and
+         the once-per-interval ladder cap below stops grinding (a card you just
+         stamped today is no longer eligible until it expires again). */
+      var _card = allCards.filter(function (c) { return c.id === id; })[0];
+      var _eligible = known && _card && _card.chapter !== "custom" &&
+        (!learnedIds.includes(id) || wordExpired(learnedAt[id]));
+      if (_eligible) commitRound(1, "Practice card");
       setLearnedIds(function (ids) {
         return known ? ids.includes(id) ? ids : [].concat(_toConsumableArray(ids), [id]) : ids.filter(function (x) {
           return x !== id;
         });
       });
-      /* Keep the Recharge timestamp in sync (manual toggles never pay) */
+      /* Keep the Rewind timestamp in sync; a PAID rewind also climbs the ladder */
       setLearnedAt(function (m) {
         var n = _objectSpread({}, m);
-        if (known) n[id] = laMake(todayISO(), laStage(m[id])); else delete n[id];
+        if (known) {
+          var _climbed = _card && _card.chapter !== "custom" && learnedIds.includes(id) && wordExpired(m[id]);
+          n[id] = laMake(todayISO(), laStage(m[id]) + (_climbed ? 1 : 0));
+        } else delete n[id];
         return n;
       });
       setReviewIds(function (ids) {
@@ -3975,6 +4069,10 @@ function App() {
     onDelete: deleteCard,
     onStartReview: startReview,
     onStartMarked: startMarked,
+    onStartCards: startCardsSession,
+    onJumpToChapter: jumpHome,
+    onStartChapterFull: startChapterFull,
+    unlockedLevels: unlockedLevels,
     selectedLangs: selectedLangs,
     deckSettings: deckSettings,
     onOpenDeckSettings: function onOpenDeckSettings() { return setShowDeckSettings(true); },
@@ -4000,6 +4098,8 @@ function App() {
   }), tab === "profile" && /*#__PURE__*/React.createElement(ProfilePage, {
     user: user,
     setUser: setUser,
+    deckSettings: deckSettings,
+    setDeckSettings: setDeckSettings,
     selectedLangs: selectedLangs,
     setSelectedLangs: setSelectedLangs,
     dayStreak: dayStreak,
@@ -4051,8 +4151,18 @@ function App() {
         return _objectSpread(_objectSpread({}, s), {}, { sfx: v });
       });
     },
-    label: "Sound effects",
-    sub: "Swipes, round finish, streaks and rewards"
+    label: "Swipe sounds",
+    sub: "A tick on every card swipe"
+  }), /*#__PURE__*/React.createElement(Toggle, {
+    on: deckSettings.celebSfx,
+    onChange: function onChange(v) {
+      setCelebEnabled(v);
+      setDeckSettings(function (s) {
+        return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v });
+      });
+    },
+    label: "Celebration sounds",
+    sub: "Round finish, streaks and rewards"
   }), /*#__PURE__*/React.createElement(Toggle, {
     on: deckSettings.onlyUnknown,
     onChange: function onChange(v) {
@@ -4080,6 +4190,7 @@ function App() {
     heartNotifCount: heartNotifCount,
     setTab: function setTab(t) {
       if (t === "mywords" && tab === "mywords") { setOpenDeckType(null); setDeckResetKey(function (k) { return k + 1; }); }
+      if (t === "dashboard" && tab === "dashboard") { setHomeJump(Date.now()); }
       _setTab(t);
       setCardsSubScreen(null);
     }
@@ -5009,7 +5120,7 @@ function FlashcardModal(_ref23) {
     className: "press",
     style: {
       position: "absolute",
-      top: 20,
+      top: "calc(20px + env(safe-area-inset-top))",
       right: 20,
       width: 40,
       height: 40,
@@ -5661,6 +5772,22 @@ function Dashboard(_ref27) {
   /* Path layouts: is the current chapter's node on screen? Drives the
      floating "jump back to where I am" pill. */
   var curPathNodeRef = useRef(null);
+  var homeJump = _ref27.homeJump;
+  var onConsumeJump = _ref27.onConsumeJump;
+  /* Home tab re-tap / "Take me there": scroll to the current chapter node and
+     open its bubble. Fires whenever a request token is present (including a
+     fresh mount when arriving from the decks tab), then clears the token so a
+     normal return to Home never jumps. */
+  useEffect(function () {
+    if (!homeJump) return;
+    var t = setTimeout(function () {
+      var el = curPathNodeRef.current;
+      if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {} }
+      setPathOpenCh(curChapter);
+      if (onConsumeJump) onConsumeJump();
+    }, 70);
+    return function () { clearTimeout(t); };
+  }, [homeJump]);
 
   var _useState_cnv = useState(true),
     _useState_cnv2 = _slicedToArray(_useState_cnv, 2),
@@ -5701,23 +5828,38 @@ function Dashboard(_ref27) {
     document.addEventListener("pointerdown", onPD, true);
     return function () { document.removeEventListener("pointerdown", onPD, true); };
   }, [pathOpenCh]);
+  /* Is the current chapter's node within the scrollable viewport? Drives the
+     floating jump tile. We measure rects against the real scroll container
+     (pageScrollRef) on scroll/resize instead of using IntersectionObserver —
+     iOS Safari's IO is unreliable for nodes inside a nested scroller (esp. in
+     standalone PWA mode), which left the tile permanently hidden. */
   useEffect(function () {
-    var obs = null, t = null;
-    var attach = function attach() {
+    var sc = pageScrollRef && pageScrollRef.current;
+    var check = function check() {
       var el = curPathNodeRef.current;
-      if (!el || typeof IntersectionObserver === "undefined") {
-        /* node not rendered yet (data still loading) — retry shortly */
-        setCurNodeVisible(true);
-        t = setTimeout(attach, 400);
-        return;
+      if (!el || !el.getBoundingClientRect) { setCurNodeVisible(true); return; }
+      var r = el.getBoundingClientRect();
+      var top, bottom;
+      if (sc && sc.getBoundingClientRect) {
+        var sr = sc.getBoundingClientRect();
+        top = sr.top; bottom = sr.bottom;
+      } else {
+        top = 0; bottom = window.innerHeight || document.documentElement.clientHeight;
       }
-      obs = new IntersectionObserver(function (entries) {
-        setCurNodeVisible(entries[0] ? entries[0].isIntersecting : true);
-      }, { threshold: 0 });
-      obs.observe(el);
+      /* Visible if any meaningful part of the node is inside the viewport */
+      var vis = r.bottom > top + 6 && r.top < bottom - 6;
+      setCurNodeVisible(vis);
     };
-    attach();
-    return function () { if (obs) obs.disconnect(); if (t) clearTimeout(t); };
+    /* Run after layout settles (data load + auto-centering) */
+    var t0 = setTimeout(check, 80);
+    var t1 = setTimeout(check, 500);
+    if (sc && sc.addEventListener) sc.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return function () {
+      clearTimeout(t0); clearTimeout(t1);
+      if (sc && sc.removeEventListener) sc.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
   }, [curLevel, curChapter, allCards, learnedIds, unlockedLevels]);
   /* Entering Home lands on the current chapter's node, centered — a B2
      learner shouldn't scroll six levels every visit. Re-centers when the
@@ -6176,7 +6318,7 @@ function Dashboard(_ref27) {
             "data-path-keep": "1",
             className: "press",
             style: { marginTop: 11, width: "100%", padding: "11px 14px", borderRadius: 13, border: "none", background: "linear-gradient(135deg,#FFD66B,#F5A623)", color: "#7A4A00", fontSize: 13.5, fontWeight: 800, fontFamily: FONT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: "0 4px 14px rgba(245,166,35,0.35)" }
-          }, /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 13, color: "#7A4A00" }), "Claim +" + LEVEL_CLAIM_POINTS[lv] + " pts")
+          }, /*#__PURE__*/React.createElement(Icon, { name: "gift", size: 13, color: "#7A4A00" }), "Claim " + LEVEL_CLAIM_POINTS[lv] + " pts")
         );
       }
       var banner = /*#__PURE__*/React.createElement("div", {
@@ -6424,7 +6566,7 @@ function Dashboard(_ref27) {
   }, [pageScrollRef && pageScrollRef.current]);
   var onPeekTap = function onPeekTap(lv, lvIdx) {
     /* Bubble shows greeting words for the selected language, cycled through a
-       shuffled queue so each appears once before repeating. No sound. */
+       shuffled queue so each appears once before repeating, and spoken aloud. */
     var lang0 = (selectedLangs && selectedLangs[0]) || "de";
     var list = PEEK_GREETINGS[lang0] || PEEK_GREETINGS.de;
     var qx = peekWordQueueRef.current.greet;
@@ -6442,8 +6584,25 @@ function Dashboard(_ref27) {
     var nn = ++peekBubbleNRef.current;
     setPeekBubble({ lv: lvIdx, text: text, sub: sub, n: nn });
     peekBubbleRef.current = true;
+    /* Speak it right away. Persian greetings are shown in Finglish but must be
+       spoken from the Farsi script (g[2]); German speaks the word itself. The
+       clip is pre-warmed on enter, so this is a cache hit and starts instantly. */
+    var sayT = lang0 === "fa" ? (g[2] || g[0]) : g[0];
+    var mta = langMeta[lang0];
+    if (sayT && mta) speak(sayT, mta.ttsLang);
     peekHideTimerRef.current = setTimeout(function () { closeBubble(); }, 3000);
   };
+  /* Warm the TTS cache for the current language's peek greetings so the speech
+     bubble speaks the instant it's tapped (tiny set, ~7-9 short clips). */
+  useEffect(function () {
+    var lang0 = (selectedLangs && selectedLangs[0]) || "de";
+    var mta = langMeta[lang0];
+    if (!mta) return;
+    (PEEK_GREETINGS[lang0] || []).forEach(function (g) {
+      var t = lang0 === "fa" ? (g[2] || g[0]) : g[0];
+      if (t) prefetchTTS(t, mta.ttsLang);
+    });
+  }, [selectedLangs]);
   /* If the profile avatar is one of the 50 characters and differs from the
      stored buddy identity, adopt it (e.g. set on another device) */
   useEffect(function () {
@@ -6724,13 +6883,20 @@ function Dashboard(_ref27) {
       return /*#__PURE__*/React.createElement("div", {
         onClick: tappable ? function () { setDetailLv(null); if (onOpenDeck) onOpenDeck(deckType, detailLv); } : undefined,
         className: tappable ? "press" : undefined,
-        style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + C.line, background: C.surface, cursor: tappable ? "pointer" : "default" } },
-        /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 36, borderRadius: 11, background: color + "1a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-          /*#__PURE__*/React.createElement(Icon, { name: icon, size: 15, color: color })),
-        /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13.5, fontWeight: 700, color: C.ink } }, label),
+        style: {
+          display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14,
+          border: tappable ? ("1.5px solid " + color + "66") : ("1px solid " + C.line),
+          background: tappable ? (color + "12") : C.bg,
+          cursor: tappable ? "pointer" : "default",
+          opacity: tappable ? 1 : 0.55,
+          boxShadow: tappable ? ("0 2px 8px " + color + "1f") : "none"
+        } },
+        /*#__PURE__*/React.createElement("div", { style: { width: 36, height: 36, borderRadius: 11, background: tappable ? (color + "26") : C.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+          /*#__PURE__*/React.createElement(Icon, { name: icon, size: 15, color: tappable ? color : C.sub })),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13.5, fontWeight: 700, color: tappable ? C.ink : C.sub } }, label),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-          /*#__PURE__*/React.createElement("span", { style: { fontSize: 15, fontWeight: 800, color: C.ink } }, val),
-          tappable && /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: C.sub })
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 15, fontWeight: 800, color: tappable ? color : C.sub } }, val),
+          tappable && /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: color })
         )
       );
     };
@@ -6902,7 +7068,7 @@ function Dashboard(_ref27) {
                     setGiftLv(null);
                   },
                   glow: true
-                }, "Claim +" + giftPrize + " pts")
+                }, "Claim " + giftPrize + " pts")
               )
             : /*#__PURE__*/React.createElement("div", { style: { height: 50 } })
       )
@@ -7662,6 +7828,10 @@ function MyFlashcardsPage(_ref31) {
     onRenameDeck = _ref31.onRenameDeck,
     rechargeIds = _ref31.rechargeIds || [],
     onStartRecharge = _ref31.onStartRecharge,
+    onStartCards = _ref31.onStartCards,
+    onJumpToChapter = _ref31.onJumpToChapter,
+    onStartChapterFull = _ref31.onStartChapterFull,
+    unlockedLevels = _ref31.unlockedLevels || ["A1"],
     expiredByChapter = _ref31.expiredByChapter || {};
   var _useState81 = useState(initialDeckScreen || null),
     /* Track if deckScreen was seeded from home navigation */
@@ -7709,6 +7879,47 @@ function MyFlashcardsPage(_ref31) {
     deckAction = _useState_deckAction2[0], setDeckAction = _useState_deckAction2[1];
   var _useState_renameVal = useState(""), _useState_renameVal2 = _slicedToArray(_useState_renameVal, 2),
     renameVal = _useState_renameVal2[0], setRenameVal = _useState_renameVal2[1];
+  /* Locked-deck info sheet (level/chapter not yet reached on the path) */
+  var _useState_locked = useState(null), _useState_locked2 = _slicedToArray(_useState_locked, 2),
+    lockedMsg = _useState_locked2[0], setLockedMsg = _useState_locked2[1];
+  /* iOS keyboard pre-focus helpers for the New Deck modal */
+  var kbKeepRef = useRef(null);
+  var deckNameRef = useRef(null);
+  /* Lock map for level + chapter decks — mirrors the Home path exactly */
+  var deckLockData = useMemo(function () {
+    var maxExamIdx = 0;
+    LEVELS_ORDER.forEach(function (lv2, i2) {
+      if (unlockedLevels && unlockedLevels.includes(lv2)) maxExamIdx = Math.max(maxExamIdx, i2);
+    });
+    var prevLevelLastPct = 100;
+    var byLevel = {};
+    LEVELS_ORDER.forEach(function (lv, lvIdx) {
+      var chs = CHAPTERS[lv] || [];
+      var csPct = chs.map(function (ch) {
+        var cc = allCards.filter(function (c) { return !c.custom && c.chapter === ch.id; });
+        return cc.length ? Math.round(cc.filter(function (c) { return learnedIds.includes(c.id); }).length / cc.length * 100) : 0;
+      });
+      var examUnlocked = lvIdx <= maxExamIdx;
+      var chainLocked = chs.map(function (ch, i) {
+        if (lvIdx < maxExamIdx) return false;
+        if (i > 0) return csPct[i - 1] < CHAPTER_UNLOCK_PCT * 100;
+        if (lvIdx === 0) return false;
+        return !(examUnlocked || prevLevelLastPct >= CHAPTER_UNLOCK_PCT * 100);
+      });
+      for (var k = 1; k < chainLocked.length; k++) { if (chainLocked[k - 1]) chainLocked[k] = true; }
+      prevLevelLastPct = csPct.length ? csPct[csPct.length - 1] : 0;
+      byLevel[lv] = { chainLocked: chainLocked, headLocked: !!chainLocked[0] };
+    });
+    return byLevel;
+  }, [allCards, learnedIds, unlockedLevels]);
+  /* Focus the deck-name field once the New Deck modal mounts (keyboard was
+     already opened via kbKeepRef in the tap handler, so this keeps it up) */
+  useEffect(function () {
+    if (showAddDeckModal && deckNameRef.current) {
+      var t = setTimeout(function () { try { deckNameRef.current && deckNameRef.current.focus(); } catch (e) {} }, 30);
+      return function () { clearTimeout(t); };
+    }
+  }, [showAddDeckModal]);
   useEffect(function() {
     if (initialDeckScreen && onInitDeckScreenConsumed) { setDeckLevel(initialDeckScreen.level || null); onInitDeckScreenConsumed(); }
   }, []);
@@ -7928,7 +8139,7 @@ function MyFlashcardsPage(_ref31) {
   var DeckCard = function DeckCard(_ref32b) {
     var label = _ref32b.label, sublabel = _ref32b.sublabel, count = _ref32b.count,
         doneCount = _ref32b.doneCount, colorObj = _ref32b.colorObj,
-        icon = _ref32b.icon, onClick = _ref32b.onClick;
+        icon = _ref32b.icon, onClick = _ref32b.onClick, locked = _ref32b.locked;
     var pct = count > 0 ? Math.round((doneCount / count) * 100) : 0;
     var isNeutral = colorObj === LEVEL_NEUTRAL;
     var borderCol = isNeutral ? C.line : colorObj.bar + "44";
@@ -7946,7 +8157,7 @@ function MyFlashcardsPage(_ref31) {
         /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: mainH, borderRadius: 14, background: colorObj.bg, border: "1.5px solid " + borderCol, opacity: 0.7 } }),
         /* main card */
         /*#__PURE__*/React.createElement("div", {
-          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: mainH, borderRadius: 15, background: colorObj.bg, border: "1.5px solid " + borderCol, boxShadow: isNeutral ? "0 2px 8px rgba(0,0,0,0.07)" : "0 3px 14px " + colorObj.bar + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 }
+          style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: mainH, borderRadius: 15, background: colorObj.bg, border: "1.5px solid " + borderCol, boxShadow: isNeutral ? "0 2px 8px rgba(0,0,0,0.07)" : "0 3px 14px " + colorObj.bar + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7, opacity: locked ? 0.55 : 1, filter: locked ? "grayscale(0.5)" : "none" }
         },
           /* top: icon + label + count */
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
@@ -7954,7 +8165,7 @@ function MyFlashcardsPage(_ref31) {
               /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: isNeutral ? C.bg : colorObj.bar + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
                 icon === "↺"
                   ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: colorObj.text, fontWeight: 700 } }, icon)
-                  : /*#__PURE__*/React.createElement(Icon, { name: icon, size: 12, color: isNeutral ? C.sub : colorObj.text })
+                  : /*#__PURE__*/React.createElement(Icon, { name: locked ? "lock" : icon, size: 12, color: isNeutral ? C.sub : colorObj.text })
               ),
               /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: colorObj.text, letterSpacing: -0.2, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, label),
@@ -7981,7 +8192,7 @@ function MyFlashcardsPage(_ref31) {
       /* Fills the Dynamic Island / status bar area with the same white background */
       /*#__PURE__*/React.createElement("div", { style: { height: "env(safe-area-inset-top)", background: C.surface } }),
       /*#__PURE__*/React.createElement("div", {
-        style: { padding: "20px 16px 14px", display: "flex", alignItems: "center", gap: 8 }
+        style: { padding: "16px 16px 12px", display: "flex", alignItems: "center", gap: 8 }
       },
       /*#__PURE__*/React.createElement("button", {
         onClick: onBack, className: "press",
@@ -8014,6 +8225,51 @@ function MyFlashcardsPage(_ref31) {
     )
   );
 
+  /* Deepest unlocked chapter — where "Take me there" sends the user */
+  var deckFrontier = (function () {
+    var fLv = LEVELS_ORDER[0], fId = ((CHAPTERS[LEVELS_ORDER[0]] || [])[0] || {}).id;
+    LEVELS_ORDER.forEach(function (lv) {
+      var d = deckLockData[lv]; var chs = CHAPTERS[lv] || [];
+      if (!d) return;
+      chs.forEach(function (ch, i) { if (!d.chainLocked[i]) { fLv = lv; fId = ch.id; } });
+    });
+    return { lv: fLv, id: fId };
+  })();
+
+  /* ── Locked-deck info sheet (bottom sheet, with close X) ── */
+  var lockedSheet = lockedMsg ? ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) setLockedMsg(null); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 } },
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 40, borderRadius: 12, background: C.bg, border: "1px solid " + C.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "lock", size: 16, color: C.sub })),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, "Locked")
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setLockedMsg(null); }, className: "press", "aria-label": "Close",
+            style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.55, marginBottom: 18 } }, lockedMsg),
+        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setLockedMsg(null); if (onJumpToChapter) onJumpToChapter(deckFrontier.lv, deckFrontier.id); } }, "Take me there")
+      )
+    ),
+    document.body
+  ) : null;
+  /* Hidden input focused synchronously on the Deck tap so iOS opens the
+     keyboard, then focus transfers to the real field when the modal mounts. */
+  var kbKeepInput = /*#__PURE__*/React.createElement("input", {
+    ref: kbKeepRef, "aria-hidden": "true", tabIndex: -1,
+    style: { position: "fixed", bottom: 0, left: 0, width: 1, height: 1, opacity: 0, border: "none", padding: 0, margin: 0, fontSize: 16, background: "transparent", pointerEvents: "none", zIndex: -1 }
+  });
+
   /* ── WORD LIST VIEW (chapter words) ── */
   if (deckScreen && deckScreen.chapterId) {
     var wds = deckScreen;
@@ -8027,6 +8283,17 @@ function MyFlashcardsPage(_ref31) {
         title: wds.chapterTitle,
         sub: wds.level + " \u00B7 " + wdCards.length + " cards"
       }),
+      wdCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
+        /*#__PURE__*/React.createElement(PrimaryButton, {
+          onClick: function onClick() { onStartChapterFull && onStartChapterFull(wds.level, wds.chapterId); },
+          style: { padding: 13, fontSize: 15 }
+        },
+          /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 8 } },
+            /*#__PURE__*/React.createElement(Icon, { name: "play", size: 13, color: "#fff" }),
+            "Practice all " + wdCards.length + " card" + (wdCards.length === 1 ? "" : "s")
+          )
+        )
+      ),
       SearchBar,
       /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
         wdFiltered.length === 0
@@ -8050,7 +8317,7 @@ function MyFlashcardsPage(_ref31) {
       }),
       /*#__PURE__*/React.createElement("div", { style: { padding: "14px 14px 28px" } },
         /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          lvChapters.map(function (ch) {
+          lvChapters.map(function (ch, ci) {
             var chCards = allCards.filter(function (c) { return !c.custom && c.chapter === ch.id; });
             var chDone = chCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
             var chExpired = expiredByChapter[ch.id] || 0;
@@ -8058,20 +8325,25 @@ function MyFlashcardsPage(_ref31) {
             var cracked = chCards.length > 0 &&
               (chDone / chCards.length) >= CRACK_LEARNED_PCT &&
               (chExpired / chCards.length) >= CRACK_EXPIRED_PCT;
+            var chLocked = !!(deckLockData[lv] && deckLockData[lv].chainLocked[ci]);
             return /*#__PURE__*/React.createElement(DeckCard, {
               key: ch.id,
               label: ch.title,
-              sublabel: cracked ? "+" + chEarn + " pts \xB7 Rewind" : null,
+              sublabel: chLocked ? "Locked" : (cracked ? "+" + chEarn + " pts \xB7 Rewind" : null),
               count: chCards.length,
               doneCount: chDone,
-              colorObj: cracked ? COL_RECHARGE : LEVEL_NEUTRAL,
+              colorObj: (cracked && !chLocked) ? COL_RECHARGE : LEVEL_NEUTRAL,
               icon: CHAPTER_ICONS[ch.id] || "book",
-              onClick: function onClick() { setDeckScreen({ type: "level", level: lv, chapterId: ch.id, chapterTitle: ch.title }); setQ(""); }
+              locked: chLocked,
+              onClick: chLocked
+                ? function onClick() { setLockedMsg("Reach this chapter on your path to unlock these cards."); }
+                : function onClick() { setDeckScreen({ type: "level", level: lv, chapterId: ch.id, chapterTitle: ch.title }); setQ(""); }
             });
           })
         )
       ),
-      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } }),
+      lockedSheet
     );
   }
 
@@ -8168,6 +8440,17 @@ function MyFlashcardsPage(_ref31) {
           ),
           document.body
         ),
+        cdCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
+          /*#__PURE__*/React.createElement(PrimaryButton, {
+            onClick: function onClick() { onStartCards(cdCards); },
+            style: { padding: 13, fontSize: 15, background: cdColor.text, boxShadow: "0 8px 22px " + cdColor.text + "44" }
+          },
+            /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 8 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "play", size: 13, color: "#fff" }),
+              "Practice " + cdCards.length + " card" + (cdCards.length === 1 ? "" : "s")
+            )
+          )
+        ),
         SearchBar,
         /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
           cdFiltered.length === 0
@@ -8181,12 +8464,15 @@ function MyFlashcardsPage(_ref31) {
       );
     }
     var dsCardsAll = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : ds.type === "recharge" ? rechargeCards : customCards;
-    /* Which levels actually have cards in this deck (for the filter chips) */
-    var dsLevelsPresent = LEVELS_ORDER.filter(function (L) {
-      return dsCardsAll.some(function (c) { return c.level === L; });
-    });
-    var dsCards = (deckLevel && ds.type !== "mine")
-      ? dsCardsAll.filter(function (c) { return c.level === deckLevel; })
+    /* Per-level card counts in this deck. Chips show every level; empty ones
+       render disabled with a (0) count. */
+    var dsLevelCount = {};
+    LEVELS_ORDER.forEach(function (L) { dsLevelCount[L] = dsCardsAll.filter(function (c) { return c.level === L; }).length; });
+    /* Ignore a level selection carried over from another deck that has no cards
+       at that level (the chip would be disabled, so it can't be picked here). */
+    var effLevel = (deckLevel && dsLevelCount[deckLevel] > 0) ? deckLevel : null;
+    var dsCards = (effLevel && ds.type !== "mine")
+      ? dsCardsAll.filter(function (c) { return c.level === effLevel; })
       : dsCardsAll;
     var dsColorObj = ds.type === "marked" ? COL_MARKED : ds.type === "review" ? COL_REVIEW : ds.type === "recharge" ? COL_RECHARGE : COL_MINE;
     var dsIconStr = ds.type === "marked" ? "bookmark" : ds.type === "review" ? "\u21ba" : ds.type === "recharge" ? "hourglass-half" : "plus";
@@ -8209,9 +8495,9 @@ function MyFlashcardsPage(_ref31) {
         rightEl: dsAddBtn
       }),
       /* Start a session with these cards */
-      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge") && dsCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
+      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge" || ds.type === "mine") && dsCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
         /*#__PURE__*/React.createElement(PrimaryButton, {
-          onClick: ds.type === "review" ? onStartReview : ds.type === "recharge" ? onStartRecharge : onStartMarked,
+          onClick: ds.type === "review" ? onStartReview : ds.type === "recharge" ? onStartRecharge : ds.type === "mine" ? function () { onStartCards(dsCards); } : onStartMarked,
           style: { padding: 13, fontSize: 15, background: ds.type === "review" ? C.red : ds.type === "recharge" ? C.amber : C.primary, boxShadow: "0 8px 22px " + (ds.type === "review" ? C.red : ds.type === "recharge" ? C.amber : C.primary) + "44" }
         },
           /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 8 } },
@@ -8236,16 +8522,31 @@ function MyFlashcardsPage(_ref31) {
             "Spaced repetition tracks your learning, bringing words back at expanding intervals. Lock vocabulary into long-term memory and score points with every rewind.")
         )
       ),
-      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge") && dsLevelsPresent.length > 1 && /*#__PURE__*/React.createElement("div", {
+      (ds.type === "review" || ds.type === "marked" || ds.type === "recharge") && dsCardsAll.length > 0 && /*#__PURE__*/React.createElement("div", {
         style: { display: "flex", gap: 7, padding: "12px 16px 2px", overflowX: "auto", WebkitOverflowScrolling: "touch" }
       },
-        [{ k: null, label: "All" }].concat(dsLevelsPresent.map(function (L) { return { k: L, label: L }; })).map(function (chip) {
-          var active = (deckLevel || null) === chip.k;
+        [{ k: null, label: "All", enabled: true }].concat(LEVELS_ORDER.map(function (L) {
+          return { k: L, label: L, count: dsLevelCount[L], enabled: dsLevelCount[L] > 0 };
+        })).map(function (chip) {
+          var active = (effLevel || null) === chip.k;
+          var enabled = chip.enabled;
           return /*#__PURE__*/React.createElement("button", {
-            key: chip.label, className: "press",
-            onClick: function () { setDeckLevel(chip.k); },
-            style: { flexShrink: 0, padding: "7px 15px", borderRadius: 999, border: "1.5px solid " + (active ? dsColorObj.text : C.line), background: active ? dsColorObj.text : C.surface, color: active ? "#fff" : C.sub, fontSize: 13, fontWeight: 800, fontFamily: FONT, cursor: "pointer" }
-          }, chip.label);
+            key: chip.label, className: enabled ? "press" : undefined, disabled: !enabled,
+            onClick: enabled ? function () { setDeckLevel(chip.k); } : undefined,
+            style: {
+              flexShrink: 0, padding: "7px 14px", borderRadius: 999,
+              border: "1.5px solid " + (active ? dsColorObj.text : C.line),
+              background: active ? dsColorObj.text : (enabled ? C.surface : C.bg),
+              color: active ? "#fff" : C.sub,
+              opacity: enabled ? 1 : 0.45,
+              fontSize: 13, fontWeight: 800, fontFamily: FONT,
+              cursor: enabled ? "pointer" : "default",
+              display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap"
+            }
+          },
+            chip.label,
+            chip.k != null && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, opacity: 0.75 } }, "(" + chip.count + ")")
+          );
         })
       ),
       SearchBar,
@@ -8253,7 +8554,7 @@ function MyFlashcardsPage(_ref31) {
         filteredDs.length === 0
           ? ((ds.type === "review" || ds.type === "marked" || ds.type === "recharge" || ds.type === "mine") && dsCards.length === 0 && !s
               ? /*#__PURE__*/React.createElement(EmptyDeckState, { type: ds.type })
-              : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, s ? "No matches." : (deckLevel ? "No " + deckLevel + " cards here." : dsEmpty)))
+              : /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, s ? "No matches." : (effLevel ? "No " + effLevel + " cards here." : dsEmpty)))
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
       adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
@@ -8294,11 +8595,14 @@ function MyFlashcardsPage(_ref31) {
         LEVELS_ORDER.map(function (lv) {
           var lvCards = allCards.filter(function (c) { return !c.custom && c.level === lv; });
           var lvDone = lvCards.filter(function (c) { return learnedIds.includes(c.id); }).length;
+          var lvLocked = !!(deckLockData[lv] && deckLockData[lv].headLocked);
           return /*#__PURE__*/React.createElement(DeckCard, {
-            key: lv, label: lv, sublabel: LEVEL_LABEL[lv],
+            key: lv, label: lv, sublabel: lvLocked ? "Locked" : LEVEL_LABEL[lv],
             count: lvCards.length, doneCount: lvDone,
-            colorObj: LEVEL_NEUTRAL, icon: "layer-group",
-            onClick: function onClick() { setDeckScreen({ type: "level", level: lv }); }
+            colorObj: LEVEL_NEUTRAL, icon: "layer-group", locked: lvLocked,
+            onClick: lvLocked
+              ? function onClick() { setLockedMsg("Reach " + LEVEL_LABEL[lv] + " on your learning path to unlock its cards."); }
+              : function onClick() { setDeckScreen({ type: "level", level: lv }); }
           });
         })
       )
@@ -8383,7 +8687,7 @@ function MyFlashcardsPage(_ref31) {
             )
           ),
           /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { setShowAddSheet(false); setNewDeckName(""); setShowAddDeckModal(true); },
+            onClick: function onClick() { try { kbKeepRef.current && kbKeepRef.current.focus(); } catch (e) {} setShowAddSheet(false); setNewDeckName(""); setShowAddDeckModal(true); },
             className: "press",
             style: { width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", textAlign: "left", fontFamily: FONT }
           },
@@ -8403,7 +8707,7 @@ function MyFlashcardsPage(_ref31) {
     showAddDeckModal && ReactDOM.createPortal(
       /*#__PURE__*/React.createElement("div", {
         style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: kb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
-        onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddDeckModal(false); }
+        onClick: function onClick(e) { if (e.target === e.currentTarget) { setShowAddDeckModal(false); setShowAddSheet(true); } }
       },
         /*#__PURE__*/React.createElement("div", {
           style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, animation: "fadeIn .18s ease both" }
@@ -8412,12 +8716,14 @@ function MyFlashcardsPage(_ref31) {
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, "New deck"),
             /*#__PURE__*/React.createElement("button", {
-              onClick: function onClick() { setShowAddDeckModal(false); }, className: "press",
+              onClick: function onClick() { setShowAddDeckModal(false); setShowAddSheet(true); }, className: "press",
               style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
             }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
           ),
           /*#__PURE__*/React.createElement("label", { style: { fontSize: 12.5, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6 } }, "Deck name"),
           /*#__PURE__*/React.createElement("input", {
+            ref: deckNameRef,
+            autoFocus: true,
             value: newDeckName,
             onChange: function onChange(e) { setNewDeckName(e.target.value); },
             placeholder: "e.g. Travel phrases",
@@ -8444,7 +8750,9 @@ function MyFlashcardsPage(_ref31) {
     open && /*#__PURE__*/React.createElement(FlashcardModal, {
       card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id),
       onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); }
-    })
+    }),
+    lockedSheet,
+    kbKeepInput
   );
 }
 
@@ -10385,6 +10693,8 @@ function HeartsDialog(_ref41) {
 function ProfilePage(_ref42) {
   var user = _ref42.user,
     setUser = _ref42.setUser,
+    deckSettings = _ref42.deckSettings || { autoSpeak: false, onlyUnknown: true, showEnglishFirst: false, sfx: true, celebSfx: true },
+    setDeckSettings = _ref42.setDeckSettings || function () {},
     selectedLangs = _ref42.selectedLangs,
     setSelectedLangs = _ref42.setSelectedLangs,
     dayStreak = _ref42.dayStreak,
@@ -10444,6 +10754,47 @@ function ProfilePage(_ref42) {
     var v = !sfx;
     setSfx(v);
     try { localStorage.setItem("memzy_sfx", v ? "1" : "0"); } catch (e) {}
+  };
+  /* Account modals: null | "password" | "email" (open on top of Settings) */
+  var _useState_acct = useState(null), acct = _useState_acct[0], setAcct = _useState_acct[1];
+  var _useState_oldpw = useState(""), oldPw = _useState_oldpw[0], setOldPw = _useState_oldpw[1];
+  var _useState_pw = useState(""), pw = _useState_pw[0], setPw = _useState_pw[1];
+  var _useState_cpw = useState(""), confirmPw = _useState_cpw[0], setConfirmPw = _useState_cpw[1];
+  var _useState_em = useState(""), em = _useState_em[0], setEm = _useState_em[1];
+  var _useState_acctBusy = useState(false), acctBusy = _useState_acctBusy[0], setAcctBusy = _useState_acctBusy[1];
+  var _useState_acctMsg = useState(""), acctMsg = _useState_acctMsg[0], setAcctMsg = _useState_acctMsg[1];
+  var acctKb = useKeyboardInset();
+  var openAcct = function openAcct(which) {
+    setAcctMsg(""); setOldPw(""); setPw(""); setConfirmPw(""); setEm("");
+    setAcct(which);
+  };
+  var closeAcct = function closeAcct() { if (!acctBusy) { setAcct(null); setAcctMsg(""); } };
+  var savePassword = function savePassword() {
+    if (acctBusy) return;
+    var emailAddr = (user && user.email) || "";
+    if (!oldPw) { setAcctMsg("Enter your current password."); return; }
+    if (pw.length < 6) { setAcctMsg("New password must be at least 6 characters."); return; }
+    if (pw !== confirmPw) { setAcctMsg("New passwords don't match."); return; }
+    setAcctBusy(true); setAcctMsg("");
+    /* Verify the current password by re-authenticating before changing it */
+    supabase.auth.signInWithPassword({ email: emailAddr, password: oldPw }).then(function (vr) {
+      if (vr && vr.error) { setAcctBusy(false); setAcctMsg("Current password is incorrect."); return; }
+      supabase.auth.updateUser({ password: pw }).then(function (res) {
+        setAcctBusy(false);
+        if (res && res.error) { setAcctMsg(res.error.message || "Could not update password."); return; }
+        setOldPw(""); setPw(""); setConfirmPw(""); setAcctMsg("Password updated.");
+      }, function () { setAcctBusy(false); setAcctMsg("Could not update password."); });
+    }, function () { setAcctBusy(false); setAcctMsg("Current password is incorrect."); });
+  };
+  var saveEmail = function saveEmail() {
+    if (acctBusy) return;
+    if (!/.+@.+\..+/.test(em.trim())) { setAcctMsg("Enter a valid email address."); return; }
+    setAcctBusy(true); setAcctMsg("");
+    supabase.auth.updateUser({ email: em.trim() }).then(function (res) {
+      setAcctBusy(false);
+      if (res && res.error) { setAcctMsg(res.error.message || "Could not update email."); return; }
+      setAcctMsg("Confirm the change via the link sent to both addresses.");
+    }, function () { setAcctBusy(false); setAcctMsg("Could not update email."); });
   };
   /* Avatar selection is STAGED: picking in the edit modal only updates
      pendAvatar — nothing applies to the user or Supabase until Save. */
@@ -10695,7 +11046,7 @@ function ProfilePage(_ref42) {
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, maxHeight: "88vh", overflowY: "auto" }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -10706,24 +11057,71 @@ function ProfilePage(_ref42) {
             style: { width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
           }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub }))
         ),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", borderRadius: 14, border: "1.5px solid " + C.line, marginBottom: 12 } },
+        /* Session settings — mirrors the in-session settings sheet */
+        /* Session settings — mirrors the in-session settings sheet */
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: "2px 2px 0" } }, "Session"),
+        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
+        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
+        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
+        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
+        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.showEnglishFirst, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { showEnglishFirst: v }); }); }, label: "Show English first", sub: "Flip the card to reveal the target language" }),
+        /* Account */
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: "18px 2px 0" } }, "Account"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { openAcct("password"); }, className: "press",
+          style: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
+        },
           /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14.5, fontWeight: 800, color: C.ink } }, "Sound effects"),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 600, color: C.sub, marginTop: 2 } }, "Swipe and reward sounds in sessions")
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Change password"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Update your account password")
           ),
-          /*#__PURE__*/React.createElement("button", {
-            onClick: toggleSfx,
-            className: "press", "aria-label": "Toggle sound",
-            style: { width: 50, height: 30, borderRadius: 999, border: "none", background: sfx ? C.primary : C.line, cursor: "pointer", position: "relative", transition: "background .2s ease", flexShrink: 0 }
-          }, /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 3, left: sfx ? 23 : 3, width: 24, height: 24, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.25)", transition: "left .2s ease" } }))
+          /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
+        ),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { openAcct("email"); }, className: "press",
+          style: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
+        },
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Change email"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Change your sign-in address")
+          ),
+          /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
         ),
         /*#__PURE__*/React.createElement("button", {
           onClick: onSignOut,
           className: "press",
-          style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT }
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 20 }
         }, "Sign out")
       )
-    ), document.body), picker && /*#__PURE__*/React.createElement(AvatarPicker, {
+    ), document.body),
+  acct && /*#__PURE__*/ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 450, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: acctKb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) closeAcct(); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in",
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: acctKb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, acct === "password" ? "Change password" : "Change email"),
+          /*#__PURE__*/React.createElement("button", { onClick: closeAcct, className: "press", "aria-label": "Close", style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+        ),
+        acct === "password"
+          ? /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("input", { type: "password", autoFocus: true, value: oldPw, onChange: function (e) { setOldPw(e.target.value); }, placeholder: "Current password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+              /*#__PURE__*/React.createElement("input", { type: "password", value: pw, onChange: function (e) { setPw(e.target.value); }, placeholder: "New password (min 6 chars)", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+              /*#__PURE__*/React.createElement("input", { type: "password", value: confirmPw, onChange: function (e) { setConfirmPw(e.target.value); }, placeholder: "Confirm new password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } })
+            )
+          : /*#__PURE__*/React.createElement("input", { type: "email", autoFocus: true, value: em, onChange: function (e) { setEm(e.target.value); }, placeholder: "New email address", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+        acctMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, lineHeight: 1.45, margin: "0 2px 12px", color: (/could not|incorrect|don't match|at least|valid|enter your/i.test(acctMsg)) ? C.red : C.green } }, acctMsg),
+        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: acct === "password" ? savePassword : saveEmail, disabled: acctBusy }, acctBusy ? "Saving\u2026" : (acct === "password" ? "Update password" : "Update email"))
+      )
+    ),
+    document.body
+  ),
+  picker && /*#__PURE__*/React.createElement(AvatarPicker, {
     current: user && user.avatar,
     onPick: function onPick(a) {
       setPendAvatar(a);
@@ -11348,6 +11746,7 @@ function SessionComplete(_ref47) {
     level = _ref47.level,
     chapterTitle = _ref47.chapterTitle,
     rewindCompleted = _ref47.rewindCompleted,
+    reviewCompleted = _ref47.reviewCompleted,
     onContinue = _ref47.onContinue,
     onBonusPoints = _ref47.onBonusPoints,
     userAvatar = _ref47.userAvatar,
@@ -11357,12 +11756,15 @@ function SessionComplete(_ref47) {
     isFirstSessionToday = _ref47.isFirstSessionToday;
   /* page: "claim" → "stats" → ["badge"] → ["streak"] */
   var _useState_page = useState(function () {
-    /* Zero-point rounds (all repeats/custom) skip the claim & points pages
-       but still get a closing stats screen — only aborted sessions exit
+    /* Zero-point rounds (all repeats/custom) skip the claim & total-points
+       pages but still get a closing screen — only aborted sessions exit
        silently (forceExit never reaches this component on 0 points) */
     if (points > 0) return "claim";
     if (_ref47.isFirstSessionToday && _ref47.dayStreak > 0) return "streak";
-    return "stats";
+    if (_ref47.reviewCompleted) return "reviewdone";
+    if (_ref47.rewindCompleted) return "rewinddone";
+    if (_ref47.chapterCompleted) return "chapter";
+    return "roundEnd";
   }), _useState_page2 = _slicedToArray(_useState_page, 2), page = _useState_page2[0], setPage = _useState_page2[1];
   var _useState_shareMsg = useState(""), _useState_shareMsg2 = _slicedToArray(_useState_shareMsg, 2), shareMsg = _useState_shareMsg2[0], setShareMsg = _useState_shareMsg2[1];
   var ptsCu = useCountUp(points, "roundPts");
@@ -11412,12 +11814,14 @@ function SessionComplete(_ref47) {
   useEffect(function () {
     if (page === "claim") playFinishSFX();
     else if (page === "rewinddone") playSFX("badge");
+    else if (page === "reviewdone") playSFX("badge");
+    else if (page === "roundEnd") playFinishSFX();
     else if (page === "chapter") playSFX("badge");
     else if (page === "level") playSFX("badge");
     else if (page === "badge") playSFX("badge");
     else if (page === "streak") playSFX("streak");
   }, [page]);
-  var pageBg = page === "badge" || page === "streak" || page === "level" || page === "rewinddone" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : "#F0EEFF";
+  var pageBg = page === "badge" || page === "streak" || page === "level" || page === "rewinddone" ? "#FFF8EC" : page === "chapter" ? "#E9F8F0" : page === "reviewdone" ? "#FFF1F1" : "#F0EEFF";
   /* iOS standalone: paint the status-bar area in the page color too */
   useEffect(function () {
     var prevH = document.documentElement.style.background;
@@ -11477,9 +11881,10 @@ function SessionComplete(_ref47) {
   /* Which page follows the points claim (and the streak page): celebration
      screens with claimable bonuses come BEFORE the total-points screen */
   var pageAfterPoints = function pageAfterPoints() {
+    if (reviewCompleted) return "reviewdone";
     if (rewindCompleted) return "rewinddone";
     if (chapterCompleted) return "chapter";
-    return "stats";
+    return points > 0 ? "stats" : "roundEnd";
   };
   var knownPct = totalCards > 0 ? Math.round(knownCards / totalCards * 100) : 0;
   var mins = Math.floor((sessionSeconds || 0) / 60);
@@ -11538,7 +11943,11 @@ function SessionComplete(_ref47) {
   };
   var afterRewindStep = function afterRewindStep() {
     if (chapterCompleted) setPage("chapter");
-    else setPage("stats");
+    else setPage(points > 0 ? "stats" : "roundEnd");
+  };
+  var afterReviewStep = function afterReviewStep() {
+    if (chapterCompleted) setPage("chapter");
+    else setPage(points > 0 ? "stats" : "roundEnd");
   };
 
   /* Last 7 days strip for the streak page (derived from dayStreak) */
@@ -11722,6 +12131,87 @@ function SessionComplete(_ref47) {
           /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterRewindStep, style: { background: C.amber } }, "Continue")),
           shareIconBtn()
         )
+      )
+    );
+  }
+
+  /* ── PAGE: Review deck cleared — every review card answered ── */
+  if (page === "reviewdone") {
+    return /*#__PURE__*/React.createElement("div", { key: "reviewdone", className: "page-in", style: pageShell("linear-gradient(160deg,#FFF1F1 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: C.red, b: "#FF7A6E" }),
+      /*#__PURE__*/React.createElement(Watermark, { color: C.red, top: "6%" }, "\u2713"),
+      /*#__PURE__*/React.createElement(Overline, { color: C.red }, "Review complete"),
+      /*#__PURE__*/React.createElement("div", {
+        ref: capRef, "data-capture": "1", style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+      },
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement(PingWrap, { color: C.red + "66", radius: 28 },
+            /*#__PURE__*/React.createElement("div", {
+              style: { width: 96, height: 96, borderRadius: 28, background: "linear-gradient(145deg,#FF7A6E," + C.red + ")", boxShadow: "0 14px 32px rgba(239,68,68,0.40)", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "rotate-left", size: 34, color: "#fff" }))
+          )
+        ),
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Review deck cleared!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".16s", fontSize: 12.5, color: C.sub, marginBottom: 20 } },
+          "You answered every card you'd set aside \u2014 nothing left to review"),
+        /*#__PURE__*/React.createElement("div", { style: { position: "relative", width: "100%" } },
+          /*#__PURE__*/React.createElement(Burst, { colors: [C.red, "#FF7A6E", "#FFC24A", "#FFFFFF"] }),
+          /*#__PURE__*/React.createElement("div", {
+            style: Object.assign(inkPanel({ padding: "22px 24px 18px" }), { animation: "scalePop .55s cubic-bezier(.16,1,.3,1) .2s both" })
+          },
+            /*#__PURE__*/React.createElement(Sheen, null),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 52, fontWeight: 900, color: "#fff", letterSpacing: -2, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 32, color: "#FFB4AC" }), totalCards || 0
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#FFD2CD", fontWeight: 600, marginTop: 7 } }, "card" + (totalCards === 1 ? "" : "s") + " reviewed this round")
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1 } }, /*#__PURE__*/React.createElement(PrimaryButton, { onClick: afterReviewStep, style: { background: C.red } }, "Continue")),
+          shareIconBtn()
+        )
+      )
+    );
+  }
+
+  /* ── PAGE: Round finished — closing screen for rounds that earned no points
+     (all repeats, saved/custom decks). No total-points screen here. ── */
+  if (page === "roundEnd") {
+    return /*#__PURE__*/React.createElement("div", { key: "roundEnd", className: "page-in", style: pageShell("linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)") },
+      /*#__PURE__*/React.createElement(Aurora, { a: C.primary, b: "#8B73F0" }),
+      /*#__PURE__*/React.createElement(Overline, { color: C.primary }, "Round finished"),
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", flexDirection: "column", alignItems: "center", zIndex: 10, width: "100%" }
+      },
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".05s", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement("div", {
+            style: { width: 96, height: 96, borderRadius: 28, background: "linear-gradient(145deg," + C.primary + ",#8B73F0)", boxShadow: "0 14px 32px rgba(90,79,227,0.32)", display: "flex", alignItems: "center", justifyContent: "center" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 38, color: "#fff" }))
+        ),
+        /*#__PURE__*/React.createElement("h1", { className: "rise", style: { animationDelay: ".12s", fontSize: 25, fontWeight: 900, color: C.ink, margin: "0 0 4px", letterSpacing: -0.7, lineHeight: 1.2 } }, "Round finished!"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".16s", fontSize: 12.5, color: C.sub, marginBottom: 18 } }, "Nice work \u2014 keep it going"),
+        /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".3s", display: "flex", gap: 9, width: "100%" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.greenSoft, border: "1px solid " + C.green + "28", borderRadius: 16, padding: "13px 6px", textAlign: "center" } },
+            /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 15, color: C.green }),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: C.ink, marginTop: 4 } }, knownPct + "%"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 1 } }, "known")
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.primarySoft, border: "1px solid " + C.primary + "28", borderRadius: 16, padding: "13px 6px", textAlign: "center" } },
+            /*#__PURE__*/React.createElement(Icon, { name: "layer-group", size: 15, color: C.primary }),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: C.ink, marginTop: 4 } }, totalCards || "\u2014"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 1 } }, "cards")
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, background: C.amber + "15", border: "1px solid " + C.amber + "28", borderRadius: 16, padding: "13px 6px", textAlign: "center" } },
+            /*#__PURE__*/React.createElement(Icon, { name: "clock", size: 15, color: C.amber }),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: C.ink, marginTop: 4 } }, timeStr),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 1 } }, "time")
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
+        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: onContinue }, "Continue")
       )
     );
   }
