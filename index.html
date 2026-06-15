@@ -57,6 +57,12 @@ var SUPA_URL = "https://bbnjytcxtwznhnfhbbof.supabase.co";
    fail with "No API key found in request". The anon JWT is sent reliably. */
 var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibmp5dGN4dHd6bmhuZmhiYm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Mjg0MTYsImV4cCI6MjA5NjUwNDQxNn0.Yg2HDMP93A-wOgQ1qI8qO14Sqmfrbk8RBa3TLZrA5Ck";
 var supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+/* Keep the current auth token handy so the TTS proxy can verify the caller. */
+var _supaToken = null;
+try {
+  supabase.auth.getSession().then(function (r) { _supaToken = (r && r.data && r.data.session && r.data.session.access_token) || null; });
+  supabase.auth.onAuthStateChange(function (_e, session) { _supaToken = (session && session.access_token) || null; });
+} catch (e) {}
 
 /* ── PROGRESS HELPERS ── */
 
@@ -266,7 +272,9 @@ var PEEK_GREETINGS = {
   fa: [["Salam", "Hello", "سلام"], ["Dorood", "Greetings", "درود"], ["Chetori?", "How are you? / Informal", "چطوری؟"], ["Khoubi?", "Are you fine? / Informal", "خوبی؟"], ["Khosh oomadi", "Welcome", "خوش اومدی"], ["Chakeram", "Slang greeting", "چاکرم"], ["Mokhlesam", "Slang greeting", "مخلصم"]]
 }; /* bonus for finishing every card of a chapter */
 /* Surprise gift after the 3rd chapter of each level: pick 1 of 3 cards */
-var GIFT_PRIZES = [10, 15, 25];
+var GIFT_PRIZES = [5, 10, 15];
+/* Max length for a user card note — sized to fit ~3 lines on the card face */
+var NOTE_MAX = 120;
 /* Every chapter is served in exactly this many rounds; the round size is
    derived from the chapter (45 cards → 3 rounds of 15) */
 var ROUNDS_PER_CHAPTER = 3;
@@ -912,12 +920,10 @@ function playSFX(name) {
 function playFinishSFX() {
   playSFX("finish" + (1 + Math.floor(Math.random() * 3)));
 }
-/* Keys split to avoid static scanning — F0 tier only, no charge risk */
-var _gk = "AIzaSyBt92sL8a9I" + "nL_QSNR4st-xzkqGdHZzX5U";
-var _ak = "AdcQwqPHJHaxIa5RZloriosoQFz3L77ME9jx3A8WeC" + "SahHnm3s9eJQQJ99CFACYeBjFXJ3w3AAAYACOG3MAy";
-var AZURE_TTS_URL = "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1";
-/* Persian voice: Farid (male) — fixed choice */
-function _faVoice() { return "fa-IR-FaridNeural"; }
+/* TTS keys live server-side in the Cloudflare Worker; the app only ever
+   POSTs { text, lang } to this proxy and never ships any API key.
+   Replace the placeholder below with your deployed Worker URL. */
+var TTS_PROXY_URL = "https://memzy-tts.arvinertebat.workers.dev/tts";
 
 /* In-memory TTS cache: the ~1s delay was a fresh network round-trip on every
    tap. Cache decoded MP3 ArrayBuffers (and a ready blob URL) by text+lang so a
@@ -938,19 +944,18 @@ function _ttsFetchBuf(text, tl) {
       _ttsCache[key] = { buf: buf, url: url };
       res(buf);
     };
-    if (tl === "fa") {
-      var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'><voice name='" + _faVoice() + "'>" +
-        "<prosody rate='-8%'>" + text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + "</prosody></voice></speak>";
-      fetch(AZURE_TTS_URL, { method: "POST", headers: { "Ocp-Apim-Subscription-Key": _ak, "Content-Type": "application/ssml+xml", "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3" }, body: ssml })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(ok).catch(rej);
-    } else if (tl === "de") {
-      fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + _gk, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: { text: text }, voice: { languageCode: "de-DE", name: "de-DE-Wavenet-F" }, audioConfig: { audioEncoding: "MP3", speakingRate: 0.9 } }) })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (data) { var bin = atob(data.audioContent); var b = new ArrayBuffer(bin.length); var v = new Uint8Array(b); for (var i = 0; i < bin.length; i++) v[i] = bin.charCodeAt(i); ok(b); }).catch(rej);
-    } else {
-      fetch("https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=" + encodeURIComponent(tl) + "&q=" + encodeURIComponent(text) + "&ttsspeed=0.9")
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(ok).catch(rej);
-    }
+    /* Single call to our TTS proxy — keys stay server-side. Attach the user's
+       Supabase token so the worker only serves signed-in Memzy users. The
+       worker builds the Azure SSML (incl. question intonation) / Google request. */
+    var tokenP = _supaToken ? Promise.resolve(_supaToken)
+      : supabase.auth.getSession().then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || null; });
+    tokenP.then(function (token) {
+      return fetch(TTS_PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (token || "") },
+        body: JSON.stringify({ text: text, lang: tl })
+      });
+    }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(ok).catch(rej);
   });
   _ttsInflight[key] = p;
   p.then(function () { delete _ttsInflight[key]; }, function () { delete _ttsInflight[key]; });
@@ -1982,6 +1987,109 @@ function App() {
   var examCorrectRef = React.useRef(0);
   /* Onboarding: index of the character picked before language selection */
   var _useState_obc = useState(null), _useState_obc2 = _slicedToArray(_useState_obc, 2), obChar = _useState_obc2[0], setObChar = _useState_obc2[1];
+  /* ── User-authored card notes (Supabase-synced, localStorage-cached) ── */
+  var _useState_cnotes = useState({}), cardNotes = _useState_cnotes[0], setCardNotes = _useState_cnotes[1];
+  var _useState_ncard = useState(null), noteCard = _useState_ncard[0], setNoteCard = _useState_ncard[1];
+  var _useState_ndraft = useState(""), noteDraft = _useState_ndraft[0], setNoteDraft = _useState_ndraft[1];
+  var _useState_nbusy = useState(false), noteBusy = _useState_nbusy[0], setNoteBusy = _useState_nbusy[1];
+  var _cardNotesKey = function _cardNotesKey(uid) { return "memzy_card_notes_" + (uid || "anon"); };
+  useEffect(function () {
+    var uid = user && user.id;
+    if (!uid) return;
+    try { var ls = JSON.parse(localStorage.getItem(_cardNotesKey(uid)) || "{}"); if (ls && typeof ls === "object") setCardNotes(ls); } catch (e) {}
+    supabase.from("card_notes").select("card_id,note").eq("user_id", uid).then(function (res) {
+      if (res && !res.error && res.data) {
+        var map = {};
+        res.data.forEach(function (r) { if (r.note) map[r.card_id] = r.note; });
+        setCardNotes(map);
+        try { localStorage.setItem(_cardNotesKey(uid), JSON.stringify(map)); } catch (e) {}
+      }
+    }, function () {});
+  }, [user && user.id]);
+  var openNote = function openNote(card) { if (!card) return; setNoteCard(card); setNoteDraft((cardNotes && cardNotes[card.id]) || ""); };
+  var closeNote = function closeNote() { if (!noteBusy) setNoteCard(null); };
+  var saveNote = function saveNote(overrideText) {
+    if (noteBusy || !noteCard) return;
+    var uid = user && user.id;
+    var cid = noteCard.id;
+    var text = ((typeof overrideText === "string" ? overrideText : noteDraft) || "").trim();
+    setNoteBusy(true);
+    setCardNotes(function (prev) {
+      var next = Object.assign({}, prev);
+      if (text) next[cid] = text; else delete next[cid];
+      try { if (uid) localStorage.setItem(_cardNotesKey(uid), JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+    var done = function done() { setNoteBusy(false); setNoteCard(null); };
+    if (!uid) { done(); return; }
+    if (text) {
+      supabase.from("card_notes").upsert({ user_id: uid, card_id: cid, note: text, updated_at: new Date().toISOString() }, { onConflict: "user_id,card_id" }).then(done, done);
+    } else {
+      supabase.from("card_notes").delete().eq("user_id", uid).eq("card_id", cid).then(done, done);
+    }
+  };
+  /* ── Add to Home Screen (PWA install) ── */
+  var _useState_inst = useState(false), showInstall = _useState_inst[0], setShowInstall = _useState_inst[1];
+  var installEvtRef = useRef(null);
+  var a2hsShownRef = useRef(false);
+  var _isIOSDevice = /iphone|ipad|ipod/i.test((typeof navigator !== "undefined" && navigator.userAgent) || "");
+  useEffect(function () {
+    var onBip = function onBip(e) { e.preventDefault(); installEvtRef.current = e; };
+    var onInstalled = function onInstalled() { try { localStorage.setItem("memzy_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
+    window.addEventListener("beforeinstallprompt", onBip);
+    window.addEventListener("appinstalled", onInstalled);
+    return function () { window.removeEventListener("beforeinstallprompt", onBip); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+  useEffect(function () {
+    if (screen !== "app" || a2hsShownRef.current) return;
+    var standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    if (standalone) return;
+    var dismissed = false;
+    try { dismissed = !!localStorage.getItem("memzy_a2hs_done"); } catch (e) {}
+    if (dismissed) return;
+    var t = setTimeout(function () { a2hsShownRef.current = true; setShowInstall(true); }, 1800);
+    return function () { clearTimeout(t); };
+  }, [screen]);
+  var dismissInstall = function dismissInstall() { try { localStorage.setItem("memzy_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
+  var doInstall = function doInstall() {
+    var e = installEvtRef.current;
+    if (e && e.prompt) { try { e.prompt(); } catch (er) {} if (e.userChoice && e.userChoice.then) { e.userChoice.then(function () { installEvtRef.current = null; dismissInstall(); }); } else { dismissInstall(); } }
+    else dismissInstall();
+  };
+  var a2hsStep = function a2hsStep(n, title, desc, icon) {
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 } },
+      /*#__PURE__*/React.createElement("div", { style: { width: 30, height: 30, borderRadius: 10, background: C.primarySoft, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 14, flexShrink: 0, fontFamily: FONT } }, n),
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 14.5, fontWeight: 800, color: C.ink, display: "flex", alignItems: "center", gap: 6 } }, title, icon && /*#__PURE__*/React.createElement(Icon, { name: icon, size: 13, color: C.sub })),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, fontWeight: 500, marginTop: 2, lineHeight: 1.4 } }, desc)
+      )
+    );
+  };
+  /* Shared note editor sheet (used on the session card and deck/chapter previews) */
+  var noteSheetEl = noteCard && /*#__PURE__*/React.createElement(Sheet, {
+    onClose: closeNote,
+    title: cardNotes && cardNotes[noteCard.id] ? "Edit note" : "Add note",
+    z: 420
+  },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, fontWeight: 600, marginBottom: 10 } }, "Note for ", /*#__PURE__*/React.createElement("span", { style: { color: C.ink, fontWeight: 800 } }, noteCard.word || noteCard.translation)),
+    /*#__PURE__*/React.createElement("textarea", {
+      value: noteDraft,
+      autoFocus: true,
+      onChange: function onChange(e) { setNoteDraft(e.target.value.slice(0, NOTE_MAX)); },
+      placeholder: "Add a hint, mnemonic, or anything that helps you remember\u2026",
+      rows: 3,
+      maxLength: NOTE_MAX,
+      style: { width: "100%", padding: "12px 14px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", resize: "none", lineHeight: 1.5 }
+    }),
+    /*#__PURE__*/React.createElement("div", { style: { marginTop: 6, textAlign: "right", fontSize: 11.5, fontWeight: 700, color: noteDraft.length >= NOTE_MAX ? C.red : C.sub } }, noteDraft.length + "/" + NOTE_MAX),
+    /*#__PURE__*/React.createElement("div", { style: { marginTop: 8, display: "flex", gap: 10 } },
+      (cardNotes && cardNotes[noteCard.id]) ? /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() { saveNote(""); }, disabled: noteBusy, className: "press", "aria-label": "Delete note",
+        style: { flexShrink: 0, width: 48, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.redSoft, color: C.red, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "trash", size: 14, color: C.red })) : null,
+      /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { saveNote(); }, disabled: noteBusy, style: { flex: 1 } }, noteBusy ? "Saving\u2026" : "Save note")
+    )
+  );
   var _useState31 = useState([]),
     _useState32 = _slicedToArray(_useState31, 2),
     friends = _useState32[0],
@@ -3151,9 +3259,13 @@ function App() {
       style: {
         flex: 1,
         overflowY: "auto",
-        padding: "52px 24px 0"
+        padding: "calc(20px + env(safe-area-inset-top)) 24px 0"
       }
-    }, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() { return setScreen("character"); },
+      className: "press",
+      style: { width: 42, height: 42, borderRadius: 13, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-left", size: 16, color: C.ink })), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 38,
         marginBottom: 12
@@ -3270,7 +3382,22 @@ function App() {
             case 0:
               setCurLevel(lv);
               setCurChapter(CHAPTERS[lv][0].id);
-              setUnlockedLevels(LEVELS_ORDER.slice(0, LEVELS_ORDER.indexOf(lv) + 1));
+              var _upto = LEVELS_ORDER.slice(0, LEVELS_ORDER.indexOf(lv) + 1);
+              setUnlockedLevels(_upto);
+              /* Placement is self-declared, not earned. Pre-claim the unlock
+                 bonuses and surprise gifts for every level at/below the starting
+                 point so the user doesn't get a pile of free rewards on day one.
+                 Only levels they later unlock by passing an exam grant rewards.
+                 Dashboard reads these from localStorage when it mounts. */
+              try {
+                var _lc = JSON.parse(localStorage.getItem("memzy_level_claims") || "[]");
+                _upto.forEach(function (L) { if (LEVEL_CLAIM_POINTS[L] && _lc.indexOf(L) === -1) _lc.push(L); });
+                localStorage.setItem("memzy_level_claims", JSON.stringify(_lc));
+                var _guKey = "memzy_gifts_used_" + ((user && user.id) || "anon");
+                var _gu = JSON.parse(localStorage.getItem(_guKey) || "[]");
+                _upto.forEach(function (L) { if (_gu.indexOf(L + ":gift1") === -1) _gu.push(L + ":gift1"); });
+                localStorage.setItem(_guKey, JSON.stringify(_gu));
+              } catch (e) {}
               _context2.n = 1;
               return initData(selectedLangs, lv);
             case 1:
@@ -3295,7 +3422,7 @@ function App() {
       style: {
         flex: 1,
         overflowY: "auto",
-        padding: "20px 24px 0"
+        padding: "calc(20px + env(safe-area-inset-top)) 24px 0"
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
@@ -3722,7 +3849,9 @@ function App() {
         return toggleMark(current.id);
       },
       cB: cB,
-      showEnglishFirst: deckSettings.showEnglishFirst
+      showEnglishFirst: deckSettings.showEnglishFirst,
+      note: (cardNotes && cardNotes[current.id]) || "",
+      onEditNote: function onEditNote() { openNote(current); }
     }))), /*#__PURE__*/React.createElement("div", {
       style: {
         position: "absolute",
@@ -3832,7 +3961,7 @@ function App() {
       style: {
         width: 32
       }
-    })), showDeckSettings && /*#__PURE__*/React.createElement(Sheet, {
+    })), noteSheetEl, showDeckSettings && /*#__PURE__*/React.createElement(Sheet, {
       onClose: function onClose() {
         return setShowDeckSettings(false);
       },
@@ -3902,6 +4031,8 @@ function App() {
   if (screen === "app" && tab === "mywords" && cardsSubScreen) {
     return /*#__PURE__*/React.createElement(Shell, null, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement(ChapterDetailScreen, {
       chapter: cardsSubScreen,
+      cardNotes: cardNotes,
+      onEditNote: openNote,
       allCards: allCards,
       learnedIds: learnedIds,
       markedIds: markedIds,
@@ -3937,7 +4068,7 @@ function App() {
         _setTab(t);
         setCardsSubScreen(null);
       }
-    }));
+    }), noteSheetEl);
   }
   return /*#__PURE__*/React.createElement(Shell, null, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement(TopInset, { color: C.surface }), /*#__PURE__*/React.createElement("div", {
     ref: scrollRef,
@@ -4015,6 +4146,8 @@ function App() {
     onOpenDeck: function(type, level) { setOpenDeckType({ type: type, level: level || null }); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
     scrollRef: scrollRef,
+    cardNotes: cardNotes,
+    onEditNote: openNote,
     rechargeIds: rechargeInfo.ids,
     expiredByChapter: rechargeInfo.byChapter,
     onStartRecharge: startRecharge,
@@ -4199,7 +4332,25 @@ function App() {
       style: { position: "fixed", bottom: "calc(86px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", background: C.ink, color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: FONT, padding: "10px 18px", borderRadius: 14, boxShadow: "0 8px 24px rgba(28,26,46,0.3)", zIndex: 500, whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
     }, toast),
     document.body
-  ));
+  ), showInstall && /*#__PURE__*/React.createElement(Sheet, {
+    onClose: dismissInstall,
+    title: "Add Memzy to your Home Screen"
+  },
+    /*#__PURE__*/React.createElement("p", { style: { fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "0 0 18px" } }, "Install Memzy for a full-screen, app-like experience that opens instantly and works offline."),
+    _isIOSDevice
+      ? /*#__PURE__*/React.createElement("div", null,
+          a2hsStep(1, "Tap the Share button", "It's at the bottom of Safari (a square with an up arrow).", "arrow-up-from-bracket"),
+          a2hsStep(2, "Choose \u201CAdd to Home Screen\u201D", "Scroll the share menu to find it.", "plus"),
+          a2hsStep(3, "Tap \u201CAdd\u201D", "Memzy lands on your home screen like an app.", "check"),
+          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: dismissInstall, style: { marginTop: 4 } }, "Got it")
+        )
+      : (installEvtRef.current
+          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: doInstall, glow: true }, "Install Memzy")
+          : /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("p", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.5, margin: "0 0 14px" } }, "Open your browser menu (\u22EE) and choose \u201CAdd to Home screen\u201D or \u201CInstall app\u201D."),
+              /*#__PURE__*/React.createElement(PrimaryButton, { onClick: dismissInstall }, "Got it")
+            ))
+  ), noteSheetEl);
 }
 
 /* ── RESET PASSWORD ── */
@@ -4863,7 +5014,9 @@ function CardBack(_ref22) {
     marked = _ref22.marked,
     onMark = _ref22.onMark,
     cB = _ref22.cB,
-    showEnglishFirst = _ref22.showEnglishFirst;
+    showEnglishFirst = _ref22.showEnglishFirst,
+    note = _ref22.note,
+    onEditNote = _ref22.onEditNote;
   var m = langMeta[card.language];
   var stop = function stop(e) {
     return e.stopPropagation();
@@ -4996,7 +5149,13 @@ function CardBack(_ref22) {
     name: "circle-info",
     size: 12,
     color: C.sub
-  }), card.note)));
+  }), card.note)),
+  onEditNote && /*#__PURE__*/React.createElement("button", {
+    onPointerDown: stop,
+    onClick: function onClick(e) { stop(e); onEditNote(); },
+    className: "press",
+    style: { marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "11px 13px", borderRadius: 14, border: "1.5px " + (note ? "solid " + C.line : "dashed " + C.line), background: note ? C.surface : "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left", flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement(Icon, { name: note ? "pen" : "plus", size: 12, color: note ? m.color : C.sub }), /*#__PURE__*/React.createElement("span", { style: note ? { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: C.ink, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" } : { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: C.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, note ? note : "Add note")));
 }
 
 /* ── FLASHCARD MODAL ── */
@@ -5006,7 +5165,9 @@ function FlashcardModal(_ref23) {
     marked = _ref23.marked,
     onResult = _ref23.onResult,
     onMark = _ref23.onMark,
-    onClose = _ref23.onClose;
+    onClose = _ref23.onClose,
+    note = _ref23.note,
+    onEditNote = _ref23.onEditNote;
   var _useState59 = useState(false),
     _useState60 = _slicedToArray(_useState59, 2),
     flipped = _useState60[0],
@@ -5192,7 +5353,9 @@ function FlashcardModal(_ref23) {
     card: card,
     marked: marked,
     onMark: onMark,
-    cB: cB
+    cB: cB,
+    note: note,
+    onEditNote: onEditNote
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "absolute",
@@ -5346,8 +5509,8 @@ function StreakDialog(_ref24) {
   return /*#__PURE__*/React.createElement("div", {
     style: { padding: "4px 20px 16px" }
   },
-  /* Today not done yet — same urgency message as the rescue banner */
-  !todayDone && /*#__PURE__*/React.createElement("div", {
+  /* Today not done yet — show the urgency countdown only in the evening */
+  !todayDone && new Date(sdNow).getHours() >= 18 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -6246,15 +6409,15 @@ function Dashboard(_ref27) {
             "data-path-keep": "1",
             className: "press",
             "data-path-keep": "1",
-            style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: giftUsed ? "2px solid " + C.green + "55" : "none", cursor: giftUsed ? "default" : "pointer", padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + gOff + "px) rotate(" + (ci % 2 === 0 ? 1.6 : -1.6) + "deg)", background: giftUsed ? C.surface : !giftAvail ? "#EFEEF6" : "linear-gradient(135deg,#FF8FB1,#F5A623)", boxShadow: giftLive ? "0 6px 18px rgba(245,120,140,0.4)" : "none", overflow: "hidden" }
+            style: { position: "relative", width: 236, maxWidth: "80%", borderRadius: 18, border: "none", cursor: giftUsed ? "default" : "pointer", opacity: giftUsed ? 0.6 : 1, padding: "11px 13px", display: "flex", alignItems: "center", gap: 11, fontFamily: FONT, textAlign: "left", transform: "translateX(" + gOff + "px) rotate(" + (ci % 2 === 0 ? 1.6 : -1.6) + "deg)", background: (giftUsed || !giftAvail) ? "#EFEEF6" : "linear-gradient(135deg,#FF8FB1,#F5A623)", boxShadow: giftLive ? "0 6px 18px rgba(245,120,140,0.4)" : "none", overflow: "hidden" }
           },
-            /* perforated ticket edge */
-            !giftUsed && /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 4, borderRadius: 14, border: "1.5px dashed " + (giftLive ? "rgba(255,255,255,0.55)" : "#D6D3E4"), pointerEvents: "none" } }),
-            /*#__PURE__*/React.createElement("span", { className: giftLive ? "gift-wiggle" : undefined, style: { width: 40, height: 40, borderRadius: 13, background: giftUsed ? C.greenSoft : giftLive ? "rgba(255,255,255,0.25)" : "#E3E1EE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-              /*#__PURE__*/React.createElement(Icon, { name: giftUsed ? "check" : giftAvail ? "gift" : "lock", size: giftUsed ? 15 : 17, color: giftUsed ? C.green : giftLive ? "#fff" : "#B9B5CC" })),
+            /* perforated ticket edge (kept on the used tile too, just greyed) */
+            /*#__PURE__*/React.createElement("span", { style: { position: "absolute", inset: 4, borderRadius: 14, border: "1.5px dashed " + (giftLive ? "rgba(255,255,255,0.55)" : "#D6D3E4"), pointerEvents: "none" } }),
+            /*#__PURE__*/React.createElement("span", { className: giftLive ? "gift-wiggle" : undefined, style: { width: 40, height: 40, borderRadius: 13, background: giftLive ? "rgba(255,255,255,0.25)" : "#E3E1EE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: (giftUsed || giftAvail) ? "gift" : "lock", size: 17, color: giftLive ? "#fff" : "#B9B5CC" })),
             /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0 } },
-              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13, fontWeight: 800, color: giftUsed ? C.ink : giftLive ? "#fff" : "#B9B5CC" } }, giftUsed ? "Gift opened" : "Surprise gift"),
-              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 10.5, fontWeight: 700, color: giftUsed ? C.sub : giftLive ? "rgba(255,255,255,0.85)" : "#C9C5DD", marginTop: 2 } }, giftUsed ? "Prize collected \u2713" : giftAvail ? "Pick a card \u00b7 1 try" : "Locked \u00b7 tap to see how")),
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 13, fontWeight: 800, color: giftLive ? "#fff" : "#B9B5CC" } }, giftUsed ? "Gift opened" : "Surprise gift"),
+              /*#__PURE__*/React.createElement("span", { style: { display: "block", fontSize: 10.5, fontWeight: 700, color: giftLive ? "rgba(255,255,255,0.85)" : "#C9C5DD", marginTop: 2 } }, giftUsed ? "Opened \u00b7 prize collected" : giftAvail ? "Pick a card \u00b7 1 try" : "Locked \u00b7 tap to see how")),
             !giftUsed && /*#__PURE__*/React.createElement(Icon, { name: giftAvail ? "star" : "circle-question", size: 13, color: giftLive ? "rgba(255,255,255,0.9)" : "#C9C5DD" })
           ),
           giftBubbleOpen && renderLockedBubble(
@@ -6999,12 +7162,31 @@ function Dashboard(_ref27) {
     var alreadyWon = giftsUsed.indexOf(gid) !== -1;
     var wonPrize = giftWon[gid];
     /* If already claimed, the won card is shown face-up and disabled */
-    var revealIdx = alreadyWon ? 1 : giftPick;
+    /* When already claimed, flip nothing — show the original cards dimmed
+       (no misleading "different card" reveal). */
+    var revealIdx = alreadyWon ? -1 : giftPick;
     var revealPrize = alreadyWon ? wonPrize : giftPrize;
+    /* Claim the revealed prize and mark this gift permanently done. */
+    var finalizeGift = function finalizeGift() {
+      playSFX("claim");
+      if (onBonusPoints) onBonusPoints(giftPrize, "Surprise gift \u00b7 " + giftLv);
+      var nextU = giftsUsed.concat([gid]);
+      setGiftsUsed(nextU);
+      var nextW = Object.assign({}, giftWon); nextW[gid] = giftPrize;
+      setGiftWon(nextW);
+      try { localStorage.setItem(giftsUsedKey, JSON.stringify(nextU)); localStorage.setItem(giftWonKey, JSON.stringify(nextW)); } catch (e) {}
+      setGiftLv(null);
+    };
+    /* Closing once a card is revealed counts as claiming it, so the gift can't
+       be reopened to pick a different card. */
+    var closeGift = function closeGift() {
+      if (giftPick !== -1 && !alreadyWon) { finalizeGift(); }
+      else { setGiftLv(null); }
+    };
     return ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
       style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
-      onClick: function onClick(e) { if (e.target === e.currentTarget && (revealIdx === -1 || alreadyWon)) setGiftLv(null); }
+      onClick: function onClick(e) { if (e.target === e.currentTarget) closeGift(); }
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
@@ -7012,7 +7194,7 @@ function Dashboard(_ref27) {
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
         /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { setGiftLv(null); },
+          onClick: closeGift,
           className: "press", "aria-label": "Close",
           style: { position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
         }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub })),
@@ -7053,20 +7235,11 @@ function Dashboard(_ref27) {
           })
         ),
         alreadyWon
-          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setGiftLv(null); }, style: { background: C.line, color: C.sub } }, "Already claimed")
+          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: closeGift, style: { background: C.line, color: C.sub } }, "Already claimed")
           : revealIdx !== -1
             ? /*#__PURE__*/React.createElement("div", { style: { animation: "riseIn .45s cubic-bezier(.16,1,.3,1) .45s both" } },
                 /*#__PURE__*/React.createElement(PrimaryButton, {
-                  onClick: function onClick() {
-                    playSFX("claim");
-                    if (onBonusPoints) onBonusPoints(giftPrize, "Surprise gift \u00b7 " + giftLv);
-                    var nextU = giftsUsed.concat([gid]);
-                    setGiftsUsed(nextU);
-                    var nextW = Object.assign({}, giftWon); nextW[gid] = giftPrize;
-                    setGiftWon(nextW);
-                    try { localStorage.setItem(giftsUsedKey, JSON.stringify(nextU)); localStorage.setItem(giftWonKey, JSON.stringify(nextW)); } catch (e) {}
-                    setGiftLv(null);
-                  },
+                  onClick: finalizeGift,
                   glow: true
                 }, "Claim " + giftPrize + " pts")
               )
@@ -7832,7 +8005,9 @@ function MyFlashcardsPage(_ref31) {
     onJumpToChapter = _ref31.onJumpToChapter,
     onStartChapterFull = _ref31.onStartChapterFull,
     unlockedLevels = _ref31.unlockedLevels || ["A1"],
-    expiredByChapter = _ref31.expiredByChapter || {};
+    expiredByChapter = _ref31.expiredByChapter || {},
+    cardNotes = _ref31.cardNotes || {},
+    onEditNote = _ref31.onEditNote;
   var _useState81 = useState(initialDeckScreen || null),
     /* Track if deckScreen was seeded from home navigation */
     _useState82 = _slicedToArray(_useState81, 2),
@@ -7885,6 +8060,7 @@ function MyFlashcardsPage(_ref31) {
   /* iOS keyboard pre-focus helpers for the New Deck modal */
   var kbKeepRef = useRef(null);
   var deckNameRef = useRef(null);
+  var renameRef = useRef(null);
   /* Lock map for level + chapter decks — mirrors the Home path exactly */
   var deckLockData = useMemo(function () {
     var maxExamIdx = 0;
@@ -7920,6 +8096,13 @@ function MyFlashcardsPage(_ref31) {
       return function () { clearTimeout(t); };
     }
   }, [showAddDeckModal]);
+  /* Same keyboard-open behaviour for the Edit (rename) deck modal */
+  useEffect(function () {
+    if (deckAction === "rename" && renameRef.current) {
+      var t = setTimeout(function () { try { renameRef.current && renameRef.current.focus(); } catch (e) {} }, 30);
+      return function () { clearTimeout(t); };
+    }
+  }, [deckAction]);
   useEffect(function() {
     if (initialDeckScreen && onInitDeckScreenConsumed) { setDeckLevel(initialDeckScreen.level || null); onInitDeckScreenConsumed(); }
   }, []);
@@ -8300,7 +8483,7 @@ function MyFlashcardsPage(_ref31) {
           ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, "No matches.")
           : wdFiltered.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
-      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); }, onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
     );
   }
 
@@ -8342,7 +8525,7 @@ function MyFlashcardsPage(_ref31) {
           })
         )
       ),
-      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } }),
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); }, onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } }),
       lockedSheet
     );
   }
@@ -8370,7 +8553,7 @@ function MyFlashcardsPage(_ref31) {
               style: { height: 38, padding: "0 14px", borderRadius: 12, border: "1.5px solid " + C.primary + "55", background: C.primarySoft, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }
             }, /*#__PURE__*/React.createElement(Icon, { name: "plus", size: 13, color: C.primary }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 13.5, fontWeight: 800, color: C.primary, fontFamily: FONT } }, "Add")),
             /*#__PURE__*/React.createElement("button", {
-              onClick: function onClick() { setRenameVal(cdDeck.name); setDeckAction("rename"); }, className: "press", "aria-label": "Edit deck",
+              onClick: function onClick() { try { kbKeepRef.current && kbKeepRef.current.focus(); } catch (e) {} setRenameVal(cdDeck.name); setDeckAction("rename"); }, className: "press", "aria-label": "Edit deck",
               style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
             }, /*#__PURE__*/React.createElement(Icon, { name: "pen", size: 14, color: C.sub }))
           )
@@ -8396,6 +8579,7 @@ function MyFlashcardsPage(_ref31) {
               deckAction === "rename" && /*#__PURE__*/React.createElement(React.Fragment, null,
                 /*#__PURE__*/React.createElement("input", {
                   value: renameVal,
+                  ref: renameRef, autoFocus: true,
                   onChange: function onChange(e) { setRenameVal(e.target.value); },
                   maxLength: 30,
                   style: { width: "100%", padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 14 }
@@ -8460,7 +8644,7 @@ function MyFlashcardsPage(_ref31) {
             : cdFiltered.map(function(c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
         ),
         adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
-        open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+        open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); }, onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
       );
     }
     var dsCardsAll = ds.type === "marked" ? markedCards : ds.type === "review" ? reviewCards : ds.type === "recharge" ? rechargeCards : customCards;
@@ -8558,7 +8742,7 @@ function MyFlashcardsPage(_ref31) {
           : filteredDs.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
       ),
       adding && /*#__PURE__*/React.createElement(AddWordModal, { selectedLangs: langsPresent, curLevel: curLevel, curChapter: curChapter, customDecks: customDecks.filter(function (d) { return !d.lang || d.lang === (selectedLangs[0] || "de"); }), preselectedDeckId: addingForDeck, onClose: function onClose() { setAdding(false); setAddingForDeck(null); }, onAdd: onAdd }),
-      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); }, onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
     );
   }
 
@@ -8749,6 +8933,7 @@ function MyFlashcardsPage(_ref31) {
     }),
     open && /*#__PURE__*/React.createElement(FlashcardModal, {
       card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id),
+      note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); },
       onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); }
     }),
     lockedSheet,
@@ -8766,7 +8951,9 @@ function ChapterDetailScreen(_ref33) {
     _onMark2 = _ref33.onMark,
     onResult = _ref33.onResult,
     onBack = _ref33.onBack,
-    onDelete = _ref33.onDelete;
+    onDelete = _ref33.onDelete,
+    cardNotes = _ref33.cardNotes || {},
+    onEditNote = _ref33.onEditNote;
   var _useState91 = useState(""),
     _useState92 = _slicedToArray(_useState91, 2),
     q = _useState92[0],
@@ -9035,6 +9222,8 @@ function ChapterDetailScreen(_ref33) {
     card: open,
     learned: learnedIds.includes(open.id),
     marked: markedIds.includes(open.id),
+    note: (cardNotes && cardNotes[open.id]) || "",
+    onEditNote: function onEditNote2() { onEditNote && onEditNote(open); },
     onResult: onResult,
     onMark: function onMark() {
       return _onMark2(open.id);
