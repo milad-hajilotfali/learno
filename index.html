@@ -135,6 +135,76 @@ if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
   if (_App.getLaunchUrl) { _App.getLaunchUrl().then(function (r) { if (r && r.url) _handleAuthUrl(r.url); }).catch(function () {}); }
 }
 
+/* ── Haptics bridge ── window.__memzyHaptic(style) fires a vibration when the
+   "Haptic feedback" preference (memzy_haptics) is on. Uses the native Haptics
+   plugin where available, falling back to the web Vibration API. */
+(function () {
+  var H = _CAP && _CAP.Plugins && _CAP.Plugins.Haptics;
+  var styleMap = { light: "LIGHT", medium: "MEDIUM", heavy: "HEAVY" };
+  window.__memzyHaptic = function (style) {
+    try { if (localStorage.getItem("memzy_haptics") === "0") return; } catch (e) {}
+    var s = style || "light";
+    if (H && H.impact) { try { H.impact({ style: styleMap[s] || "LIGHT" }); return; } catch (e) {} }
+    if (navigator.vibrate) { try { navigator.vibrate(s === "heavy" ? 24 : s === "medium" ? 14 : 8); } catch (e) {} }
+  };
+  window.__memzyNotify = function (style) {
+    try { if (localStorage.getItem("memzy_haptics") === "0") return; } catch (e) {}
+    if (H && H.notification) { try { H.notification({ type: (style || "SUCCESS") }); return; } catch (e) {} }
+    if (navigator.vibrate) { try { navigator.vibrate([0, 18, 40, 18]); } catch (e) {} }
+  };
+})();
+
+/* ── Local notifications bridge (on-device, no server) ──
+   Schedules a daily streak reminder at 20:00 local time, gated by the "Reminders"
+   preference (memzy_notif_reminders). Reschedule on launch and after each session
+   via window.__memzyRescheduleReminders(practicedToday). */
+(function () {
+  var LN = _IS_NATIVE && _CAP.Plugins && _CAP.Plugins.LocalNotifications;
+  var REMINDER_ID = 8201;            /* stable id so reschedules replace, not stack */
+  var REMINDER_HOUR = 20;            /* 8 PM local */
+  var permRequested = false;
+  var ensurePerm = function () {
+    if (!LN) return Promise.resolve(false);
+    return Promise.resolve(LN.checkPermissions ? LN.checkPermissions() : { display: "granted" }).then(function (st) {
+      if (st && st.display === "granted") return true;
+      if (st && st.display === "denied") return false;
+      if (permRequested) return false;
+      permRequested = true;
+      return Promise.resolve(LN.requestPermissions()).then(function (r) { return r && r.display === "granted"; });
+    }).catch(function () { return false; });
+  };
+  /* next 20:00 — today if it hasn't passed and the user hasn't practiced yet,
+     otherwise tomorrow. */
+  var nextFireAt = function (practicedToday) {
+    var now = new Date();
+    var d = new Date();
+    d.setHours(REMINDER_HOUR, 0, 0, 0);
+    if (practicedToday || now.getTime() >= d.getTime()) d.setDate(d.getDate() + 1);
+    return d;
+  };
+  window.__memzyRescheduleReminders = function (practicedToday) {
+    if (!LN) return;
+    var on = true;
+    try { on = localStorage.getItem("memzy_notif_reminders") !== "0"; } catch (e) {}
+    /* Clear any existing reminder first so prefs-off truly silences it. */
+    var clear = function () { try { return Promise.resolve(LN.cancel({ notifications: [{ id: REMINDER_ID }] })); } catch (e) { return Promise.resolve(); } };
+    if (!on) { clear(); return; }
+    ensurePerm().then(function (granted) {
+      if (!granted) return;
+      clear().then(function () {
+        try {
+          LN.schedule({ notifications: [{
+            id: REMINDER_ID,
+            title: "Keep your streak alive 🔥",
+            body: practicedToday ? "Nice work today! Come back tomorrow to keep it going." : "You haven't practiced yet today — a few cards keeps your streak alive.",
+            schedule: { at: nextFireAt(practicedToday), allowWhileIdle: true }
+          }] });
+        } catch (e) {}
+      });
+    });
+  };
+})();
+
 /* ── PROGRESS HELPERS ── */
 
 function saveCardIds(userId, lang, chapter, ids) {
@@ -2881,6 +2951,13 @@ function App() {
       commitRound(roundPointsRef.current);
     }
   }, [screen, queue.length, allCards.length]);
+  /* (Re)schedule the on-device daily streak reminder whenever practice history
+     changes — covers app launch and end-of-session. No-op on web. */
+  useEffect(function () {
+    if (typeof window.__memzyRescheduleReminders !== "function") return;
+    var last = globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null;
+    window.__memzyRescheduleReminders(isActiveDay(last));
+  }, [globalHistory]);
   useEffect(function () {
     if (screen === "deck" && queue.length > 0 && deckSettings.autoSpeak && !flipped) {
       var c = queue[0];
@@ -2901,6 +2978,7 @@ function App() {
     });
   }, [screen, (_queue$b = queue[0]) === null || _queue$b === void 0 ? void 0 : _queue$b.id, (_queue$c = queue[1]) === null || _queue$c === void 0 ? void 0 : _queue$c.id]);
   var commitSwipe = function commitSwipe(dir) {
+    if (typeof window.__memzyHaptic === "function") window.__memzyHaptic(dir === "right" ? "medium" : "light");
     setQueue(function (q) {
       if (!q.length) return q;
       var top = q[0],
@@ -11243,10 +11321,11 @@ function ProfilePage(_ref42) {
     setEditModal = _useState128c[1];
   var cardRef = useRef(null);
   var kb = useKeyboardInset();
-  var _useState_ss = useState(false),
+  /* Settings navigation: null (profile) | "settings" | "account" | "notifications" */
+  var _useState_ss = useState(null),
     _useState_ss2 = _slicedToArray(_useState_ss, 2),
-    showSettings = _useState_ss2[0],
-    setShowSettings = _useState_ss2[1];
+    settingsPage = _useState_ss2[0],
+    setSettingsPage = _useState_ss2[1];
   var _useState_sx = useState(function () {
     try { return localStorage.getItem("memzy_sfx") !== "0"; } catch (e) { return true; }
   }),
@@ -11257,6 +11336,50 @@ function ProfilePage(_ref42) {
     var v = !sfx;
     setSfx(v);
     try { localStorage.setItem("memzy_sfx", v ? "1" : "0"); } catch (e) {}
+  };
+  /* Haptic feedback preference (mirrors memzy_sfx). Drives window.__memzyHaptic. */
+  var _useState_hap = useState(function () {
+    try { return localStorage.getItem("memzy_haptics") !== "0"; } catch (e) { return true; }
+  }),
+    haptics = _useState_hap[0],
+    setHaptics = _useState_hap[1];
+  var toggleHaptics = function toggleHaptics(v) {
+    setHaptics(v);
+    try { localStorage.setItem("memzy_haptics", v ? "1" : "0"); } catch (e) {}
+    if (v && typeof window.__memzyHaptic === "function") window.__memzyHaptic("light");
+  };
+  /* Notification preferences — local for now; gate future push delivery. Mirrors memzy_sfx. */
+  var _useState_notif = useState(function () {
+    var read = function read(k) { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
+    return { reminders: read("memzy_notif_reminders"), friends: read("memzy_notif_friends"), leaderboard: read("memzy_notif_leaderboard"), announce: read("memzy_notif_announce") };
+  }),
+    notif = _useState_notif[0],
+    setNotif = _useState_notif[1];
+  var setNotifPref = function setNotifPref(key, v) {
+    setNotif(function (n) { var nn = Object.assign({}, n); nn[key] = v; return nn; });
+    try { localStorage.setItem("memzy_notif_" + key, v ? "1" : "0"); } catch (e) {}
+    /* Toggling reminders schedules/cancels the on-device daily streak reminder. */
+    if (key === "reminders" && typeof window.__memzyRescheduleReminders === "function") {
+      var last = globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null;
+      window.__memzyRescheduleReminders(isActiveDay(last));
+    }
+  };
+  /* Settings-page building blocks */
+  var settingsSectionLabel = function settingsSectionLabel(t, mt) {
+    return /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: (mt == null ? 18 : mt) + "px 2px 4px" } }, t);
+  };
+  var settingsNavRow = function settingsNavRow(icon, iconBg, iconColor, title, sub, onClick) {
+    return /*#__PURE__*/React.createElement("button", {
+      onClick: onClick, className: "press",
+      style: { width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 11, background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+        /*#__PURE__*/React.createElement(Icon, { name: icon, size: 15, color: iconColor })),
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, title),
+        sub && /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, sub)),
+      /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
+    );
   };
   /* Account modals: null | "password" | "email" (open on top of Settings) */
   var _useState_acct = useState(null), acct = _useState_acct[0], setAcct = _useState_acct[1];
@@ -11432,7 +11555,7 @@ function ProfilePage(_ref42) {
       style: { fontSize: 23, fontWeight: 800, color: C.ink, margin: 0 }
     }, "Profile"),
     /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() { setShowSettings(true); },
+      onClick: function onClick() { setSettingsPage("settings"); },
       className: "press", "aria-label": "Settings",
       style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
     }, /*#__PURE__*/React.createElement(Icon, { name: "gear", size: 16, color: C.sub }))
@@ -11555,68 +11678,85 @@ function ProfilePage(_ref42) {
   }, shareMsg), globalHistory && globalHistory.length > 0 && /*#__PURE__*/React.createElement(PointsChart, {
     history: globalHistory
   }),
-  /* Settings sheet: sound effects (synced with session SFX) + sign out */
-  showSettings && ReactDOM.createPortal(
+  /* Settings — full-screen pages (Settings / Account management / Notifications).
+     Rendered over the profile + tab bar; the change-password/email/delete modals
+     below still portal above this layer. */
+  settingsPage && /*#__PURE__*/ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
-      onClick: function onClick(e) { if (e.target === e.currentTarget) setShowSettings(false); }
+      style: { position: "fixed", inset: 0, zIndex: 400, background: C.bg, display: "flex", justifyContent: "center", fontFamily: FONT }
     },
+      /* Constrained to the app Shell width; slides in right-to-left per page change */
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, maxHeight: "88vh", overflowY: "auto" }
+        key: settingsPage, className: "page-slide",
+        style: { width: "100%", maxWidth: 440, height: "100%", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden", background: C.bg }
       },
-        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-          /*#__PURE__*/React.createElement("h2", { style: { fontSize: 18, fontWeight: 800, color: C.ink, margin: 0 } }, "Settings"),
+      /* Standard header: back + title (matches deck/chapter pages) */
+      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderBottom: "1px solid " + C.line, flexShrink: 0 } },
+        /*#__PURE__*/React.createElement("div", { style: { height: "var(--safe-area-inset-top, env(safe-area-inset-top))", background: C.surface } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" } },
           /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { setShowSettings(false); },
-            className: "press",
-            style: { width: 32, height: 32, borderRadius: "50%", border: "none", background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }
-          }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 13, color: C.sub }))
+            onClick: function onClick() { setSettingsPage(settingsPage === "settings" ? null : "settings"); },
+            className: "press", "aria-label": "Back",
+            style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-left", size: 16, color: C.ink })),
+          /*#__PURE__*/React.createElement("h1", { style: { fontSize: 19, fontWeight: 800, color: C.ink, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
+            settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : "Settings")
+        )
+      ),
+      /* Scrollable body */
+      /*#__PURE__*/React.createElement("div", {
+        style: { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "none", padding: "10px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))" }
+      },
+        /* ── Settings (hub: nav rows only) ── */
+        settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
+          settingsSectionLabel("General", 4),
+          settingsNavRow("sliders", C.primarySoft, C.primary, "Preferences", "Session, sound and haptics", function () { setSettingsPage("preferences"); }),
+          settingsNavRow("bell", C.primarySoft, C.primary, "Notifications", "Choose what we notify you about", function () { setSettingsPage("notifications"); }),
+          settingsNavRow("shield-halved", C.primarySoft, C.primary, "Account management", "Password, email and account", function () { setSettingsPage("account"); }),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: onSignOut, className: "press",
+            style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 24 }
+          }, "Sign out")
         ),
-        /* Session settings — mirrors the in-session settings sheet */
-        /* Session settings — mirrors the in-session settings sheet */
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: "2px 2px 0" } }, "Session"),
-        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
-        /*#__PURE__*/React.createElement(SpeedControl, { value: deckSettings.voiceSpeed, onChange: function (v) { setVoiceSpeed(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v }); }); }, label: "Voice speed", sub: "How fast cards are read aloud" }),
-        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
-        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
-        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
-        /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.showEnglishFirst, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { showEnglishFirst: v }); }); }, label: "Show English first", sub: "Flip the card to reveal the target language" }),
-        /* Account */
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: "18px 2px 0" } }, "Account"),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { openAcct("password"); }, className: "press",
-          style: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
-        },
-          /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Change password"),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Update your account password")
-          ),
-          /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
+        /* ── Preferences (session, sound, haptics) ── */
+        settingsPage === "preferences" && /*#__PURE__*/React.createElement(React.Fragment, null,
+          settingsSectionLabel("Session", 4),
+          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
+          /*#__PURE__*/React.createElement(SpeedControl, { value: deckSettings.voiceSpeed, onChange: function (v) { setVoiceSpeed(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v }); }); }, label: "Voice speed", sub: "How fast cards are read aloud" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.showEnglishFirst, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { showEnglishFirst: v }); }); }, label: "Show English first", sub: "Flip the card to reveal the target language" }),
+          settingsSectionLabel("Sound & haptics"),
+          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: haptics, onChange: toggleHaptics, label: "Haptic feedback", sub: "Subtle vibration on swipes and rewards" })
         ),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { openAcct("email"); }, className: "press",
-          style: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
-        },
-          /*#__PURE__*/React.createElement("div", null,
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, "Change email"),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Change your sign-in address")
-          ),
-          /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
+        /* ── Account management ── */
+        settingsPage === "account" && /*#__PURE__*/React.createElement(React.Fragment, null,
+          settingsSectionLabel("Sign-in", 4),
+          settingsNavRow("lock", C.primarySoft, C.primary, "Change password", "Update your account password", function () { openAcct("password"); }),
+          settingsNavRow("envelope", C.primarySoft, C.primary, "Change email", "Change your sign-in address", function () { openAcct("email"); }),
+          settingsSectionLabel("Danger zone"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function onClick() { setDelConfirm(true); }, className: "press",
+            style: { width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "14px 0", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 11, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+              /*#__PURE__*/React.createElement(Icon, { name: "trash", size: 15, color: C.red })),
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.red } }, "Delete account"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Permanently remove your account and data"))
+          )
         ),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: onSignOut,
-          className: "press",
-          style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 20 }
-        }, "Sign out"),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { setDelConfirm(true); },
-          className: "press",
-          style: { width: "100%", padding: 12, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: FONT, marginTop: 8, textDecoration: "underline", textUnderlineOffset: "3px" }
-        }, "Delete account")
+        /* ── Notifications ── */
+        settingsPage === "notifications" && /*#__PURE__*/React.createElement(React.Fragment, null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, lineHeight: 1.45, margin: "6px 2px 10px" } }, "Pick the updates worth a tap. You can change these anytime."),
+          /*#__PURE__*/React.createElement(Toggle, { on: notif.reminders, onChange: function (v) { setNotifPref("reminders", v); }, label: "Reminders", sub: "Streak nudges and daily practice reminders" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: notif.friends, onChange: function (v) { setNotifPref("friends", v); }, label: "Friends", sub: "When someone follows you or sends a hear" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: notif.leaderboard, onChange: function (v) { setNotifPref("leaderboard", v); }, label: "Leaderboard updates", sub: "Weekly ranking changes and results" }),
+          /*#__PURE__*/React.createElement(Toggle, { on: notif.announce, onChange: function (v) { setNotifPref("announce", v); }, label: "Announcements", sub: "New features, promotions and events" })
+        )
       )
-    ), document.body),
+    )), document.body),
   delConfirm && /*#__PURE__*/ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
       style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 700, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
