@@ -17,6 +17,16 @@
     html,body{margin:0;padding:0;background:#F5F4FB;overflow:hidden}
     #root{height:100vh;height:100dvh}
     @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes obpulse{0%,100%{transform:translateY(0);opacity:.9}50%{transform:translateY(-4px);opacity:1}}
+    @keyframes obtap{0%,100%{transform:translateY(0) scale(1)}45%{transform:translateY(3px) scale(.78)}}
+    @keyframes obswipe{0%,100%{transform:translateX(-9px)}50%{transform:translateX(9px)}}
+    @keyframes obslideA{0%,10%{transform:translateX(0) rotate(0)}28%{transform:translateX(-34px) rotate(-8deg)}44%,54%{transform:translateX(0) rotate(0)}72%{transform:translateX(34px) rotate(8deg)}90%,100%{transform:translateX(0) rotate(0)}}
+    @keyframes obedgeL{0%,12%,44%,100%{opacity:.3}28%{opacity:1}}
+    @keyframes obedgeR{0%,54%,90%,100%{opacity:.3}72%{opacity:1}}
+    @keyframes obflip{0%,14%{transform:rotateY(0)}50%{transform:rotateY(180deg)}86%,100%{transform:rotateY(0)}}
+    @keyframes obcardslide{0%,10%{transform:translateX(0) rotate(0)}28%{transform:translateX(-60px) rotate(-7deg)}44%,54%{transform:translateX(0) rotate(0)}72%{transform:translateX(60px) rotate(7deg)}90%,100%{transform:translateX(0) rotate(0)}}
+    @keyframes obcardtint{0%,12%{background:rgba(226,75,74,0)}28%{background:rgba(226,75,74,.5)}44%,54%{background:rgba(0,0,0,0)}72%{background:rgba(29,158,117,.5)}90%,100%{background:rgba(29,158,117,0)}}
+    @keyframes obcardflip{0%,22%{transform:perspective(800px) rotateY(0)}50%{transform:perspective(800px) rotateY(32deg)}78%,100%{transform:perspective(800px) rotateY(0)}}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
   </style>
 </head>
@@ -57,12 +67,73 @@ var SUPA_URL = "https://bbnjytcxtwznhnfhbbof.supabase.co";
    fail with "No API key found in request". The anon JWT is sent reliably. */
 var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibmp5dGN4dHd6bmhuZmhiYm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Mjg0MTYsImV4cCI6MjA5NjUwNDQxNn0.Yg2HDMP93A-wOgQ1qI8qO14Sqmfrbk8RBa3TLZrA5Ck";
 var supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+/* Flip to true once the Apple provider is configured in Supabase (needs an
+   Apple Developer account). While false, the "Continue with Apple" button is hidden. */
+var APPLE_SIGNIN_ENABLED = false;
 /* Keep the current auth token handy so the TTS proxy can verify the caller. */
 var _supaToken = null;
 try {
   supabase.auth.getSession().then(function (r) { _supaToken = (r && r.data && r.data.session && r.data.session.access_token) || null; });
   supabase.auth.onAuthStateChange(function (_e, session) { _supaToken = (session && session.access_token) || null; });
 } catch (e) {}
+
+/* ── NATIVE AUTH BRIDGE (Capacitor) ──
+   In the browser the OAuth / password-reset flow redirects the page to
+   `origin + pathname` and the session is picked up on the full reload that
+   follows. Under capacitor:// (iOS) and https://localhost (Android) that origin
+   is not a real, allow-listed URL, so we instead redirect Supabase to a custom
+   URL scheme deep link, catch it with the App plugin, exchange the PKCE code,
+   then reload so the existing mount-time logic restores the session unchanged. */
+var _CAP = window.Capacitor;
+var _IS_NATIVE = !!(_CAP && _CAP.isNativePlatform && _CAP.isNativePlatform());
+window.__MEMZY_NATIVE = _IS_NATIVE;
+/* Web keeps its original redirect target; native uses the deep link scheme
+   registered in Info.plist / AndroidManifest.xml. */
+var _WEB_REDIRECT = window.location.origin + window.location.pathname;
+window.__MEMZY_AUTH_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback" : _WEB_REDIRECT;
+window.__MEMZY_RECOVERY_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback?type=recovery" : _WEB_REDIRECT;
+
+if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
+  var _App = _CAP.Plugins.App;
+  var _Browser = _CAP.Plugins.Browser;
+  var _handleAuthUrl = function (rawUrl) {
+    if (!rawUrl || rawUrl.indexOf("auth-callback") === -1) return;
+    /* The system browser used for OAuth must be dismissed once we have the code. */
+    try { if (_Browser && _Browser.close) _Browser.close(); } catch (e) {}
+    var isRecovery = rawUrl.indexOf("type=recovery") !== -1;
+    var finish = function () {
+      if (isRecovery) { try { localStorage.setItem("memzy_recovery_pending", "1"); } catch (e) {} }
+      /* Reload so the mount-time getSession()/recovery logic runs as it does on web. */
+      window.location.reload();
+    };
+    var fail = function (err) {
+      try { window.alert((err && err.message) || "Sign-in could not be completed — please try again."); } catch (e) {}
+    };
+    var u;
+    try { u = new URL(rawUrl); } catch (e) { return; }
+    var code = u.searchParams.get("code");
+    if (code) {
+      /* PKCE: the code verifier was stored locally when the flow started, so we
+         must exchange before reloading (storage survives the reload). */
+      supabase.auth.exchangeCodeForSession(code).then(function (res) {
+        if (res.error) fail(res.error); else finish();
+      }, fail);
+      return;
+    }
+    /* Implicit/legacy fallback: tokens arrive in the URL fragment. */
+    var hash = (u.hash || "").replace(/^#/, "");
+    var hp = new URLSearchParams(hash);
+    var at = hp.get("access_token"), rt = hp.get("refresh_token");
+    if (at && rt) {
+      supabase.auth.setSession({ access_token: at, refresh_token: rt }).then(function (res) {
+        if (res.error) fail(res.error); else finish();
+      }, fail);
+    }
+  };
+  _App.addListener("appUrlOpen", function (data) { _handleAuthUrl(data && data.url); });
+  /* Catch a cold-start launch URL too (app opened directly by the deep link). */
+  if (_App.getLaunchUrl) { _App.getLaunchUrl().then(function (r) { if (r && r.url) _handleAuthUrl(r.url); }).catch(function () {}); }
+}
 
 /* ── PROGRESS HELPERS ── */
 
@@ -651,7 +722,7 @@ var FONT = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-s
   function ensure() {
     if (el) return el;
     el = document.createElement("div");
-    el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%) translateY(-8px);top:calc(10px + env(safe-area-inset-top));background:#1C1A2E;color:#fff;font:700 12.5px " + FONT + ";padding:8px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(28,26,46,.35);z-index:600;display:flex;align-items:center;gap:7px;opacity:0;transition:opacity .25s ease,transform .25s ease;pointer-events:none";
+    el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%) translateY(-8px);top:calc(10px + var(--safe-area-inset-top, env(safe-area-inset-top)));background:#1C1A2E;color:#fff;font:700 12.5px " + FONT + ";padding:8px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(28,26,46,.35);z-index:600;display:flex;align-items:center;gap:7px;opacity:0;transition:opacity .25s ease,transform .25s ease;pointer-events:none";
     document.body.appendChild(el);
     return el;
   }
@@ -902,6 +973,26 @@ function setCelebEnabled(on) {
   _celebEnabled = !!on;
   try { localStorage.setItem("memzy_celeb_sfx", on ? "1" : "0"); } catch (e) {}
 }
+/* Voice playback speed, persisted. Applied to the cloud-TTS <audio> element via
+   playbackRate (pitch preserved so it never sounds chipmunky) and to the Web
+   Speech fallback via utterance.rate. 1 = normal. */
+var _voiceSpeed = 1;
+try { var _vs0 = parseFloat(localStorage.getItem("memzy_voice_speed")); if (_vs0 >= 0.5 && _vs0 <= 2) _voiceSpeed = _vs0; } catch (e) {}
+function setVoiceSpeed(v) {
+  v = parseFloat(v); if (!(v >= 0.5 && v <= 2)) v = 1;
+  _voiceSpeed = v;
+  try { localStorage.setItem("memzy_voice_speed", String(v)); } catch (e) {}
+  try { if (_au) _applyVoiceRate(_au); } catch (e) {}
+}
+function _applyVoiceRate(a) {
+  try {
+    a.playbackRate = _voiceSpeed;
+    /* Keep pitch natural across browsers/WebViews when sped up or slowed down. */
+    a.preservesPitch = true;
+    a.webkitPreservesPitch = true;
+    a.mozPreservesPitch = true;
+  } catch (_) {}
+}
 /* Sounds played on the end screens / rewards — gated by the Celebration
    toggle. Everything else (swipe ticks) is gated by the Swipe-sounds toggle. */
 var _CELEB_SOUNDS = { finish1: 1, finish2: 1, finish3: 1, claim: 1, streak: 1, badge: 1 };
@@ -962,10 +1053,19 @@ function _ttsFetchBuf(text, tl) {
   return p;
 }
 /* Warm the cache ahead of time (e.g. when a card mounts) so the first tap is instant */
+/* Persian question marks (?, ؟) make the TTS voice rise oddly on single words
+   like "khubi?". Strip them for Farsi so the word is read naturally. */
+function _ttsClean(text, tl) {
+  var t = (text || "").trim();
+  if (tl === "fa") t = t.replace(/[?؟]/g, " ").replace(/\s+/g, " ").trim();
+  return t;
+}
 function prefetchTTS(text, langCode) {
   if (!text || !text.trim()) return;
   var tl = langCode && langCode.startsWith("fa") ? "fa" : langCode && langCode.startsWith("de") ? "de" : (langCode || "en").slice(0, 2);
-  _ttsFetchBuf(text.trim(), tl).catch(function () {});
+  var clean = _ttsClean(text, tl);
+  if (!clean) return;
+  _ttsFetchBuf(clean, tl).catch(function () {});
 }
 function spNet(text, tl, gen) {
   return new Promise(function(res, rej) {
@@ -984,6 +1084,7 @@ function spNet(text, tl, gen) {
         var url = URL.createObjectURL(blob);
         if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
         _au.src = url;
+        _applyVoiceRate(_au);
         _au.onended = function () { URL.revokeObjectURL(url); res(); };
         _au.onerror = function (e) { URL.revokeObjectURL(url); rej(e); };
         var pr = _au.play();
@@ -996,6 +1097,7 @@ function spNet(text, tl, gen) {
         if (gen != null && gen !== _speakGen) { return rej(new Error("superseded")); }
         if (!_au) { _au = new Audio(); _au.setAttribute("playsinline", ""); _au.preload = "auto"; }
         _au.src = _ttsCache[key].url;
+        _applyVoiceRate(_au);
         _au.onended = function () { res(); };
         _au.onerror = function (e) { rej(e); };
         var prc = _au.play();
@@ -1019,7 +1121,7 @@ function spSynth(text, langCode) {
     var v = _voices.find(function(v) { return v.lang.toLowerCase().replace("_","-") === prefix; })
           || _voices.find(function(v) { return v.lang.toLowerCase().startsWith(lang2); });
     if (v) u.voice = v;
-    u.rate = 0.88;
+    u.rate = Math.max(0.1, Math.min(10, 0.88 * _voiceSpeed));
     u.pitch = 1.0;
     window.speechSynthesis.speak(u);
   } catch (_) {}
@@ -1031,10 +1133,12 @@ function speak(text, langCode) {
   /* Cancel any device-voice utterance still going, so cloud + device can't overlap */
   try { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); } catch (_) {}
   var tl = langCode.startsWith("fa") ? "fa" : langCode.startsWith("de") ? "de" : langCode.slice(0, 2);
-  spNet(text, tl, gen).catch(function () {
+  var clean = _ttsClean(text, tl);
+  if (!clean) return;
+  spNet(clean, tl, gen).catch(function () {
     /* Only fall back to the device voice if THIS is still the latest request.
        A later speak() interrupting us rejects this promise too \u2014 ignore that. */
-    if (gen === _speakGen) spSynth(text, langCode);
+    if (gen === _speakGen) spSynth(clean, langCode);
   });
 }
 var sayWordOf = function sayWordOf(c) {
@@ -1434,7 +1538,7 @@ function useKeyboardInset() {
 }
 function TopInset(_refTI) {
   return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
-    style: { position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top)", background: _refTI.color || C.surface, zIndex: 250, pointerEvents: "none" }
+    style: { position: "fixed", top: 0, left: 0, right: 0, height: "var(--safe-area-inset-top, env(safe-area-inset-top))", background: _refTI.color || C.surface, zIndex: 250, pointerEvents: "none" }
   }), document.body);
 }
 function Shell(_ref5) {
@@ -1485,7 +1589,7 @@ function StepDots(_ref7) {
       gap: 7,
       justifyContent: "center",
       padding: "14px 0",
-      paddingBottom: "calc(14px + env(safe-area-inset-bottom))"
+      paddingBottom: "calc(14px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))"
     }
   }, [0, 1, 2].map(function (i) {
     return /*#__PURE__*/React.createElement("div", {
@@ -1736,11 +1840,42 @@ function Sheet(_ref1) {
       overflowY: "auto",
       overscrollBehaviorY: "none",
       padding: "16px 22px",
-      paddingBottom: footer ? 16 : "calc(24px + env(safe-area-inset-bottom))"
+      paddingBottom: footer ? 16 : "calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))"
     }
   }, children), footer && /*#__PURE__*/React.createElement("div", {
-    style: { flexShrink: 0, padding: kb.open ? "12px 22px 12px" : "12px 22px calc(20px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface }
+    style: { flexShrink: 0, padding: kb.open ? "12px 22px 12px" : "12px 22px calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", borderTop: "1px solid " + C.line, background: C.surface }
   }, footer))));
+}
+/* Segmented voice-speed picker — mirrors Toggle's row layout/typography. */
+function SpeedControl(_refSpeed) {
+  var value = _refSpeed.value,
+    onChange = _refSpeed.onChange,
+    label = _refSpeed.label,
+    sub = _refSpeed.sub;
+  var opts = [0.5, 0.75, 1, 1.25, 1.5];
+  return /*#__PURE__*/React.createElement("div", {
+    style: { padding: "14px 0", borderBottom: "1px solid " + C.line }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 15, fontWeight: 700, color: C.ink }
+  }, label), sub && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12.5, color: C.sub, marginTop: 2 }
+  }, sub)), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 4, marginTop: 12, background: C.bg, padding: 4, borderRadius: 12 }
+  }, opts.map(function (o) {
+    var active = Math.abs((value == null ? 1 : value) - o) < 0.001;
+    return /*#__PURE__*/React.createElement("button", {
+      key: o,
+      className: "press",
+      onClick: function onClick() { onChange(o); },
+      style: {
+        flex: 1, padding: "8px 0", borderRadius: 9, border: "none", cursor: "pointer",
+        fontFamily: FONT, fontSize: 13, fontWeight: 700,
+        background: active ? C.primary : "transparent",
+        color: active ? "#fff" : C.sub,
+        transition: "background .15s, color .15s"
+      }
+    }, o === 1 ? "1×" : o + "×");
+  })));
 }
 function Toggle(_ref10) {
   var on = _ref10.on,
@@ -1951,15 +2086,17 @@ function App() {
     globalHistory = _useState_gh2[0],
     setGlobalHistory = _useState_gh2[1];
   var _useState25 = useState(function() {
-      var sfxOn = true, celebOn = true;
+      var sfxOn = true, celebOn = true, vSpeed = 1;
       try { sfxOn = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
       try { celebOn = localStorage.getItem("memzy_celeb_sfx") !== "0"; } catch (e) {}
+      try { var pv = parseFloat(localStorage.getItem("memzy_voice_speed")); if (pv >= 0.5 && pv <= 2) vSpeed = pv; } catch (e) {}
       return {
         autoSpeak: false,
         onlyUnknown: true,
         showEnglishFirst: false,
         sfx: sfxOn,
-        celebSfx: celebOn
+        celebSfx: celebOn,
+        voiceSpeed: vSpeed
       };
     }),
     _useState26 = _slicedToArray(_useState25, 2),
@@ -2466,6 +2603,44 @@ function App() {
     _useState42 = _slicedToArray(_useState41, 2),
     dragX = _useState42[0],
     setDragX = _useState42[1];
+  /* ── ONBOARDING HINTS ──
+     One-time "tap to flip" + "swipe" hints and a first-left-swipe explainer.
+     The test account "milad7" always sees them (never persisted; reset each load). */
+  var _isTestUser = function _isTestUser() {
+    var n = ((user && user.name) || "").toLowerCase();
+    var e = ((user && user.email) || "").toLowerCase();
+    var ids = ["milad6", "milad7"];
+    return ids.some(function (id) { return n === id || e.indexOf(id) === 0; });
+  };
+  var _useState_ob = useState(function () {
+    try {
+      return { flip: localStorage.getItem("memzy_ob_flip") !== "1",
+               swipe: localStorage.getItem("memzy_ob_swipe") !== "1",
+               left: localStorage.getItem("memzy_ob_left") !== "1" };
+    } catch (e) { return { flip: true, swipe: true, left: true }; }
+  }),
+    _useState_ob2 = _slicedToArray(_useState_ob, 2),
+    onboard = _useState_ob2[0],
+    setOnboard = _useState_ob2[1];
+  var _useState_lm = useState(false),
+    _useState_lm2 = _slicedToArray(_useState_lm, 2),
+    showLeftModal = _useState_lm2[0],
+    setShowLeftModal = _useState_lm2[1];
+  /* Always start the test account fresh so the flows can be re-checked each launch. */
+  useEffect(function () {
+    if (_isTestUser()) setOnboard({ flip: true, swipe: true, left: true });
+  }, [user && user.id]);
+  var markObSeen = function markObSeen(key) {
+    setOnboard(function (o) {
+      if (!o[key]) return o;
+      var n = _objectSpread({}, o); n[key] = false; return n;
+    });
+    if (!_isTestUser()) { try { localStorage.setItem("memzy_ob_" + key, "1"); } catch (e) {} }
+  };
+  /* Flip hint clears the instant the user flips their first card. */
+  useEffect(function () {
+    if (flipped && onboard.flip) markObSeen("flip");
+  }, [flipped]);
   var _useState43 = useState(false),
     _useState44 = _slicedToArray(_useState43, 2),
     dragging = _useState44[0],
@@ -2504,6 +2679,8 @@ function App() {
     roundPointsRef.current = 0;
     hadActivityRef.current = false;
     committed.current = false;
+    /* Test account re-sees the onboarding hints/modal at the start of every session. */
+    if (_isTestUser()) setOnboard({ flip: true, swipe: true, left: true });
     setFlipped(false);
     setDragX(0);
     setExitDir(null);
@@ -2798,6 +2975,9 @@ function App() {
     if (locked.current || queue.length === 0) return;
     locked.current = true;
     playSFX(dir === "right" ? "swipeRight" : "swipeLeft");
+    /* Swipe hint is dismissed only by a real swipe gesture (see onPU), not by the
+       ✓/✗ buttons — so button-only users keep being nudged to try swiping. */
+    if (dir === "left" && onboard.left) { setShowLeftModal(true); markObSeen("left"); }
     setExitDir(dir);
     setDragging(false);
     setTimeout(function () {
@@ -2831,7 +3011,7 @@ function App() {
       setDragX(0);
       return;
     }
-    if (dragX > 110) triggerSwipe("right");else if (dragX < -110) triggerSwipe("left");else setDragX(0);
+    if (dragX > 110) { if (onboard.swipe) markObSeen("swipe"); triggerSwipe("right"); } else if (dragX < -110) { if (onboard.swipe) markObSeen("swipe"); triggerSwipe("left"); } else setDragX(0);
   };
   var toggleMark = function toggleMark(id) {
     return setMarkedIds(function (ids) {
@@ -2932,7 +3112,12 @@ function App() {
       setRecoveryMode(true);
     };
     var urlAll = (window.location.hash || "") + (window.location.search || "");
-    if (urlAll.indexOf("type=recovery") !== -1) {
+    /* Native recovery deep links can't put params on window.location, so the
+       Capacitor auth bridge flags recovery via storage before reloading. */
+    var nativeRecovery = false;
+    try { nativeRecovery = localStorage.getItem("memzy_recovery_pending") === "1"; } catch (e) {}
+    if (nativeRecovery) { try { localStorage.removeItem("memzy_recovery_pending"); } catch (e) {} }
+    if (urlAll.indexOf("type=recovery") !== -1 || nativeRecovery) {
       var waitForSession = function waitForSession(tries) {
         supabase.auth.getSession().then(function (r) {
           if (r.data && r.data.session) askNewPassword();
@@ -3236,7 +3421,7 @@ function App() {
                 style: { border: on ? "2.5px solid " + C.primary : "1.5px solid " + C.line, background: on ? C.primarySoft : C.surface, borderRadius: 18, padding: "10px 4px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: on ? "0 4px 14px " + C.primary + "33" : "none" }
               }, /*#__PURE__*/React.createElement(Avatar, { seed: peepAvatarVal(id), size: 56 }));
             }))),
-        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 24px calc(16px + env(safe-area-inset-bottom))", borderTop: "1px solid " + C.line, background: C.surface } },
+        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 24px calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", borderTop: "1px solid " + C.line, background: C.surface } },
           /*#__PURE__*/React.createElement(PrimaryButton, {
             onClick: confirmChar,
             style: obChar == null ? { background: C.line, color: C.sub, boxShadow: "none" } : undefined,
@@ -3259,7 +3444,7 @@ function App() {
       style: {
         flex: 1,
         overflowY: "auto",
-        padding: "calc(20px + env(safe-area-inset-top)) 24px 0"
+        padding: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top))) 24px 0"
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() { return setScreen("character"); },
@@ -3422,7 +3607,7 @@ function App() {
       style: {
         flex: 1,
         overflowY: "auto",
-        padding: "calc(20px + env(safe-area-inset-top)) 24px 0"
+        padding: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top))) 24px 0"
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
@@ -3578,7 +3763,56 @@ function App() {
       overflow: "hidden",
       fontFamily: FONT
     };
+    /* Onboarding: the real card itself demos the gesture (slide+tint / flip wobble),
+       with a small label below. + first-left-swipe modal. */
+    var _obFlipHint = onboard.flip && !flipped && current && !sessionDone;
+    var _obSwipeHint = !onboard.flip && onboard.swipe && current && !sessionDone;
+    var _swipeDemo = _obSwipeHint && !dragging && !exitDir;
+    var _flipDemo = _obFlipHint && !dragging && !exitDir;
+    var _obLabelPill = function _obLabelPill(content) {
+      return /*#__PURE__*/React.createElement("div", {
+        style: { background: C.ink, color: "#fff", fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "8px 15px", borderRadius: 999, boxShadow: "0 8px 24px rgba(28,26,46,.3)", display: "flex", alignItems: "center", gap: 7 }
+      }, content);
+    };
+    var _obHintEl = (_obFlipHint || _obSwipeHint) && /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", left: 0, right: 0, bottom: "calc(112px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", display: "flex", justifyContent: "center", zIndex: 120, pointerEvents: "none" }
+    }, _obFlipHint
+      ? _obLabelPill(/*#__PURE__*/React.createElement(React.Fragment, null,
+          /*#__PURE__*/React.createElement(Icon, { name: "hand-pointer", size: 14, color: "#fff", style: { display: "inline-block", animation: "obtap 1.1s ease-in-out infinite" } }), "Tap to flip"))
+      : _obLabelPill("Swipe"));
+    var _leftModalEl = showLeftModal && ReactDOM.createPortal(
+      /*#__PURE__*/React.createElement("div", {
+        style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 600, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+        onClick: function onClick(e) { if (e.target === e.currentTarget) setShowLeftModal(false); }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "22px 22px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
+          /* Preview of the Review deck — same stacked-card style as the Decks screen */
+          /*#__PURE__*/React.createElement("div", { style: { position: "relative", height: 68, width: 210, margin: "2px auto 16px" } },
+            /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%) rotate(-3.5deg)", width: "90%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + C.red + "44", opacity: 0.45 } }),
+            /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%) rotate(-1.5deg)", width: "95%", height: 62, borderRadius: 14, background: C.redSoft, border: "1.5px solid " + C.red + "44", opacity: 0.7 } }),
+            /*#__PURE__*/React.createElement("div", { style: { position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", width: "100%", height: 62, borderRadius: 15, background: C.redSoft, border: "1.5px solid " + C.red + "44", boxShadow: "0 3px 14px " + C.red + "22", padding: "11px 12px 9px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 7 } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 } },
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { width: 28, height: 28, borderRadius: 8, background: C.red + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                    /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: C.red, fontWeight: 700 } }, "↺")),
+                  /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+                    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 800, color: C.red, letterSpacing: -0.2, lineHeight: 1.15 } }, "Review"),
+                    /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: C.red + "99", fontWeight: 600, marginTop: 1 } }, "To revisit"))),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: C.red + "BB", flexShrink: 0, paddingTop: 1 } }, (reviewIds ? reviewIds.length : 0) + 1)),
+              /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: C.red + "28", overflow: "hidden" } },
+                /*#__PURE__*/React.createElement("div", { style: { height: "100%", width: "0%", borderRadius: 3, background: C.red } })))),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, textAlign: "center", marginBottom: 6, letterSpacing: -0.3 } }, "Saved to your Review deck"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, textAlign: "center", lineHeight: 1.45, marginBottom: 20 } }, "Cards you swipe left land in this deck — the red ↺ Review deck with your other decks. Open it anytime to practice them again."),
+          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: function onClick() { setShowLeftModal(false); } }, "Got it")
+        )
+      ),
+      document.body
+    );
     return /*#__PURE__*/React.createElement(Shell, { anim: "page-slide" }, /*#__PURE__*/React.createElement(StyleTag, null),
+    _obHintEl, _leftModalEl,
     /* CRITICAL: Exit confirm modal via portal */
     showExitConfirm && ReactDOM.createPortal(
       /*#__PURE__*/React.createElement("div", {
@@ -3586,7 +3820,7 @@ function App() {
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowExitConfirm(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "20px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "20px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
           /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 6, letterSpacing: -0.4 } }, "Leave this session?"),
@@ -3607,7 +3841,7 @@ function App() {
     !sessionDone && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: "18px 18px 4px",
-        paddingTop: "calc(18px + env(safe-area-inset-top))",
+        paddingTop: "calc(18px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
         display: "flex",
         alignItems: "center",
         gap: 10,
@@ -3768,6 +4002,8 @@ function App() {
       userAvatar: user && user.avatar,
       totalCards: (function(){ var pool = queue.concat(historyStack); return pool.length || historyStack.length; }()),
       knownCards: historyStack.filter(function(c){ return !reviewIds.includes(c.id); }).length,
+      reviewSetAside: historyStack.filter(function(c){ return reviewIds.includes(c.id); }).length,
+      onReview: startReview,
       sessionSeconds: Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 1000),
       isFirstSessionToday: isFirstSessionToday,
       onBonusPoints: commitRound
@@ -3811,7 +4047,8 @@ function App() {
         transform: topTf,
         transition: topTr,
         touchAction: "none",
-        cursor: "grab"
+        cursor: "grab",
+        animation: _flipDemo ? "obcardflip 1.9s ease-in-out infinite" : (_swipeDemo ? "obcardslide 2.8s ease-in-out infinite" : undefined)
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -3857,13 +4094,14 @@ function App() {
         position: "absolute",
         inset: 0,
         borderRadius: 28,
-        background: tint.c,
-        opacity: tint.o,
+        background: _swipeDemo ? undefined : tint.c,
+        opacity: _swipeDemo ? 1 : tint.o,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         pointerEvents: "none",
         transition: dragging ? "none" : "opacity .22s ease",
+        animation: _swipeDemo ? "obcardtint 2.8s ease-in-out infinite" : undefined,
         zIndex: 6
       }
     }, tint.t && /*#__PURE__*/React.createElement("span", {
@@ -3878,7 +4116,7 @@ function App() {
     }, tint.t)))))), !sessionDone && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: "10px 24px",
-        paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
+        paddingBottom: "calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -3977,6 +4215,16 @@ function App() {
       },
       label: "Auto-speak card",
       sub: "Read each card aloud automatically"
+    }), /*#__PURE__*/React.createElement(SpeedControl, {
+      value: deckSettings.voiceSpeed,
+      onChange: function onChange(v) {
+        setVoiceSpeed(v);
+        setDeckSettings(function (s) {
+          return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v });
+        });
+      },
+      label: "Voice speed",
+      sub: "How fast cards are read aloud"
     }), /*#__PURE__*/React.createElement(Toggle, {
       on: deckSettings.sfx,
       onChange: function onChange(v) {
@@ -4276,6 +4524,16 @@ function App() {
     },
     label: "Auto-speak card",
     sub: "Read each card aloud automatically"
+  }), /*#__PURE__*/React.createElement(SpeedControl, {
+    value: deckSettings.voiceSpeed,
+    onChange: function onChange(v) {
+      setVoiceSpeed(v);
+      setDeckSettings(function (s) {
+        return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v });
+      });
+    },
+    label: "Voice speed",
+    sub: "How fast cards are read aloud"
   }), /*#__PURE__*/React.createElement(Toggle, {
     on: deckSettings.sfx,
     onChange: function onChange(v) {
@@ -4329,7 +4587,7 @@ function App() {
     }
   }), toast && /*#__PURE__*/ReactDOM.createPortal(
     /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", bottom: "calc(86px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", background: C.ink, color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: FONT, padding: "10px 18px", borderRadius: 14, boxShadow: "0 8px 24px rgba(28,26,46,0.3)", zIndex: 500, whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
+      style: { position: "fixed", bottom: "calc(86px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", left: "50%", transform: "translateX(-50%)", background: C.ink, color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: FONT, padding: "10px 18px", borderRadius: 14, boxShadow: "0 8px 24px rgba(28,26,46,0.3)", zIndex: 500, whiteSpace: "nowrap", animation: "riseIn .3s cubic-bezier(.16,1,.3,1) both" }
     }, toast),
     document.body
   ), showInstall && /*#__PURE__*/React.createElement(Sheet, {
@@ -4379,7 +4637,7 @@ function ResetPasswordScreen() {
   var inp = { width: "100%", marginTop: 6, padding: "13px 15px", fontSize: 15, borderRadius: 14, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", background: C.surface };
   var lbl = { fontSize: 13, fontWeight: 700, color: C.sub, display: "block" };
   return /*#__PURE__*/React.createElement("div", {
-    style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)", padding: "20px 24px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", overflow: "hidden" }
+    style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#F0EEFF 0%,#F5F4FB 55%)", padding: "20px 24px", paddingBottom: "calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", overflow: "hidden" }
   },
   /*#__PURE__*/React.createElement(Aurora, { a: C.primary, b: "#8B73F0" }),
   /*#__PURE__*/React.createElement("div", {
@@ -4430,8 +4688,8 @@ function Welcome(_ref15) {
       display: "flex",
       flexDirection: "column",
       padding: "56px 26px 0",
-      paddingTop: "calc(40px + env(safe-area-inset-top))",
-      paddingBottom: "calc(28px + env(safe-area-inset-bottom))",
+      paddingTop: "calc(40px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
+      paddingBottom: "calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       overflowY: "auto",
       minHeight: 0
     }
@@ -4623,13 +4881,27 @@ function AuthScreen(_ref16) {
       });
     }
   };
-  var google = function google() {
-    supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: "select_account" } } });
+  var oauthSignIn = function oauthSignIn(provider, queryParams) {
+    var opts = { provider: provider, options: { redirectTo: window.__MEMZY_AUTH_REDIRECT } };
+    if (queryParams) opts.options.queryParams = queryParams;
+    if (window.__MEMZY_NATIVE) {
+      /* Don't navigate the webview away — open the OAuth page in the system
+         browser and let the appUrlOpen deep-link handler complete sign-in. */
+      opts.options.skipBrowserRedirect = true;
+      supabase.auth.signInWithOAuth(opts).then(function (res) {
+        var url = res && res.data && res.data.url;
+        if (url && window.Capacitor.Plugins.Browser) window.Capacitor.Plugins.Browser.open({ url: url });
+      });
+    } else {
+      supabase.auth.signInWithOAuth(opts);
+    }
   };
+  var google = function google() { oauthSignIn("google", { prompt: "select_account" }); };
+  var apple = function apple() { oauthSignIn("apple"); };
   var forgot = function forgot() {
     if (!email.includes("@")) { setAuthMsg(""); setAuthError("Enter your email above first."); return; }
     setAuthError(""); setAuthMsg("Sending reset link\u2026");
-    supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin + window.location.pathname })
+    supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.__MEMZY_RECOVERY_REDIRECT })
       .then(function (res) {
         if (res.error) { setAuthMsg(""); setAuthError(res.error.message); }
         else setAuthMsg("Reset link sent \u2014 check your email.");
@@ -4659,7 +4931,7 @@ function AuthScreen(_ref16) {
       overflowY: "auto",
       overscrollBehaviorY: "none",
       padding: "40px 24px 0",
-      paddingTop: "calc(40px + env(safe-area-inset-top))"
+      paddingTop: "calc(40px + var(--safe-area-inset-top, env(safe-area-inset-top)))"
     }
   }, /*#__PURE__*/React.createElement("h1", {
     style: {
@@ -4811,7 +5083,31 @@ function AuthScreen(_ref16) {
       color: "#4285F4",
       fontSize: 16
     }
-  }), " ", isReg ? "Sign up with Google" : "Continue with Google")), /*#__PURE__*/React.createElement("div", {
+  }), " ", isReg ? "Sign up with Google" : "Continue with Google"), APPLE_SIGNIN_ENABLED && /*#__PURE__*/React.createElement("button", {
+    onClick: apple,
+    disabled: loading,
+    className: "press",
+    style: {
+      width: "100%",
+      marginTop: 10,
+      padding: 13,
+      borderRadius: 14,
+      border: "none",
+      background: "#000",
+      color: "#fff",
+      fontWeight: 700,
+      fontSize: 15,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      fontFamily: FONT
+    }
+  }, /*#__PURE__*/React.createElement("i", {
+    className: "fa-brands fa-apple",
+    style: { color: "#fff", fontSize: 18 }
+  }), " ", isReg ? "Sign up with Apple" : "Continue with Apple")), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       marginTop: 18,
@@ -4848,7 +5144,7 @@ function TabBar(_ref19) {
       borderTop: "1px solid " + C.line,
       background: C.surface,
       paddingTop: 8,
-      paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+      paddingBottom: "calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       zIndex: 50,
       position: "relative"
     }
@@ -5281,7 +5577,7 @@ function FlashcardModal(_ref23) {
     className: "press",
     style: {
       position: "absolute",
-      top: "calc(20px + env(safe-area-inset-top))",
+      top: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
       right: 20,
       width: 40,
       height: 40,
@@ -5951,6 +6247,24 @@ function Dashboard(_ref27) {
     }, 70);
     return function () { clearTimeout(t); };
   }, [homeJump]);
+
+  /* First-ever home visit: auto-open the starting chapter's bubble and scroll
+     to it, so a new user immediately sees where to begin. Shown once per user. */
+  useEffect(function () {
+    var key = "memzy_home_intro_" + ((user && user.id) || "anon");
+    var seen = false;
+    try { seen = localStorage.getItem(key) === "1"; } catch (e) {}
+    if (seen) return;
+    var firstCh = curChapter || (CHAPTERS[curLevel] && CHAPTERS[curLevel][0] && CHAPTERS[curLevel][0].id);
+    if (!firstCh) return;
+    var t = setTimeout(function () {
+      setPathOpenCh(firstCh);
+      var el = curPathNodeRef.current;
+      if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {} }
+      try { localStorage.setItem(key, "1"); } catch (e) {}
+    }, 250);
+    return function () { clearTimeout(t); };
+  }, []);
 
   var _useState_cnv = useState(true),
     _useState_cnv2 = _slicedToArray(_useState_cnv, 2),
@@ -6813,7 +7127,7 @@ function Dashboard(_ref27) {
       zIndex: 50,
       margin: "-20px -20px -4px",
       padding: "16px 20px 12px",
-      paddingTop: "calc(16px + env(safe-area-inset-top))",
+      paddingTop: "calc(16px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
       background: C.surface,
       borderBottom: "1px solid " + C.line
     }
@@ -6903,7 +7217,7 @@ function Dashboard(_ref27) {
       onClick: function onClick(e) { if (e.target === e.currentTarget) setShowLangSwitcher(false); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 } },
@@ -6964,7 +7278,7 @@ function Dashboard(_ref27) {
         left: 16,
         right: 16,
         margin: "0 auto",
-        bottom: "calc(80px + env(safe-area-inset-bottom))",
+        bottom: "calc(80px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
         maxWidth: 400,
         display: "flex",
         alignItems: "center",
@@ -7008,7 +7322,7 @@ function Dashboard(_ref27) {
      which is what pushed the old pill half off-screen.) */
   /* Smart decks — compact strip up top where it's always seen (the old
      full-size cards lived below the whole path and were never reached) */
-  /*#__PURE__*/React.createElement("div", { style: { position: "sticky", top: "calc(71px + env(safe-area-inset-top))", zIndex: 45, margin: "0 -20px", padding: "9px 20px 11px", background: "#F5F4FB", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, transform: stripHidden ? "translateY(-130%)" : "translateY(0)", opacity: stripHidden ? 0 : 1, pointerEvents: stripHidden ? "none" : "auto", transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .22s ease" } },
+  /*#__PURE__*/React.createElement("div", { style: { position: "sticky", top: "calc(71px + var(--safe-area-inset-top, env(safe-area-inset-top)))", zIndex: 45, margin: "0 -20px", padding: "9px 20px 11px", background: "#F5F4FB", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, transform: stripHidden ? "translateY(-130%)" : "translateY(0)", opacity: stripHidden ? 0 : 1, pointerEvents: stripHidden ? "none" : "auto", transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .22s ease" } },
     [{ k: "recharge", icon: "hourglass-half", label: "Rewind", count: rechargeCount, fg: "#B45309", bg: "linear-gradient(135deg,#FFF8EA,#FFF3DD)", bd: C.amber + "55" },
      { k: "review", icon: "rotate-left", label: "Review", count: reviewCount, fg: C.red, bg: C.surface, bd: C.red + "44" },
      { k: "marked", icon: "bookmark", label: "Saved", count: markedCount, fg: C.primary, bg: C.surface, bd: C.line }].map(function (d) {
@@ -7070,7 +7384,7 @@ function Dashboard(_ref27) {
       },
         /*#__PURE__*/React.createElement("div", {
           className: "sheet-in",
-          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, position: "relative" }
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, position: "relative" }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("button", {
@@ -7120,7 +7434,7 @@ function Dashboard(_ref27) {
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
         /*#__PURE__*/React.createElement("button", {
@@ -7190,7 +7504,7 @@ function Dashboard(_ref27) {
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, textAlign: "center", position: "relative" }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" } }),
         /*#__PURE__*/React.createElement("button", {
@@ -7266,7 +7580,7 @@ function Dashboard(_ref27) {
         setPathOpenCh(curChapter);
       },
       className: cracked ? "press btn-glow-ring-amber" : "press btn-glow-ring",
-      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: showRescue ? "calc(182px + env(safe-area-inset-bottom))" : "calc(78px + env(safe-area-inset-bottom))", zIndex: 8, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, animation: (jumpExiting ? "jumpTileOut .42s cubic-bezier(.16,1,.3,1) both" : "jumpTileIn .42s cubic-bezier(.16,1,.3,1) both"), fontFamily: FONT, cursor: "pointer", textAlign: "left" }
+      style: { position: "fixed", left: 16, right: 16, margin: "0 auto", maxWidth: 408, bottom: showRescue ? "calc(182px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))" : "calc(78px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", zIndex: 8, display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 18, border: "none", background: grad, animation: (jumpExiting ? "jumpTileOut .42s cubic-bezier(.16,1,.3,1) both" : "jumpTileIn .42s cubic-bezier(.16,1,.3,1) both"), fontFamily: FONT, cursor: "pointer", textAlign: "left" }
     },
       /*#__PURE__*/React.createElement("span", { style: { width: 38, height: 38, borderRadius: 13, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
         /*#__PURE__*/React.createElement(Icon, { name: CHAPTER_ICONS[ch.id] || "book", size: 16, color: "#fff" })),
@@ -7333,7 +7647,7 @@ function Dashboard(_ref27) {
           )
         ),
         /* Scrollable content — flex:1 fills remaining fixed height exactly */
-        /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "env(safe-area-inset-bottom)" } },
+        /*#__PURE__*/React.createElement("div", { style: { overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "var(--safe-area-inset-bottom, env(safe-area-inset-bottom))" } },
           dlg === "streak"
             ? /*#__PURE__*/React.createElement(StreakDialog, { history: globalHistory, streak: dayStreak, onClose: function onClose() { return setDlg(null); } })
             : /*#__PURE__*/React.createElement(PointsDialog, { points: totalPoints, userId: user && user.id, onClose: function onClose() { return setDlg(null); } })
@@ -8373,7 +8687,7 @@ function MyFlashcardsPage(_ref31) {
       style: { background: C.surface, borderBottom: "1px solid " + C.line, position: "sticky", top: 0, zIndex: 60 }
     },
       /* Fills the Dynamic Island / status bar area with the same white background */
-      /*#__PURE__*/React.createElement("div", { style: { height: "env(safe-area-inset-top)", background: C.surface } }),
+      /*#__PURE__*/React.createElement("div", { style: { height: "var(--safe-area-inset-top, env(safe-area-inset-top))", background: C.surface } }),
       /*#__PURE__*/React.createElement("div", {
         style: { padding: "16px 16px 12px", display: "flex", alignItems: "center", gap: 8 }
       },
@@ -8426,7 +8740,7 @@ function MyFlashcardsPage(_ref31) {
       onClick: function onClick(e) { if (e.target === e.currentTarget) setLockedMsg(null); }
     },
       /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 } },
@@ -8565,7 +8879,7 @@ function MyFlashcardsPage(_ref31) {
             onClick: function onClick(e) { if (e.target === e.currentTarget) setDeckAction(null); }
           },
             /*#__PURE__*/React.createElement("div", {
-              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+              className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
             },
               /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -8755,7 +9069,7 @@ function MyFlashcardsPage(_ref31) {
       display: "flex", alignItems: "center", justifyContent: "space-between",
       position: "sticky", top: 0, zIndex: 50,
       margin: "-20px -16px -6px", padding: "16px 16px 12px",
-      paddingTop: "calc(16px + env(safe-area-inset-top))",
+      paddingTop: "calc(16px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
       background: C.surface,
       borderBottom: "1px solid " + C.line
     } },
@@ -8847,7 +9161,7 @@ function MyFlashcardsPage(_ref31) {
         onClick: function onClick(e) { if (e.target === e.currentTarget) setShowAddSheet(false); }
       },
         /*#__PURE__*/React.createElement("div", {
-          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+          className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -8894,7 +9208,7 @@ function MyFlashcardsPage(_ref31) {
         onClick: function onClick(e) { if (e.target === e.currentTarget) { setShowAddDeckModal(false); setShowAddSheet(true); } }
       },
         /*#__PURE__*/React.createElement("div", {
-          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, animation: "fadeIn .18s ease both" }
+          style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: kb.open ? "16px 20px 18px" : "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, animation: "fadeIn .18s ease both" }
         },
           /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
           /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -9995,7 +10309,7 @@ function FriendsPage(_ref37) {
       zIndex: 50,
       margin: "0 -20px",
       padding: "18px 20px 12px",
-      paddingTop: "calc(18px + env(safe-area-inset-top))",
+      paddingTop: "calc(18px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
       background: C.surface,
       borderBottom: "1px solid " + C.line,
       display: "flex",
@@ -10262,7 +10576,7 @@ function FriendsPage(_ref37) {
           left: 16,
           right: 16,
           margin: "0 auto",
-          bottom: "calc(80px + env(safe-area-inset-bottom))",
+          bottom: "calc(80px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
           width: "auto",
           maxWidth: 400,
           display: "flex",
@@ -10958,6 +11272,20 @@ function ProfilePage(_ref42) {
     setAcct(which);
   };
   var closeAcct = function closeAcct() { if (!acctBusy) { setAcct(null); setAcctMsg(""); } };
+  var _useState_del = useState(false), delConfirm = _useState_del[0], setDelConfirm = _useState_del[1];
+  var _useState_delBusy = useState(false), delBusy = _useState_delBusy[0], setDelBusy = _useState_delBusy[1];
+  var doDeleteAccount = function doDeleteAccount() {
+    if (delBusy) return;
+    setDelBusy(true);
+    /* Auth users can only be removed server-side: this calls a SECURITY DEFINER
+       Postgres function `delete_account` that deletes auth.users for auth.uid(). */
+    Promise.resolve(supabase.rpc("delete_account")).then(function (res) {
+      setDelBusy(false);
+      if (res && res.error) { window.alert("Could not delete account: " + res.error.message); return; }
+      setDelConfirm(false);
+      supabase.auth.signOut();
+    }, function () { setDelBusy(false); window.alert("Could not delete your account. Please try again."); });
+  };
   var savePassword = function savePassword() {
     if (acctBusy) return;
     var emailAddr = (user && user.email) || "";
@@ -11079,7 +11407,7 @@ function ProfilePage(_ref42) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "0 20px",
-      paddingBottom: "calc(24px + env(safe-area-inset-bottom))",
+      paddingBottom: "calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       display: "flex",
       flexDirection: "column",
       gap: 14,
@@ -11095,7 +11423,7 @@ function ProfilePage(_ref42) {
       zIndex: 50,
       margin: "0 -20px",
       padding: "16px 20px 12px",
-      paddingTop: "calc(16px + env(safe-area-inset-top))",
+      paddingTop: "calc(16px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
       background: C.surface,
       borderBottom: "1px solid " + C.line
     }
@@ -11235,7 +11563,7 @@ function ProfilePage(_ref42) {
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT, maxHeight: "88vh", overflowY: "auto" }
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT, maxHeight: "88vh", overflowY: "auto" }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -11250,6 +11578,7 @@ function ProfilePage(_ref42) {
         /* Session settings — mirrors the in-session settings sheet */
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: "2px 2px 0" } }, "Session"),
         /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
+        /*#__PURE__*/React.createElement(SpeedControl, { value: deckSettings.voiceSpeed, onChange: function (v) { setVoiceSpeed(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v }); }); }, label: "Voice speed", sub: "How fast cards are read aloud" }),
         /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
         /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
         /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
@@ -11280,7 +11609,33 @@ function ProfilePage(_ref42) {
           onClick: onSignOut,
           className: "press",
           style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 20 }
-        }, "Sign out")
+        }, "Sign out"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setDelConfirm(true); },
+          className: "press",
+          style: { width: "100%", padding: 12, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: FONT, marginTop: 8, textDecoration: "underline", textUnderlineOffset: "3px" }
+        }, "Delete account")
+      )
+    ), document.body),
+  delConfirm && /*#__PURE__*/ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 700, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget && !delBusy) setDelConfirm(false); }
+    },
+      /*#__PURE__*/React.createElement("div", { className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "22px 22px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT } },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { width: 52, height: 52, borderRadius: 16, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" } },
+          /*#__PURE__*/React.createElement(Icon, { name: "triangle-exclamation", size: 22, color: C.red })),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, textAlign: "center", marginBottom: 6, letterSpacing: -0.3 } }, "Delete your account?"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, textAlign: "center", lineHeight: 1.45, marginBottom: 20 } }, "This permanently deletes your account, progress, decks and stats. This can't be undone."),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: doDeleteAccount, disabled: delBusy, className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: C.red, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT, opacity: delBusy ? 0.6 : 1 }
+        }, delBusy ? "Deleting…" : "Delete my account"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { if (!delBusy) setDelConfirm(false); }, className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 6 }
+        }, "Cancel")
       )
     ), document.body),
   acct && /*#__PURE__*/ReactDOM.createPortal(
@@ -11290,7 +11645,7 @@ function ProfilePage(_ref42) {
     },
       /*#__PURE__*/React.createElement("div", {
         className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: acctKb.open ? "16px 20px 18px" : "16px 20px calc(28px + env(safe-area-inset-bottom))", boxSizing: "border-box", fontFamily: FONT }
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: acctKb.open ? "16px 20px 18px" : "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
       },
         /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
         /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
@@ -11373,7 +11728,7 @@ function ProfilePage(_ref42) {
           ),
         ),
         /* Fixed bottom: save */
-        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 20px calc(28px + env(safe-area-inset-bottom))", flexShrink: 0, borderTop: "1px solid " + C.line } },
+        /*#__PURE__*/React.createElement("div", { style: { padding: "12px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", flexShrink: 0, borderTop: "1px solid " + C.line } },
           /*#__PURE__*/React.createElement("button", {
             onClick: function onClick() { save(); setTimeout(function() { setEditModal(false); }, 350); },
             disabled: !anyDirty,
@@ -11754,8 +12109,8 @@ function ExamComplete(_ref_ec) {
       display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "center",
       background: bgGrad,
       padding: "0 24px",
-      paddingTop: "calc(20px + env(safe-area-inset-top))",
-      paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+      paddingTop: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
+      paddingBottom: "calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       overflow: "hidden"
     };
   };
@@ -11845,8 +12200,8 @@ function ExamComplete(_ref_ec) {
       display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "center",
       background: passed ? "linear-gradient(160deg,#EDFFF5 0%,#F5F4FB 55%)" : "linear-gradient(160deg,#FFF2F2 0%,#F5F4FB 55%)",
       padding: "0 24px",
-      paddingTop: "calc(20px + env(safe-area-inset-top))",
-      paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+      paddingTop: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
+      paddingBottom: "calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       overflow: "hidden"
     }
   },
@@ -11942,7 +12297,9 @@ function SessionComplete(_ref47) {
     totalCards = _ref47.totalCards,
     knownCards = _ref47.knownCards,
     sessionSeconds = _ref47.sessionSeconds,
-    isFirstSessionToday = _ref47.isFirstSessionToday;
+    isFirstSessionToday = _ref47.isFirstSessionToday,
+    reviewSetAside = _ref47.reviewSetAside || 0,
+    onReview = _ref47.onReview;
   /* page: "claim" → "stats" → ["badge"] → ["streak"] */
   var _useState_page = useState(function () {
     /* Zero-point rounds (all repeats/custom) skip the claim & total-points
@@ -12150,6 +12507,23 @@ function SessionComplete(_ref47) {
     return out;
   })();
 
+  /* "Review now" button — only when this round set cards aside (left swipes).
+     Tells the user where those cards went and jumps straight into reviewing them. */
+  var reviewNowBtn = function reviewNowBtn() {
+    if (!(reviewSetAside > 0) || typeof onReview !== "function") return null;
+    var s = reviewSetAside === 1 ? "" : "s";
+    return /*#__PURE__*/React.createElement("button", {
+      onClick: onReview,
+      className: "press",
+      style: { width: "100%", marginTop: 10, padding: "10px 14px", borderRadius: 14, border: "1px solid " + C.line, background: C.surface, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }
+    },
+      /*#__PURE__*/React.createElement(Icon, { name: "rotate-left", size: 14, color: C.red }),
+      /*#__PURE__*/React.createElement("div", { style: { textAlign: "left" } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.ink } }, reviewSetAside + " card" + s + " saved to your Review deck"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.red, marginTop: 1 } }, "Tap to review " + (reviewSetAside === 1 ? "it" : "these " + reviewSetAside) + " now")
+      )
+    );
+  };
   /* Icon-only share button that sits next to the primary Continue button */
   var shareIconBtn = function shareIconBtn() {
     return /*#__PURE__*/React.createElement("button", {
@@ -12165,8 +12539,8 @@ function SessionComplete(_ref47) {
       display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "center",
       background: bgGrad,
       padding: "0 24px",
-      paddingTop: "calc(20px + env(safe-area-inset-top))",
-      paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+      paddingTop: "calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top)))",
+      paddingBottom: "calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
       overflow: "hidden"
     };
   };
@@ -12267,7 +12641,8 @@ function SessionComplete(_ref47) {
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: C.ink, marginTop: 4 } }, timeStr),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 1 } }, "time")
           )
-        )
+        ),
+        reviewNowBtn()
       ),
       /*#__PURE__*/React.createElement("div", { style: { width: "100%", zIndex: 10 } },
         shareMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.green, fontWeight: 700, marginBottom: 10 } }, shareMsg),
@@ -12397,7 +12772,8 @@ function SessionComplete(_ref47) {
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: C.ink, marginTop: 4 } }, timeStr),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 1 } }, "time")
           )
-        )
+        ),
+        reviewNowBtn()
       ),
       /*#__PURE__*/React.createElement("div", { className: "rise", style: { animationDelay: ".4s", width: "100%", zIndex: 10 } },
         /*#__PURE__*/React.createElement(PrimaryButton, { onClick: onContinue }, "Continue")
