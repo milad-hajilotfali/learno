@@ -3,10 +3,14 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
-  <title>Oosta</title>
+  <title>OOSTA</title>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="OOSTA"/>
+  <meta name="application-name" content="OOSTA"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="theme-color" content="#5A4FE3"/>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+  <link rel="icon" type="image/png" href="apple-touch-icon.png"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -4819,28 +4823,19 @@ function Welcome(_ref15) {
       alignItems: "center",
       textAlign: "center"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("img", {
+    src: "app-icon.png",
+    alt: "Oosta",
     style: {
       width: 96,
       height: 96,
       borderRadius: 28,
-      background: "linear-gradient(135deg,#6A5BFF,#A06BFF)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
+      display: "block",
+      objectFit: "cover",
       boxShadow: "0 16px 36px " + C.primary + "55",
       marginBottom: 16
     }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 56,
-      fontWeight: 900,
-      color: "#fff",
-      lineHeight: 1,
-      fontFamily: FONT,
-      letterSpacing: -2
-    }
-  }, "O")), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
       fontWeight: 800,
