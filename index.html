@@ -175,6 +175,18 @@ if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
   };
 })();
 
+/* Legal document URLs (hosted on the live web app) + opener that uses the
+   native in-app browser when available so the app isn't navigated away. */
+window.MEMZY_PRIVACY_URL = "https://milad-hajilotfali.github.io/learno/privacy.html";
+window.MEMZY_TERMS_URL = "https://milad-hajilotfali.github.io/learno/terms.html";
+window.__memzyOpenURL = function (url) {
+  try {
+    var B = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+    if (B && B.open) { B.open({ url: url }); return; }
+  } catch (e) {}
+  try { window.open(url, "_blank", "noopener"); } catch (e2) {}
+};
+
 /* ── Local notifications bridge (on-device, no server) ──
    Schedules a daily streak reminder at 20:00 local time, gated by the "Reminders"
    preference (memzy_notif_reminders). Reschedule on launch and after each session
@@ -11395,7 +11407,7 @@ function ProfilePage(_ref42) {
   var settingsSectionLabel = function settingsSectionLabel(t, mt) {
     return /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.6, margin: (mt == null ? 18 : mt) + "px 2px 4px" } }, t);
   };
-  var settingsNavRow = function settingsNavRow(icon, iconBg, iconColor, title, sub, onClick) {
+  var settingsNavRow = function settingsNavRow(icon, iconBg, iconColor, title, sub, onClick, badge) {
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick, className: "press",
       style: { width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "14px 0", border: "none", borderBottom: "1px solid " + C.line, background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
@@ -11405,7 +11417,28 @@ function ProfilePage(_ref42) {
       /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.ink } }, title),
         sub && /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, sub)),
+      badge && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: C.primary, background: C.primarySoft, borderRadius: 8, padding: "3px 9px", flexShrink: 0 } }, badge),
       /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 13, color: C.sub })
+    );
+  };
+  /* Small inline text link (Privacy / Terms), opens in the system browser */
+  var legalLinks = /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 18, flexWrap: "wrap" }
+  },
+    /*#__PURE__*/React.createElement("button", { onClick: function () { window.__memzyOpenURL(window.MEMZY_PRIVACY_URL); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Privacy Policy"),
+    /*#__PURE__*/React.createElement("span", { style: { color: C.line, fontSize: 12 } }, "·"),
+    /*#__PURE__*/React.createElement("button", { onClick: function () { window.__memzyOpenURL(window.MEMZY_TERMS_URL); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Terms of Use")
+  );
+  /* Teaser plan card for the Membership page (non-functional until IAP is wired) */
+  var planCard = function planCard(name, price, sub, best) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { position: "relative", background: C.surface, border: "1.5px solid " + (best ? C.primary : C.line), borderRadius: 16, padding: "14px 16px", marginBottom: 10 }
+    },
+      best && /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: -9, right: 14, fontSize: 10, fontWeight: 800, color: "#fff", background: C.primary, borderRadius: 8, padding: "2px 8px", letterSpacing: 0.3 } }, "BEST VALUE"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.ink } }, name),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 800, color: C.primary } }, price)),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 3 } }, sub)
     );
   };
   /* Account modals: null | "password" | "email" (open on top of Settings) */
@@ -11607,7 +11640,7 @@ function ProfilePage(_ref42) {
   /* Settings as in-flow pages so the bottom TabBar stays visible. Sticky footer
      holds the page-level action (Sign out / Delete account) above the TabBar. */
   if (settingsPage) {
-    var settingsTitle = settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : "Settings";
+    var settingsTitle = settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : settingsPage === "membership" ? "Membership" : "Settings";
     var settingsFooter = settingsPage === "settings"
       ? /*#__PURE__*/React.createElement("button", {
           onClick: onSignOut, className: "press",
@@ -11647,10 +11680,13 @@ function ProfilePage(_ref42) {
         },
           /* ── Settings hub ── */
           settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
-            settingsSectionLabel("General", 4),
+            settingsSectionLabel("Membership", 4),
+            settingsNavRow("crown", C.amber + "22", C.amber, "Membership", "Your current plan", function () { setSettingsPage("membership"); }, "Free"),
+            settingsSectionLabel("General"),
             settingsNavRow("sliders", C.primarySoft, C.primary, "Preferences", "Session, sound and haptics", function () { setSettingsPage("preferences"); }),
             settingsNavRow("bell", C.primarySoft, C.primary, "Notifications", "Choose what we notify you about", function () { setSettingsPage("notifications"); }),
-            settingsNavRow("shield-halved", C.primarySoft, C.primary, "Account management", "Password, email and account", function () { setSettingsPage("account"); })
+            settingsNavRow("shield-halved", C.primarySoft, C.primary, "Account management", "Password, email and account", function () { setSettingsPage("account"); }),
+            legalLinks
           ),
           /* ── Preferences ── */
           settingsPage === "preferences" && /*#__PURE__*/React.createElement(React.Fragment, null,
@@ -11677,6 +11713,23 @@ function ProfilePage(_ref42) {
             /*#__PURE__*/React.createElement(Toggle, { on: notif.friends, onChange: function (v) { setNotifPref("friends", v); }, label: "Friends", sub: "When someone follows you or sends a hear" }),
             /*#__PURE__*/React.createElement(Toggle, { on: notif.leaderboard, onChange: function (v) { setNotifPref("leaderboard", v); }, label: "Leaderboard updates", sub: "Weekly ranking changes and results" }),
             /*#__PURE__*/React.createElement(Toggle, { on: notif.announce, onChange: function (v) { setNotifPref("announce", v); }, label: "Announcements", sub: "New features, promotions and events" })
+          ),
+          /* ── Membership (placeholder; plans wired to real IAP later) ── */
+          settingsPage === "membership" && /*#__PURE__*/React.createElement(React.Fragment, null,
+            /*#__PURE__*/React.createElement("div", { style: { marginTop: 6, background: C.surface, border: "1px solid " + C.line, borderRadius: 16, padding: "16px", display: "flex", alignItems: "center", gap: 13 } },
+              /*#__PURE__*/React.createElement("div", { style: { width: 42, height: 42, borderRadius: 12, background: C.greenSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                /*#__PURE__*/React.createElement(Icon, { name: "circle-check", size: 18, color: C.green })),
+              /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 800, color: C.ink } }, "Free plan"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Full access to the core course."))
+            ),
+            settingsSectionLabel("Memzy Plus"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, lineHeight: 1.45, margin: "2px 2px 14px" } }, "Bonus decks, unlimited practice and more — launching soon."),
+            planCard("Monthly", "$5.99", "Billed monthly", false),
+            planCard("Annual", "$34.99 / yr", "About $2.92/mo · 7-day free trial", true),
+            planCard("Lifetime", "$69.99", "One-time payment, yours forever", false),
+            /*#__PURE__*/React.createElement("button", { disabled: true, style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: C.line, color: C.sub, fontWeight: 800, fontSize: 15, cursor: "default", fontFamily: FONT, marginTop: 4 } }, "Coming soon"),
+            legalLinks
           )
         ),
         /* Sticky footer (above the TabBar) */
