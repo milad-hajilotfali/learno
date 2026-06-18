@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
-  <title>Memzy</title>
+  <title>Oosta</title>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="theme-color" content="#5A4FE3"/>
@@ -939,7 +939,7 @@ var REWARDS = [{
   icon: "gem"
 }, {
   at: 5000,
-  name: "Memzy Legend",
+  name: "Oosta Legend",
   icon: "crown"
 }];
 /* Highest reward/badge earned for a given points total (or null) */
@@ -1139,7 +1139,7 @@ function _ttsFetchBuf(text, tl) {
       res(buf);
     };
     /* Single call to our TTS proxy — keys stay server-side. Attach the user's
-       Supabase token so the worker only serves signed-in Memzy users. The
+       Supabase token so the worker only serves signed-in Oosta users. The
        worker builds the Azure SSML (incl. question intonation) / Google request. */
     var tokenP = _supaToken ? Promise.resolve(_supaToken)
       : supabase.auth.getSession().then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || null; });
@@ -4709,18 +4709,18 @@ function App() {
     document.body
   ), showInstall && /*#__PURE__*/React.createElement(Sheet, {
     onClose: dismissInstall,
-    title: "Add Memzy to your Home Screen"
+    title: "Add Oosta to your Home Screen"
   },
-    /*#__PURE__*/React.createElement("p", { style: { fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "0 0 18px" } }, "Install Memzy for a full-screen, app-like experience that opens instantly and works offline."),
+    /*#__PURE__*/React.createElement("p", { style: { fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "0 0 18px" } }, "Install Oosta for a full-screen, app-like experience that opens instantly and works offline."),
     _isIOSDevice
       ? /*#__PURE__*/React.createElement("div", null,
           a2hsStep(1, "Tap the Share button", "It's at the bottom of Safari (a square with an up arrow).", "arrow-up-from-bracket"),
           a2hsStep(2, "Choose \u201CAdd to Home Screen\u201D", "Scroll the share menu to find it.", "plus"),
-          a2hsStep(3, "Tap \u201CAdd\u201D", "Memzy lands on your home screen like an app.", "check"),
+          a2hsStep(3, "Tap \u201CAdd\u201D", "Oosta lands on your home screen like an app.", "check"),
           /*#__PURE__*/React.createElement(PrimaryButton, { onClick: dismissInstall, style: { marginTop: 4 } }, "Got it")
         )
       : (installEvtRef.current
-          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: doInstall, glow: true }, "Install Memzy")
+          ? /*#__PURE__*/React.createElement(PrimaryButton, { onClick: doInstall, glow: true }, "Install Oosta")
           : /*#__PURE__*/React.createElement("div", null,
               /*#__PURE__*/React.createElement("p", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.5, margin: "0 0 14px" } }, "Open your browser menu (\u22EE) and choose \u201CAdd to Home screen\u201D or \u201CInstall app\u201D."),
               /*#__PURE__*/React.createElement(PrimaryButton, { onClick: dismissInstall }, "Got it")
@@ -4769,7 +4769,7 @@ function ResetPasswordScreen() {
       ? /*#__PURE__*/React.createElement(React.Fragment, null,
           /*#__PURE__*/React.createElement("h1", { style: { fontSize: 21, fontWeight: 900, color: C.ink, margin: "0 0 6px", letterSpacing: -0.5 } }, "Password updated!"),
           /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, lineHeight: 1.5, marginBottom: 22 } }, "You're signed in with your new password."),
-          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: finish }, "Continue to Memzy")
+          /*#__PURE__*/React.createElement(PrimaryButton, { onClick: finish }, "Continue to Oosta")
         )
       : /*#__PURE__*/React.createElement(React.Fragment, null,
           /*#__PURE__*/React.createElement("h1", { style: { fontSize: 21, fontWeight: 900, color: C.ink, margin: "0 0 6px", letterSpacing: -0.5 } }, "Set a new password"),
@@ -4840,7 +4840,7 @@ function Welcome(_ref15) {
       fontFamily: FONT,
       letterSpacing: -2
     }
-  }, "M")), /*#__PURE__*/React.createElement("div", {
+  }, "O")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
       fontWeight: 800,
@@ -4848,7 +4848,7 @@ function Welcome(_ref15) {
       letterSpacing: 3,
       marginBottom: 8
     }
-  }, "MEMZY"), /*#__PURE__*/React.createElement("h1", {
+  }, "OOSTA"), /*#__PURE__*/React.createElement("h1", {
     style: {
       fontSize: 34,
       fontWeight: 800,
@@ -6934,7 +6934,7 @@ function Dashboard(_ref27) {
           /*#__PURE__*/React.createElement(Icon, { name: allDone ? "trophy" : "lock", size: allDone ? 18 : 15, color: allDone ? "#fff" : "#B9B5CC" })),
         /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
           /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: allDone ? "#fff" : "#B9B5CC", letterSpacing: -0.3 } },
-            allDone ? "Journey complete!" : "Memzy Certificate"),
+            allDone ? "Journey complete!" : "Oosta Certificate"),
           /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 700, color: allDone ? "rgba(255,255,255,0.9)" : "#C9C5DD", marginTop: 2 } },
             allDone ? "Every chapter mastered — incredible." : "Master every chapter to earn it")
         ),
@@ -11544,7 +11544,7 @@ function ProfilePage(_ref42) {
         while (1) switch (_context0.n) {
           case 0:
             setShareMsg("Preparing…");
-            text = "I'm learning languages with Memzy!\n⭐ " + allPoints + " points · 🔥 " + dayStreak + "-day streak\nJoin me at memzy.app!";
+            text = "I'm learning languages with Oosta!\n⭐ " + allPoints + " points · 🔥 " + dayStreak + "-day streak\nJoin me at oosta.app!";
             _context0.n = 1;
             return shareImage(cardRef.current, text, "memzy-profile.png", C.surface);
           case 1:
@@ -11736,7 +11736,7 @@ function ProfilePage(_ref42) {
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 15.5, fontWeight: 800, color: C.ink } }, "Free plan"),
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Full access to the core course."))
             ),
-            settingsSectionLabel("Memzy Plus"),
+            settingsSectionLabel("Oosta Plus"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, lineHeight: 1.45, margin: "2px 2px 14px" } }, "Bonus decks, unlimited practice and more — launching soon."),
             planCard("Monthly", "$5.99", "Billed monthly", false),
             planCard("Annual", "$34.99 / yr", "About $2.92/mo · 7-day free trial", true),
@@ -11895,7 +11895,7 @@ function ProfilePage(_ref42) {
       color: C.sub,
       textAlign: "center"
     }
-  }, "memzy.app \xB7 learning together"))), shareMsg && /*#__PURE__*/React.createElement("div", {
+  }, "oosta.app \xB7 learning together"))), shareMsg && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       fontSize: 12.5,
@@ -12328,8 +12328,8 @@ function ExamComplete(_ref_ec) {
     if (sharingRef.current) return;
     sharingRef.current = true;
     var msg = passed
-      ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy! \uD83C\uDF89 " + correct + "/" + total + " correct. memzy.app"
-      : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Memzy \uD83D\uDCAA " + correct + "/" + total + ". memzy.app";
+      ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Oosta! \uD83C\uDF89 " + correct + "/" + total + " correct. oosta.app"
+      : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Oosta \uD83D\uDCAA " + correct + "/" + total + ". oosta.app";
     setExamShareMsg("Preparing...");
     Promise.resolve(shareImage(capRef.current, msg, "memzy-exam.png", passed ? "#EDFFF5" : "#FFF2F2")).then(function (r) {
       if (r !== "shared" && r !== "downloaded") {
@@ -12690,7 +12690,7 @@ function SessionComplete(_ref47) {
         while (1) switch (_context1.n) {
           case 0:
             setShareMsg("Preparing...");
-            text = "Just finished a round in Memzy! " + points + " pts \u00B7 " + knownPct + "% known \u00B7 " + dayStreak + "-day streak. memzy.app";
+            text = "Just finished a round in Oosta! " + points + " pts \u00B7 " + knownPct + "% known \u00B7 " + dayStreak + "-day streak. oosta.app";
             _context1.n = 1;
             return shareImage(capRef.current, text, "memzy-result.png", C.bg);
           case 1:
