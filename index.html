@@ -4023,6 +4023,7 @@ function App() {
       dayStreak: dayStreak,
       userId: user && user.id,
       onBonusPoints: commitRound,
+      onRetry: function onRetry() { startLevelExam(examMode.level); },
       isFirstSessionToday: (function () {
         var shown = false;
         try { shown = localStorage.getItem(streakShownKey(user && user.id)) === "1"; } catch (e) {}
@@ -11527,6 +11528,140 @@ function ProfilePage(_ref42) {
     value: "de",
     label: "German (Deutsch)"
   }];
+  /* Account modals — shared by the profile view and the settings pages (portals
+     to body, so they overlay whichever is on screen). */
+  var delConfirmEl = delConfirm && /*#__PURE__*/ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 700, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget && !delBusy) setDelConfirm(false); }
+    },
+      /*#__PURE__*/React.createElement("div", { className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "22px 22px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT } },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { width: 52, height: 52, borderRadius: 16, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" } },
+          /*#__PURE__*/React.createElement(Icon, { name: "triangle-exclamation", size: 22, color: C.red })),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, textAlign: "center", marginBottom: 6, letterSpacing: -0.3 } }, "Delete your account?"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, textAlign: "center", lineHeight: 1.45, marginBottom: 20 } }, "This permanently deletes your account, progress, decks and stats. This can't be undone."),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: doDeleteAccount, disabled: delBusy, className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: C.red, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT, opacity: delBusy ? 0.6 : 1 }
+        }, delBusy ? "Deleting…" : "Delete my account"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { if (!delBusy) setDelConfirm(false); }, className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 6 }
+        }, "Cancel")
+      )
+    ), document.body);
+  var acctModalEl = acct && /*#__PURE__*/ReactDOM.createPortal(
+    /*#__PURE__*/React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 450, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: acctKb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
+      onClick: function onClick(e) { if (e.target === e.currentTarget) closeAcct(); }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        className: "sheet-in",
+        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: acctKb.open ? "16px 20px 18px" : "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, acct === "password" ? "Change password" : "Change email"),
+          /*#__PURE__*/React.createElement("button", { onClick: closeAcct, className: "press", "aria-label": "Close", style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
+        ),
+        acct === "password"
+          ? /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("input", { type: "password", autoFocus: true, value: oldPw, onChange: function (e) { setOldPw(e.target.value); }, placeholder: "Current password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+              /*#__PURE__*/React.createElement("input", { type: "password", value: pw, onChange: function (e) { setPw(e.target.value); }, placeholder: "New password (min 6 chars)", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+              /*#__PURE__*/React.createElement("input", { type: "password", value: confirmPw, onChange: function (e) { setConfirmPw(e.target.value); }, placeholder: "Confirm new password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } })
+            )
+          : /*#__PURE__*/React.createElement("input", { type: "email", autoFocus: true, value: em, onChange: function (e) { setEm(e.target.value); }, placeholder: "New email address", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
+        acctMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, lineHeight: 1.45, margin: "0 2px 12px", color: (/could not|incorrect|don't match|at least|valid|enter your/i.test(acctMsg)) ? C.red : C.green } }, acctMsg),
+        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: acct === "password" ? savePassword : saveEmail, disabled: acctBusy }, acctBusy ? "Saving…" : (acct === "password" ? "Update password" : "Update email"))
+      )
+    ),
+    document.body
+  );
+  /* Settings as in-flow pages so the bottom TabBar stays visible. Sticky footer
+     holds the page-level action (Sign out / Delete account) above the TabBar. */
+  if (settingsPage) {
+    var settingsTitle = settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : "Settings";
+    var settingsFooter = settingsPage === "settings"
+      ? /*#__PURE__*/React.createElement("button", {
+          onClick: onSignOut, className: "press",
+          style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT }
+        }, "Sign out")
+      : settingsPage === "account"
+      ? /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() { setDelConfirm(true); }, className: "press",
+          style: { width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "8px 0", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 11, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+            /*#__PURE__*/React.createElement(Icon, { name: "trash", size: 15, color: C.red })),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.red } }, "Delete account"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Permanently remove your account and data")))
+      : null;
+    return /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("div", {
+        key: settingsPage, className: "page-slide",
+        style: { height: "100%", display: "flex", flexDirection: "column", background: C.bg, fontFamily: FONT, overflow: "hidden" }
+      },
+        /* Header: back + title (matches deck/chapter pages) */
+        /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderBottom: "1px solid " + C.line, flexShrink: 0 } },
+          /*#__PURE__*/React.createElement("div", { style: { height: "var(--safe-area-inset-top, env(safe-area-inset-top))", background: C.surface } }),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" } },
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function onClick() { setSettingsPage(settingsPage === "settings" ? null : "settings"); },
+              className: "press", "aria-label": "Back",
+              style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-left", size: 16, color: C.ink })),
+            /*#__PURE__*/React.createElement("h1", { style: { fontSize: 19, fontWeight: 800, color: C.ink, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, settingsTitle)
+          )
+        ),
+        /* Scrollable body */
+        /*#__PURE__*/React.createElement("div", {
+          style: { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "none", padding: "10px 20px 20px" }
+        },
+          /* ── Settings hub ── */
+          settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
+            settingsSectionLabel("General", 4),
+            settingsNavRow("sliders", C.primarySoft, C.primary, "Preferences", "Session, sound and haptics", function () { setSettingsPage("preferences"); }),
+            settingsNavRow("bell", C.primarySoft, C.primary, "Notifications", "Choose what we notify you about", function () { setSettingsPage("notifications"); }),
+            settingsNavRow("shield-halved", C.primarySoft, C.primary, "Account management", "Password, email and account", function () { setSettingsPage("account"); })
+          ),
+          /* ── Preferences ── */
+          settingsPage === "preferences" && /*#__PURE__*/React.createElement(React.Fragment, null,
+            settingsSectionLabel("Session", 4),
+            /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
+            /*#__PURE__*/React.createElement(SpeedControl, { value: deckSettings.voiceSpeed, onChange: function (v) { setVoiceSpeed(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v }); }); }, label: "Voice speed", sub: "How fast cards are read aloud" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.showEnglishFirst, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { showEnglishFirst: v }); }); }, label: "Show English first", sub: "Flip the card to reveal the target language" }),
+            settingsSectionLabel("Sound & haptics"),
+            /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: haptics, onChange: toggleHaptics, label: "Haptic feedback", sub: "Subtle vibration on swipes and rewards" })
+          ),
+          /* ── Account management ── */
+          settingsPage === "account" && /*#__PURE__*/React.createElement(React.Fragment, null,
+            /*#__PURE__*/React.createElement("div", { style: { height: 4 } }),
+            settingsNavRow("lock", C.primarySoft, C.primary, "Change password", "Update your account password", function () { openAcct("password"); }),
+            settingsNavRow("envelope", C.primarySoft, C.primary, "Change email", "Change your sign-in address", function () { openAcct("email"); })
+          ),
+          /* ── Notifications ── */
+          settingsPage === "notifications" && /*#__PURE__*/React.createElement(React.Fragment, null,
+            /*#__PURE__*/React.createElement("div", { style: { height: 4 } }),
+            /*#__PURE__*/React.createElement(Toggle, { on: notif.reminders, onChange: function (v) { setNotifPref("reminders", v); }, label: "Reminders", sub: "Streak nudges and daily practice reminders" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: notif.friends, onChange: function (v) { setNotifPref("friends", v); }, label: "Friends", sub: "When someone follows you or sends a hear" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: notif.leaderboard, onChange: function (v) { setNotifPref("leaderboard", v); }, label: "Leaderboard updates", sub: "Weekly ranking changes and results" }),
+            /*#__PURE__*/React.createElement(Toggle, { on: notif.announce, onChange: function (v) { setNotifPref("announce", v); }, label: "Announcements", sub: "New features, promotions and events" })
+          )
+        ),
+        /* Sticky footer (above the TabBar) */
+        settingsFooter && /*#__PURE__*/React.createElement("div", {
+          style: { flexShrink: 0, padding: "8px 20px 14px" }
+        }, settingsFooter)
+      ),
+      delConfirmEl,
+      acctModalEl
+    );
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "0 20px",
@@ -11678,133 +11813,8 @@ function ProfilePage(_ref42) {
   }, shareMsg), globalHistory && globalHistory.length > 0 && /*#__PURE__*/React.createElement(PointsChart, {
     history: globalHistory
   }),
-  /* Settings — full-screen pages (Settings / Account management / Notifications).
-     Rendered over the profile + tab bar; the change-password/email/delete modals
-     below still portal above this layer. */
-  settingsPage && /*#__PURE__*/ReactDOM.createPortal(
-    /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, zIndex: 400, background: C.bg, display: "flex", justifyContent: "center", fontFamily: FONT }
-    },
-      /* Constrained to the app Shell width; slides in right-to-left per page change */
-      /*#__PURE__*/React.createElement("div", {
-        key: settingsPage, className: "page-slide",
-        style: { width: "100%", maxWidth: 440, height: "100%", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden", background: C.bg }
-      },
-      /* Standard header: back + title (matches deck/chapter pages) */
-      /*#__PURE__*/React.createElement("div", { style: { background: C.surface, borderBottom: "1px solid " + C.line, flexShrink: 0 } },
-        /*#__PURE__*/React.createElement("div", { style: { height: "var(--safe-area-inset-top, env(safe-area-inset-top))", background: C.surface } }),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" } },
-          /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { setSettingsPage(settingsPage === "settings" ? null : "settings"); },
-            className: "press", "aria-label": "Back",
-            style: { width: 38, height: 38, borderRadius: 12, border: "1.5px solid " + C.line, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
-          }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-left", size: 16, color: C.ink })),
-          /*#__PURE__*/React.createElement("h1", { style: { fontSize: 19, fontWeight: 800, color: C.ink, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
-            settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : "Settings")
-        )
-      ),
-      /* Scrollable body */
-      /*#__PURE__*/React.createElement("div", {
-        style: { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "none", padding: "10px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))" }
-      },
-        /* ── Settings (hub: nav rows only) ── */
-        settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
-          settingsSectionLabel("General", 4),
-          settingsNavRow("sliders", C.primarySoft, C.primary, "Preferences", "Session, sound and haptics", function () { setSettingsPage("preferences"); }),
-          settingsNavRow("bell", C.primarySoft, C.primary, "Notifications", "Choose what we notify you about", function () { setSettingsPage("notifications"); }),
-          settingsNavRow("shield-halved", C.primarySoft, C.primary, "Account management", "Password, email and account", function () { setSettingsPage("account"); }),
-          /*#__PURE__*/React.createElement("button", {
-            onClick: onSignOut, className: "press",
-            style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.red + "44", background: C.surface, color: C.red, fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 24 }
-          }, "Sign out")
-        ),
-        /* ── Preferences (session, sound, haptics) ── */
-        settingsPage === "preferences" && /*#__PURE__*/React.createElement(React.Fragment, null,
-          settingsSectionLabel("Session", 4),
-          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.autoSpeak, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { autoSpeak: v }); }); }, label: "Auto-speak card", sub: "Read each card aloud automatically" }),
-          /*#__PURE__*/React.createElement(SpeedControl, { value: deckSettings.voiceSpeed, onChange: function (v) { setVoiceSpeed(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { voiceSpeed: v }); }); }, label: "Voice speed", sub: "How fast cards are read aloud" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.onlyUnknown, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { onlyUnknown: v }); }); }, label: "Only unknown cards", sub: "Skip cards you've already learned" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.showEnglishFirst, onChange: function (v) { setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { showEnglishFirst: v }); }); }, label: "Show English first", sub: "Flip the card to reveal the target language" }),
-          settingsSectionLabel("Sound & haptics"),
-          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.sfx, onChange: function (v) { setSFXEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { sfx: v }); }); }, label: "Swipe sounds", sub: "A tick on every card swipe" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: deckSettings.celebSfx, onChange: function (v) { setCelebEnabled(v); setDeckSettings(function (s) { return _objectSpread(_objectSpread({}, s), {}, { celebSfx: v }); }); }, label: "Celebration sounds", sub: "Round finish, streaks and rewards" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: haptics, onChange: toggleHaptics, label: "Haptic feedback", sub: "Subtle vibration on swipes and rewards" })
-        ),
-        /* ── Account management ── */
-        settingsPage === "account" && /*#__PURE__*/React.createElement(React.Fragment, null,
-          settingsSectionLabel("Sign-in", 4),
-          settingsNavRow("lock", C.primarySoft, C.primary, "Change password", "Update your account password", function () { openAcct("password"); }),
-          settingsNavRow("envelope", C.primarySoft, C.primary, "Change email", "Change your sign-in address", function () { openAcct("email"); }),
-          settingsSectionLabel("Danger zone"),
-          /*#__PURE__*/React.createElement("button", {
-            onClick: function onClick() { setDelConfirm(true); }, className: "press",
-            style: { width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "14px 0", border: "none", background: "transparent", cursor: "pointer", fontFamily: FONT, textAlign: "left" }
-          },
-            /*#__PURE__*/React.createElement("div", { style: { width: 38, height: 38, borderRadius: 11, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-              /*#__PURE__*/React.createElement(Icon, { name: "trash", size: 15, color: C.red })),
-            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.red } }, "Delete account"),
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: C.sub, marginTop: 2 } }, "Permanently remove your account and data"))
-          )
-        ),
-        /* ── Notifications ── */
-        settingsPage === "notifications" && /*#__PURE__*/React.createElement(React.Fragment, null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.sub, lineHeight: 1.45, margin: "6px 2px 10px" } }, "Pick the updates worth a tap. You can change these anytime."),
-          /*#__PURE__*/React.createElement(Toggle, { on: notif.reminders, onChange: function (v) { setNotifPref("reminders", v); }, label: "Reminders", sub: "Streak nudges and daily practice reminders" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: notif.friends, onChange: function (v) { setNotifPref("friends", v); }, label: "Friends", sub: "When someone follows you or sends a hear" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: notif.leaderboard, onChange: function (v) { setNotifPref("leaderboard", v); }, label: "Leaderboard updates", sub: "Weekly ranking changes and results" }),
-          /*#__PURE__*/React.createElement(Toggle, { on: notif.announce, onChange: function (v) { setNotifPref("announce", v); }, label: "Announcements", sub: "New features, promotions and events" })
-        )
-      )
-    )), document.body),
-  delConfirm && /*#__PURE__*/ReactDOM.createPortal(
-    /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 700, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease both" },
-      onClick: function onClick(e) { if (e.target === e.currentTarget && !delBusy) setDelConfirm(false); }
-    },
-      /*#__PURE__*/React.createElement("div", { className: "sheet-in", style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: "22px 22px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT } },
-        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 18px" } }),
-        /*#__PURE__*/React.createElement("div", { style: { width: 52, height: 52, borderRadius: 16, background: C.red + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" } },
-          /*#__PURE__*/React.createElement(Icon, { name: "triangle-exclamation", size: 22, color: C.red })),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: C.ink, textAlign: "center", marginBottom: 6, letterSpacing: -0.3 } }, "Delete your account?"),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13.5, color: C.sub, textAlign: "center", lineHeight: 1.45, marginBottom: 20 } }, "This permanently deletes your account, progress, decks and stats. This can't be undone."),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: doDeleteAccount, disabled: delBusy, className: "press",
-          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: C.red, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT, opacity: delBusy ? 0.6 : 1 }
-        }, delBusy ? "Deleting…" : "Delete my account"),
-        /*#__PURE__*/React.createElement("button", {
-          onClick: function onClick() { if (!delBusy) setDelConfirm(false); }, className: "press",
-          style: { width: "100%", padding: 14, borderRadius: 14, border: "none", background: "transparent", color: C.sub, fontWeight: 700, fontSize: 14.5, cursor: "pointer", fontFamily: FONT, marginTop: 6 }
-        }, "Cancel")
-      )
-    ), document.body),
-  acct && /*#__PURE__*/ReactDOM.createPortal(
-    /*#__PURE__*/React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 450, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: acctKb.inset, boxSizing: "border-box", animation: "fadeIn .2s ease both" },
-      onClick: function onClick(e) { if (e.target === e.currentTarget) closeAcct(); }
-    },
-      /*#__PURE__*/React.createElement("div", {
-        className: "sheet-in",
-        style: { background: C.surface, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, padding: acctKb.open ? "16px 20px 18px" : "16px 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))", boxSizing: "border-box", fontFamily: FONT }
-      },
-        /*#__PURE__*/React.createElement("div", { style: { width: 40, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 16px" } }),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 800, color: C.ink, letterSpacing: -0.4 } }, acct === "password" ? "Change password" : "Change email"),
-          /*#__PURE__*/React.createElement("button", { onClick: closeAcct, className: "press", "aria-label": "Close", style: { width: 30, height: 30, borderRadius: "50%", border: "1.5px solid " + C.line, background: C.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } }, /*#__PURE__*/React.createElement(Icon, { name: "xmark", size: 12, color: C.sub }))
-        ),
-        acct === "password"
-          ? /*#__PURE__*/React.createElement("div", null,
-              /*#__PURE__*/React.createElement("input", { type: "password", autoFocus: true, value: oldPw, onChange: function (e) { setOldPw(e.target.value); }, placeholder: "Current password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
-              /*#__PURE__*/React.createElement("input", { type: "password", value: pw, onChange: function (e) { setPw(e.target.value); }, placeholder: "New password (min 6 chars)", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
-              /*#__PURE__*/React.createElement("input", { type: "password", value: confirmPw, onChange: function (e) { setConfirmPw(e.target.value); }, placeholder: "Confirm new password", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } })
-            )
-          : /*#__PURE__*/React.createElement("input", { type: "email", autoFocus: true, value: em, onChange: function (e) { setEm(e.target.value); }, placeholder: "New email address", style: { width: "100%", padding: "12px 13px", fontSize: 15, borderRadius: 12, border: "1.5px solid " + C.line, outline: "none", fontFamily: FONT, color: C.ink, boxSizing: "border-box", marginBottom: 10 } }),
-        acctMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, lineHeight: 1.45, margin: "0 2px 12px", color: (/could not|incorrect|don't match|at least|valid|enter your/i.test(acctMsg)) ? C.red : C.green } }, acctMsg),
-        /*#__PURE__*/React.createElement(PrimaryButton, { onClick: acct === "password" ? savePassword : saveEmail, disabled: acctBusy }, acctBusy ? "Saving\u2026" : (acct === "password" ? "Update password" : "Update email"))
-      )
-    ),
-    document.body
-  ),
+  delConfirmEl,
+  acctModalEl,
   picker && /*#__PURE__*/React.createElement(AvatarPicker, {
     current: user && user.avatar,
     onPick: function onPick(a) {
@@ -12166,6 +12176,7 @@ function ExamComplete(_ref_ec) {
     isFirstSessionToday = _ref_ec.isFirstSessionToday,
     userId = _ref_ec.userId,
     onBonusPoints = _ref_ec.onBonusPoints,
+    onRetry = _ref_ec.onRetry,
     onContinue = _ref_ec.onContinue;
   var correctCu = useCountUp(correct, "examCorrect");
   var _dr = useState(false), drawn = _dr[0], setDrawn = _dr[1];
@@ -12406,17 +12417,21 @@ function ExamComplete(_ref_ec) {
     style: { animationDelay: ".4s", width: "100%", zIndex: 10 }
   },
     examShareMsg && /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.green, fontWeight: 700, marginBottom: 10, textAlign: "center" } }, examShareMsg),
-    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "stretch" } },
-    /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
-      /*#__PURE__*/React.createElement(PrimaryButton, {
-        onClick: onContinue,
-        style: passed ? { background: "#2DBF72" } : undefined
-      }, passed ? ("Go to " + LEVEL_LABEL[level]) : "Back to Home")),
-    /*#__PURE__*/React.createElement("button", {
-      onClick: doExamShare,
-      className: "press", "aria-label": "Share",
-      style: { width: 56, height: 56, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
-    }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 16, color: C.ink }))
+    /*#__PURE__*/React.createElement("div", { style: passed ? { display: "flex", gap: 10, alignItems: "stretch" } : { display: "flex", flexDirection: "column", gap: 10 } },
+      passed
+        ? /*#__PURE__*/React.createElement(React.Fragment, null,
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+              /*#__PURE__*/React.createElement(PrimaryButton, { onClick: onContinue, style: { background: "#2DBF72" } }, "Go to " + LEVEL_LABEL[level])),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: doExamShare, className: "press", "aria-label": "Share",
+              style: { width: 56, height: 56, borderRadius: 18, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+            }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 16, color: C.ink })))
+        : /*#__PURE__*/React.createElement(React.Fragment, null,
+            /*#__PURE__*/React.createElement(PrimaryButton, { onClick: onRetry }, "Retry exam"),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: onContinue, className: "press",
+              style: { width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.sub, fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: FONT }
+            }, "Back to Home"))
   )));
 }
 function SessionComplete(_ref47) {
