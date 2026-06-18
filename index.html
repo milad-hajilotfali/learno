@@ -2166,6 +2166,13 @@ function App() {
     _useState12 = _slicedToArray(_useState11, 2),
     user = _useState12[0],
     setUser = _useState12[1];
+  /* Oosta Plus membership — verified server-side via the is_plus() RPC, which
+     reads the service-role-only plus_members table. A client can never set this
+     to true on its own; it only reflects what the DB reports. */
+  var _useState_plus = useState(false),
+    _useState_plus2 = _slicedToArray(_useState_plus, 2),
+    isPlus = _useState_plus2[0],
+    setIsPlus = _useState_plus2[1];
   var _useState13 = useState([]),
     _useState14 = _slicedToArray(_useState13, 2),
     allCards = _useState14[0],
@@ -2559,6 +2566,16 @@ function App() {
   }, [tab]);
   var userRef = useRef(null);
   useEffect(function() { userRef.current = user; }, [user]);
+  /* Refresh Plus membership from the server whenever the signed-in user changes.
+     Logged-out / no user => always false. The DB is the source of truth. */
+  useEffect(function() {
+    if (!user || !user.id) { setIsPlus(false); return; }
+    var cancelled = false;
+    supabase.rpc("is_plus").then(function(res) {
+      if (!cancelled) setIsPlus(!res.error && res.data === true);
+    });
+    return function() { cancelled = true; };
+  }, [user && user.id]);
   var selectedLangsRef = useRef([]);
   useEffect(function() {
     selectedLangsRef.current = selectedLangs;
@@ -4467,6 +4484,7 @@ function App() {
   }, tab === "dashboard" && /*#__PURE__*/React.createElement(Dashboard, {
     scrollRef: scrollRef,
     user: user,
+    isPlus: isPlus,
     allCards: allCards,
     learnedIds: learnedIds,
     markedIds: markedIds,
@@ -4525,6 +4543,7 @@ function App() {
     onOpenDeck: function(type, level) { setOpenDeckType({ type: type, level: level || null }); _setTab("mywords"); }
   }), tab === "mywords" && /*#__PURE__*/React.createElement(MyFlashcardsPage, {
     scrollRef: scrollRef,
+    isPlus: isPlus,
     cardNotes: cardNotes,
     onEditNote: openNote,
     rechargeIds: rechargeInfo.ids,
@@ -4593,6 +4612,7 @@ function App() {
     }
   }), tab === "friends" && /*#__PURE__*/React.createElement(FriendsPage, {
     currentUser: user,
+    isPlus: isPlus,
     friends: friends,
     friendsLoaded: friendsLoaded,
     followers: followers,
@@ -4610,6 +4630,7 @@ function App() {
   }), tab === "profile" && /*#__PURE__*/React.createElement(ProfilePage, {
     user: user,
     setUser: setUser,
+    isPlus: isPlus,
     deckSettings: deckSettings,
     setDeckSettings: setDeckSettings,
     selectedLangs: selectedLangs,
@@ -6278,6 +6299,7 @@ function LevelChapterPicker(_ref26) {
 function Dashboard(_ref27) {
   var _CHAPTERS$curLevel2, _CHAPTERS$curLevel3;
   var user = _ref27.user,
+    isPlus = _ref27.isPlus,
     allCards = _ref27.allCards,
     learnedIds = _ref27.learnedIds,
     markedIds = _ref27.markedIds,
@@ -7295,7 +7317,9 @@ function Dashboard(_ref27) {
       overflow: "hidden",
       textOverflow: "ellipsis"
     }
-  }, cap(user && user.name || "there"), " \uD83D\uDC4B")), /*#__PURE__*/React.createElement("div", {
+  }, cap(user && user.name || "there"), " \uD83D\uDC4B",
+    isPlus && /*#__PURE__*/React.createElement("span", { title: "Oosta Plus", style: { display: "inline-flex", verticalAlign: "middle", marginLeft: 7, width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px " + C.primary + "55" } }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: "#FFD56A" }))
+  )), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -8449,6 +8473,7 @@ function MyFlashcardsPage(_ref31) {
     unlockedLevels = _ref31.unlockedLevels || ["A1"],
     expiredByChapter = _ref31.expiredByChapter || {},
     cardNotes = _ref31.cardNotes || {},
+    isPlus = _ref31.isPlus,
     onEditNote = _ref31.onEditNote;
   var _useState81 = useState(initialDeckScreen || null),
     /* Track if deckScreen was seeded from home navigation */
@@ -9010,6 +9035,41 @@ function MyFlashcardsPage(_ref31) {
     );
   }
 
+  /* ── OOSTA PLUS DECK (Special Collection) ── members only; the cards are
+     present in allCards because RLS let them through the is_plus() gate. ── */
+  if (deckScreen && deckScreen.type === "plusDeck") {
+    var pdChapter = deckScreen.chapter;
+    var pdCol = DECK_PALETTE[(deckScreen.colorIdx || 0) % DECK_PALETTE.length];
+    var pdCards = allCards.filter(function (c) { return c.chapter === pdChapter; });
+    var pdFiltered = fc(pdCards);
+    return /*#__PURE__*/React.createElement("div", { key: "plus-" + pdChapter, className: "page-slide", style: { display: "flex", flexDirection: "column" } },
+      /*#__PURE__*/React.createElement(SubHeader, {
+        onBack: handleBackFromDeck,
+        iconEl: /*#__PURE__*/React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: pdCol.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, /*#__PURE__*/React.createElement(Icon, { name: deckScreen.icon || "star", size: 13, color: pdCol.text })),
+        title: deckScreen.chapterTitle,
+        sub: "Oosta Plus · " + pdCards.length + " cards"
+      }),
+      pdCards.length > 0 && /*#__PURE__*/React.createElement("div", { style: { padding: "12px 16px 0" } },
+        /*#__PURE__*/React.createElement(PrimaryButton, {
+          onClick: function onClick() { onStartChapterFull && onStartChapterFull("plus", pdChapter); },
+          style: { padding: 13, fontSize: 15 }
+        },
+          /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 8 } },
+            /*#__PURE__*/React.createElement(Icon, { name: "play", size: 13, color: "#fff" }),
+            "Practice all " + pdCards.length + " card" + (pdCards.length === 1 ? "" : "s")
+          )
+        )
+      ),
+      SearchBar,
+      /*#__PURE__*/React.createElement("div", { style: { padding: "10px 16px 0", display: "flex", flexDirection: "column", gap: 8 } },
+        pdFiltered.length === 0
+          ? /*#__PURE__*/React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "28px 0", fontSize: 13.5 } }, pdCards.length === 0 ? "These cards aren't loaded yet — pull to refresh." : "No matches.")
+          : pdFiltered.map(function (c) { return /*#__PURE__*/React.createElement(CardRow, { key: c.id, c: c }); })
+      ),
+      open && /*#__PURE__*/React.createElement(FlashcardModal, { card: open, learned: learnedIds.includes(open.id), marked: markedIds.includes(open.id), note: (cardNotes && cardNotes[open.id]) || "", onEditNote: function () { onEditNote && onEditNote(open); }, onResult: onResult, onMark: function onMark() { return _onMark(open.id); }, onClose: function onClose() { return setOpen(null); } })
+    );
+  }
+
   /* ── COLLECTION WORD LIST ── */
   if (deckScreen) {
     var ds = deckScreen;
@@ -9259,8 +9319,8 @@ function MyFlashcardsPage(_ref31) {
         /* All level decks live here — opens the By Level grid */
         /*#__PURE__*/React.createElement(DeckCard, {
           label: "By Level", sublabel: "A1 – C2 learning path",
-          count: allCards.filter(function (c) { return !c.custom; }).length,
-          doneCount: allCards.filter(function (c) { return !c.custom && learnedIds.includes(c.id); }).length,
+          count: allCards.filter(function (c) { return !c.custom && c.level !== "plus"; }).length,
+          doneCount: allCards.filter(function (c) { return !c.custom && c.level !== "plus" && learnedIds.includes(c.id); }).length,
           colorObj: LEVEL_NEUTRAL, icon: "layer-group",
           onClick: function onClick() { setDeckScreen({ type: "levels" }); }
         }),
@@ -9311,21 +9371,33 @@ function MyFlashcardsPage(_ref31) {
     ),
     /* ── Oosta Plus Collection — premium, locked for free users ── */
     /*#__PURE__*/React.createElement("div", null,
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "Special Collection"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: isPlus ? C.primary : C.sub, textTransform: "uppercase", letterSpacing: 0.8 } }, "Special Collection"),
+        isPlus && /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.primary, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 7, padding: "2px 7px", letterSpacing: 0.3 } },
+          /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 8, color: "#FFD56A" }), "UNLOCKED")),
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         [
-          { label: "Tehroon slang", count: 50, icon: "comments", c: 0 },
-          { label: "Bro Talk", count: 40, icon: "user-group", c: 1 },
-          { label: "Trash Talk", count: 35, icon: "fire", c: 2 },
-          { label: "Insults", count: 30, icon: "face-angry", c: 3 },
-          { label: "Love Language", count: 45, icon: "heart", c: 4 }
+          { label: "Tehroon slang", chapter: "tehroon_slang", count: 50, icon: "comments", c: 0 },
+          { label: "Bro Talk", chapter: "bro_talk", count: 50, icon: "user-group", c: 1 },
+          { label: "Trash Talk", chapter: "trash_talk", count: 50, icon: "fire", c: 2 },
+          { label: "Insults", chapter: "insults", count: 50, icon: "face-angry", c: 3 },
+          { label: "Love Language", chapter: "love_language", count: 50, icon: "heart", c: 4 }
         ].map(function (d) {
           var col = DECK_PALETTE[d.c % DECK_PALETTE.length];
+          /* Members actually have the cards loaded (RLS lets them through), so
+             show real counts/progress and open the deck. Free users see a fixed
+             teaser count and the paywall. */
+          var plusCards = isPlus ? allCards.filter(function (c) { return c.chapter === d.chapter; }) : [];
+          var realCount = isPlus && plusCards.length ? plusCards.length : d.count;
+          var realDone = isPlus ? plusCards.filter(function (c) { return learnedIds.includes(c.id); }).length : 0;
           return /*#__PURE__*/React.createElement(DeckCard, {
-            key: d.label, label: d.label, sublabel: "+" + d.count + " cards",
-            count: d.count, doneCount: 0,
+            key: d.label, label: d.label,
+            sublabel: isPlus ? null : "+" + d.count + " cards",
+            count: realCount, doneCount: realDone,
             colorObj: col, icon: d.icon, badge: true,
-            onClick: function onClick() { setShowPlusPaywall(true); }
+            onClick: isPlus
+              ? function onClick() { setDeckScreen({ type: "plusDeck", chapter: d.chapter, chapterTitle: d.label, icon: d.icon, colorIdx: d.c }); setQ(""); }
+              : function onClick() { setShowPlusPaywall(true); }
           });
         })
       )
@@ -10174,6 +10246,7 @@ function AddWordModal(_ref34) {
 /* ── FRIENDS ── */
 function FriendsPage(_ref37) {
   var currentUser = _ref37.currentUser,
+    isPlus = _ref37.isPlus,
     friends = _ref37.friends,
     friendsLoaded = _ref37.friendsLoaded,
     followers = _ref37.followers || [],
@@ -10242,7 +10315,7 @@ function FriendsPage(_ref37) {
      points), degrading gracefully if any column doesn't exist yet */
   var PROF_COLS = "id, display_name, avatar_emoji, points, streak, week_points, active_days, best_day";
   var selectProfiles = function selectProfiles(build) {
-    return build(PROF_COLS + ", best_streak, points_fa, points_de").then(function (res) {
+    return build(PROF_COLS + ", best_streak, points_fa, points_de, plus").then(function (res) {
       if (!res.error) return res;
       return build(PROF_COLS + ", best_streak").then(function (res2) {
         if (!res2.error) return res2;
@@ -10254,7 +10327,7 @@ function FriendsPage(_ref37) {
     return { id: p.id, name: cap(p.display_name || p.id.slice(0,8)), avatar: p.avatar_emoji || "🐣",
       points: p.points || 0, weekPts: p.week_points || 0, streak: p.streak || 0,
       bestDay: p.best_day || 0, activeDays: p.active_days || 0, bestStreak: p.best_streak || 0,
-      faPts: p.points_fa || 0, dePts: p.points_de || 0 };
+      faPts: p.points_fa || 0, dePts: p.points_de || 0, plus: !!p.plus };
   };
 
   useEffect(function() {
@@ -10356,6 +10429,7 @@ function FriendsPage(_ref37) {
     bestStreak: (myStats && myStats.bestStreak) || 0,
     faPts: (myStats && myStats.faPts) || 0,
     dePts: (myStats && myStats.dePts) || 0,
+    plus: !!isPlus,
     _isMe: true
   } : null;
   var everyoneBoard = useMemo(function() {
@@ -10440,10 +10514,12 @@ function FriendsPage(_ref37) {
       name: "trophy",
       size: 11,
       color: "#fff"
-    }) : i + 1), /*#__PURE__*/React.createElement(Avatar, {
+    }) : i + 1), /*#__PURE__*/React.createElement("div", {
+      style: { borderRadius: "50%", flexShrink: 0, display: "flex", boxShadow: u.plus ? "0 0 0 2px #F5C24A" : "none" }
+    }, /*#__PURE__*/React.createElement(Avatar, {
       seed: u.avatar,
       size: 34
-    }), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1,
         minWidth: 0
@@ -10454,7 +10530,12 @@ function FriendsPage(_ref37) {
         fontWeight: 800,
         color: C.ink
       }
-    }, u.name, isMe && /*#__PURE__*/React.createElement("span", {
+    }, u.name, u.plus && /*#__PURE__*/React.createElement("span", {
+      title: "Oosta Plus",
+      style: { display: "inline-flex", alignItems: "center", verticalAlign: "middle", marginLeft: 5, background: C.primary, borderRadius: 6, padding: "1px 5px" }
+    }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 8, color: "#FFD56A" }),
+       /*#__PURE__*/React.createElement("span", { style: { fontSize: 9, fontWeight: 800, color: "#fff", marginLeft: 3, letterSpacing: 0.2 } }, "PLUS")),
+       isMe && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
         color: C.primary,
@@ -11407,6 +11488,7 @@ function HeartsDialog(_ref41) {
 function ProfilePage(_ref42) {
   var user = _ref42.user,
     setUser = _ref42.setUser,
+    isPlus = _ref42.isPlus,
     deckSettings = _ref42.deckSettings || { autoSpeak: false, onlyUnknown: true, showEnglishFirst: false, sfx: true, celebSfx: true },
     setDeckSettings = _ref42.setDeckSettings || function () {},
     selectedLangs = _ref42.selectedLangs,
@@ -11791,7 +11873,7 @@ function ProfilePage(_ref42) {
           /* ── Settings hub ── */
           settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
             settingsSectionLabel("Membership", 4),
-            settingsNavRow("crown", C.amber + "22", C.amber, "Membership", "Your current plan", function () { setSettingsPage("membership"); }, "Free"),
+            settingsNavRow("crown", C.amber + "22", C.amber, "Membership", isPlus ? "Oosta Plus member" : "Your current plan", function () { setSettingsPage("membership"); }, isPlus ? "Plus" : "Free"),
             settingsSectionLabel("General"),
             settingsNavRow("sliders", C.primarySoft, C.primary, "Preferences", "Learning session options", function () { setSettingsPage("preferences"); }),
             settingsNavRow("volume-high", C.primarySoft, C.primary, "Sound & haptics", "Sounds and vibration", function () { setSettingsPage("soundhaptics"); }),
@@ -11829,21 +11911,39 @@ function ProfilePage(_ref42) {
           ),
           /* ── Membership (Free vs Oosta Plus; plans wired to real IAP later) ── */
           settingsPage === "membership" && /*#__PURE__*/React.createElement(React.Fragment, null,
-            /* Free plan — current */
-            /*#__PURE__*/React.createElement("div", { style: { marginTop: 6, background: C.surface, border: "1px solid " + C.line, borderRadius: 18, padding: "16px 16px 8px" } },
+            /* Free plan — current only when NOT a Plus member */
+            /*#__PURE__*/React.createElement("div", { style: { marginTop: 6, background: C.surface, border: "1px solid " + C.line, borderRadius: 18, padding: "16px 16px 8px", opacity: isPlus ? 0.6 : 1 } },
               /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: C.ink } }, "Free"),
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, borderRadius: 8, padding: "3px 9px" } }, "Current plan")),
+                !isPlus && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: C.green, background: C.greenSoft, borderRadius: 8, padding: "3px 9px" } }, "Current plan")),
               featList([["Full A1–C1 course", true], ["Daily practice & reviews", true], ["Streaks, leaderboard & friends", true], ["Bonus themed decks", false], ["Ad-free experience", false], ["Unlimited audio pronunciation", false]])
             ),
             /* Oosta Plus */
-            /*#__PURE__*/React.createElement("div", { style: { marginTop: 14, background: C.surface, border: "1.5px solid " + C.primary, borderRadius: 18, padding: "16px 16px 14px", boxShadow: "0 10px 26px " + C.primary + "1A" } },
-              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10 } },
-                /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 15, color: C.amber }),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: C.ink } }, "Oosta Plus")),
+            /*#__PURE__*/React.createElement("div", { style: { marginTop: 14, background: isPlus ? C.primarySoft : C.surface, border: "1.5px solid " + C.primary, borderRadius: 18, padding: "16px 16px 14px", boxShadow: "0 10px 26px " + C.primary + "1A" } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 } },
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 15, color: C.amber }),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: C.ink } }, "Oosta Plus")),
+                isPlus && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 800, color: "#fff", background: C.primary, borderRadius: 8, padding: "3px 9px", flexShrink: 0 } }, "Current plan")),
               featList([["Full A1–C1 course", true], ["Daily practice & reviews", true], ["Streaks, leaderboard & friends", true], ["Bonus themed decks", true], ["Ad-free experience", true], ["Unlimited audio pronunciation", true]]),
-              /* Action buttons — side by side (purchase wiring comes with IAP) */
-              /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 18 } },
+              /* Member confirmation OR purchase buttons */
+              isPlus
+                ? /*#__PURE__*/React.createElement(React.Fragment, null,
+                    /*#__PURE__*/React.createElement("div", { style: { marginTop: 16, display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderRadius: 14, background: C.surface, border: "1px solid " + C.primary + "44" } },
+                      /*#__PURE__*/React.createElement("div", { style: { width: 24, height: 24, borderRadius: "50%", background: C.green + "22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, /*#__PURE__*/React.createElement(Icon, { name: "check", size: 12, color: C.green })),
+                      /*#__PURE__*/React.createElement("div", { style: { minWidth: 0 } },
+                        /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: C.ink } }, "You're on Oosta Plus 🎉"),
+                        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: C.sub, marginTop: 1 } }, "Renews automatically through the store."))),
+                    /*#__PURE__*/React.createElement("button", {
+                      onClick: function () {
+                        var plat = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web";
+                        var url = plat === "android" ? "https://play.google.com/store/account/subscriptions" : "https://apps.apple.com/account/subscriptions";
+                        if (window.__oostaOpenURL) window.__oostaOpenURL(url); else window.open(url, "_blank");
+                      }, className: "press",
+                      style: { width: "100%", marginTop: 10, padding: "12px", borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, cursor: "pointer", fontFamily: FONT, fontSize: 13.5, fontWeight: 800 }
+                    }, "Manage or cancel subscription"),
+                    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.sub, textAlign: "center", marginTop: 8, lineHeight: 1.4 } }, "Subscriptions are billed by Apple / Google. Cancel anytime there — your Plus stays active until the period ends."))
+                : /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 18 } },
                 /*#__PURE__*/React.createElement("button", {
                   onClick: function () {}, className: "press",
                   style: { flex: 1, padding: "12px 8px", borderRadius: 14, border: "1.5px solid " + C.primary, background: C.surface, color: C.primary, cursor: "pointer", fontFamily: FONT, textAlign: "center" }
@@ -11942,7 +12042,8 @@ function ProfilePage(_ref42) {
         height: 76,
         borderRadius: "50%",
         objectFit: "cover",
-        border: "4px solid " + C.primarySoft,
+        border: "4px solid " + (isPlus ? "#F5C24A" : C.primarySoft),
+        boxShadow: isPlus ? "0 0 0 2px #fff, 0 0 0 5px #F5C24A88" : "none",
         display: "block"
       }
     }),
@@ -11954,6 +12055,9 @@ function ProfilePage(_ref42) {
       /*#__PURE__*/React.createElement("div", {
         style: { fontSize: 21, fontWeight: 800, color: C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }
       }, cap(user && user.name || "You")),
+      isPlus && /*#__PURE__*/React.createElement("div", {
+        style: { display: "inline-flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", color: "#fff", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 11px", boxShadow: "0 4px 12px " + C.primary + "40" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: "#FFD56A" }), "Oosta Plus"),
       (function () {
         var b = badgeFor(allPoints);
         if (!b) return null;
@@ -13375,7 +13479,7 @@ function SessionComplete(_ref47) {
   ));
 }
 function StyleTag() {
-  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:transform .08s ease;touch-action:manipulation}\n  .press:active{transform:scale(0.97)}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{from{opacity:0;transform:translateY(130%)}to{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(130%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(82deg)}60%{opacity:1;transform:rotate(28deg)}to{opacity:1;transform:rotate(35deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(35deg)}to{opacity:0;transform:rotate(82deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(82deg)}60%{opacity:1;transform:scaleX(-1) rotate(28deg)}to{opacity:1;transform:scaleX(-1) rotate(35deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(35deg)}to{opacity:0;transform:scaleX(-1) rotate(82deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes peekBubblePop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}\n.peek-bubble{animation:peekBubblePop .26s cubic-bezier(.34,1.56,.64,1) both}\n@keyframes peekBubbleOut{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.4)}}\n.peek-bubble-out{animation:peekBubbleOut .19s cubic-bezier(.5,0,.75,.4) both}\n@keyframes peekParty{0%,100%{transform:rotate(0) scale(1)}30%{transform:rotate(-14deg) scale(1.15)}60%{transform:rotate(10deg) scale(1.18)}}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
+  return /*#__PURE__*/React.createElement("style", null, "\n  @keyframes confetti{0%{transform:translateY(-20px) rotate(0);opacity:1}85%{opacity:1}100%{transform:translateY(700px) rotate(560deg);opacity:0}}\n  @keyframes pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}\n  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}\n  @keyframes cardpop{from{transform:translateY(22px) scale(.96);opacity:0}60%{opacity:1}to{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes cardEnter{0%{transform:translateY(16px) scale(.96);opacity:0}50%{opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}\n  @keyframes spin{to{transform:rotate(360deg)}}\n  @keyframes btnRing{0%,100%{box-shadow:0 8px 24px rgba(90,79,227,0.55),0 0 0 0 rgba(90,79,227,0.5)}55%{box-shadow:0 8px 32px rgba(90,79,227,0.8),0 0 0 7px rgba(90,79,227,0)}}\n  .btn-glow-ring{animation:btnRing 2s ease-in-out infinite}\n  @keyframes btnRingAmber{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.55),0 0 0 0 rgba(245,158,11,0.5)}55%{box-shadow:0 8px 32px rgba(245,158,11,0.8),0 0 0 7px rgba(245,158,11,0)}}\n  .btn-glow-ring-amber{animation:btnRingAmber 2s ease-in-out infinite}\n  @keyframes tapPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}\n  .tap-hint{animation:tapPulse 1.6s ease-in-out infinite}\n  @keyframes nudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}\n  .nudge-l{animation:nudgeL 1.5s ease-in-out .7s infinite}\n  @keyframes btnShine{0%{transform:translateX(-120%) skewX(-20deg);opacity:0}10%{opacity:1}40%{transform:translateX(220%) skewX(-20deg);opacity:0}100%{transform:translateX(220%) skewX(-20deg);opacity:0}}\n  .btn-shine{position:absolute;top:0;left:0;width:55%;height:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%);pointer-events:none;animation:btnShine 2s ease-in-out infinite}\n  .pop{animation:pop .5s cubic-bezier(.2,.8,.2,1)}\n  .sheet-in{animation:sheet .3s cubic-bezier(.2,.8,.2,1)}\n  @keyframes sheetOut{from{transform:translateY(0)}to{transform:translateY(102%)}}\n  .sheet-out{animation:sheetOut .24s cubic-bezier(.5,0,.75,.4) both}\n  @keyframes fadeIn{from{opacity:0}to{opacity:1}}\n  @keyframes fadeOut{from{opacity:1}to{opacity:0}}\n  .card-pop{animation:cardpop .42s cubic-bezier(.2,.8,.2,1)}\n  .card-enter{animation:cardEnter .48s cubic-bezier(.34,1.56,.64,1) forwards}\n  .spinner{width:15px;height:15px;border:3px solid rgba(0,0,0,0.12);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}\n  .press{transition:opacity .08s ease;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}\n  .press:active{opacity:0.55}\n  *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}\n  input::placeholder{color:#B6B2CE}\n  ::-webkit-scrollbar{width:4px;height:4px}\n  ::-webkit-scrollbar-thumb{background:#ECEAF6;border-radius:4px}\n  @keyframes avatarFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}\n  @keyframes buddyInL{from{opacity:0;transform:translateX(-70px)}to{opacity:1;transform:translateX(0)}}\n  .flip-wrap{perspective:700px}\n  .flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}\n  .flip-go{transform:rotateY(180deg)}\n  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center}\n  .flip-back{transform:rotateY(180deg)}\n  @keyframes giftWiggle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}\n  @keyframes jumpTileIn{from{opacity:0;transform:translateY(130%)}to{opacity:1;transform:translateY(0)}}\n  @keyframes jumpTileOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(130%)}}\n  .gift-wiggle{animation:giftWiggle 1.6s ease-in-out infinite}\n  @keyframes peekSwingInR{from{opacity:0;transform:rotate(82deg)}60%{opacity:1;transform:rotate(28deg)}to{opacity:1;transform:rotate(35deg)}}\n  @keyframes peekSwingOutR{from{opacity:1;transform:rotate(35deg)}to{opacity:0;transform:rotate(82deg)}}\n  @keyframes peekSwingInL{from{opacity:0;transform:scaleX(-1) rotate(82deg)}60%{opacity:1;transform:scaleX(-1) rotate(28deg)}to{opacity:1;transform:scaleX(-1) rotate(35deg)}}\n  @keyframes peekSwingOutL{from{opacity:1;transform:scaleX(-1) rotate(35deg)}to{opacity:0;transform:scaleX(-1) rotate(82deg)}}\n  @keyframes buddyInR{from{opacity:0;transform:translateX(70px)}to{opacity:1;transform:translateX(0)}}\n  .avatar-float{animation:avatarFloat 2.8s ease-in-out infinite}\n@keyframes peekBubblePop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}\n.peek-bubble{animation:peekBubblePop .26s cubic-bezier(.34,1.56,.64,1) both}\n@keyframes peekBubbleOut{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.4)}}\n.peek-bubble-out{animation:peekBubbleOut .19s cubic-bezier(.5,0,.75,.4) both}\n@keyframes peekParty{0%,100%{transform:rotate(0) scale(1)}30%{transform:rotate(-14deg) scale(1.15)}60%{transform:rotate(10deg) scale(1.18)}}\n@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}\n@keyframes scalePop{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}\n@keyframes orbDrift{from{transform:translate(0,0) scale(1)}to{transform:translate(28px,-22px) scale(1.12)}}\n@keyframes sheenOnce{from{transform:translateX(-170%) skewX(-18deg)}to{transform:translateX(280%) skewX(-18deg)}}\n.rise{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}\n@keyframes growBar{from{width:0}}\n@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}\n.page-in{animation:pageIn .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes pageSlide{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}\n.page-slide{animation:pageSlide .3s cubic-bezier(.2,.8,.2,1)}\n@keyframes sparkRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.5}70%{opacity:.35}100%{transform:translateY(-105vh) translateX(var(--drift,20px));opacity:0}}\n@keyframes pingRing{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.85);opacity:0}}\n@keyframes burst{0%{transform:translate(0,0) rotate(0deg) scale(.3);opacity:0;animation-timing-function:cubic-bezier(.16,1,.3,1)}10%{opacity:1}52%{transform:translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(1);opacity:1;animation-timing-function:cubic-bezier(.5,.05,.85,.4)}80%{opacity:1}100%{transform:translate(calc(var(--tx)*1.18),calc(var(--ty) + 230px)) rotate(calc(var(--rot)*1.7)) scale(.9);opacity:0}}\n");
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
