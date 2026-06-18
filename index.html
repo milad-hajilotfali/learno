@@ -8769,7 +8769,8 @@ function MyFlashcardsPage(_ref31) {
   var DeckCard = function DeckCard(_ref32b) {
     var label = _ref32b.label, sublabel = _ref32b.sublabel, count = _ref32b.count,
         doneCount = _ref32b.doneCount, colorObj = _ref32b.colorObj,
-        icon = _ref32b.icon, onClick = _ref32b.onClick, locked = _ref32b.locked;
+        icon = _ref32b.icon, onClick = _ref32b.onClick, locked = _ref32b.locked,
+        badge = _ref32b.badge;
     var pct = count > 0 ? Math.round((doneCount / count) * 100) : 0;
     var isNeutral = colorObj === LEVEL_NEUTRAL;
     var borderCol = isNeutral ? C.line : colorObj.bar + "44";
@@ -8802,7 +8803,11 @@ function MyFlashcardsPage(_ref31) {
                 sublabel && /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: isNeutral ? C.sub : colorObj.text + "99", fontWeight: 600, marginTop: 1 } }, sublabel)
               )
             ),
-            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: isNeutral ? C.sub : colorObj.text + "BB", flexShrink: 0, paddingTop: 1 } }, count)
+            badge
+              ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 3, background: C.primary, borderRadius: 7, padding: "2px 6px", flexShrink: 0 } },
+                  /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 8, color: "#fff" }),
+                  /*#__PURE__*/React.createElement("span", { style: { fontSize: 8.5, fontWeight: 800, color: "#fff", letterSpacing: 0.2, whiteSpace: "nowrap" } }, "Oosta Plus"))
+              : /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 700, color: isNeutral ? C.sub : colorObj.text + "BB", flexShrink: 0, paddingTop: 1 } }, count)
           ),
           /* progress bar */
           /*#__PURE__*/React.createElement("div", { style: { height: 3, borderRadius: 3, background: isNeutral ? C.line : colorObj.bar + "28", overflow: "hidden" } },
@@ -9309,10 +9314,10 @@ function MyFlashcardsPage(_ref31) {
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "Oosta Plus Collection"),
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         /*#__PURE__*/React.createElement(DeckCard, {
-          label: "Tehroon slang", sublabel: "Oosta Plus",
-          count: 0, doneCount: 0,
+          label: "Tehroon slang", sublabel: "+50 cards",
+          count: 50, doneCount: 0,
           colorObj: { bg: C.primarySoft, bar: C.primary, text: C.primary },
-          icon: "comments", locked: true,
+          icon: "comments", badge: true,
           onClick: function onClick() { setShowPlusPaywall(true); }
         })
       )
