@@ -11034,6 +11034,11 @@ function FriendDetailDialog(_ref40) {
     color: C.amber,
     chipBg: C.amber + "16"
   }];
+  var capRef = useRef(null);
+  var _shareSelf = function _shareSelf() {
+    var msg = (user.name ? user.name + " on Oosta" : "My Oosta stats") + " · " + (user.points || 0) + " points 🔥 " + (user.streak || 0) + "-day streak. oosta.app";
+    try { shareImage(capRef.current, msg, "oosta-stats.png", C.surface); } catch (e) {}
+  };
   var bestStr = Math.max(user.bestStreak || 0, user.streak || 0);
   var miniStats = [{
     label: "Longest streak",
@@ -11063,7 +11068,7 @@ function FriendDetailDialog(_ref40) {
   return /*#__PURE__*/React.createElement(Sheet, {
     onClose: onClose,
     noHeader: true
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", { ref: capRef, "data-capture": "1" }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -11170,7 +11175,10 @@ function FriendDetailDialog(_ref40) {
         style: { fontSize: 10.5, fontWeight: 700, color: C.sub, marginLeft: 3 }
       }, s.unit))
     );
-  })), !isSelf && /*#__PURE__*/React.createElement("div", {
+  }))), isSelf && /*#__PURE__*/React.createElement("button", {
+    onClick: _shareSelf, "data-noshare": "1", className: "press",
+    style: { width: "100%", marginTop: 6, padding: 14, borderRadius: 16, border: "1.5px solid " + C.line, background: C.surface, color: C.ink, fontWeight: 800, cursor: "pointer", fontFamily: FONT, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }
+  }, /*#__PURE__*/React.createElement(Icon, { name: "arrow-up-from-bracket", size: 14, color: C.primary }), "Share my stats"), !isSelf && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -11337,7 +11345,8 @@ function ProfilePage(_ref42) {
     history = _ref42.history,
     unlockedLevels = _ref42.unlockedLevels,
     onLangsChanged = _ref42.onLangsChanged,
-    onSignOut = _ref42.onSignOut;
+    onSignOut = _ref42.onSignOut,
+    myStats = _ref42.myStats || {};
   /* Highest unlocked level */
   var lvl = useMemo(function() {
     if (!unlockedLevels || unlockedLevels.length === 0) return user && user.level || "A1";
@@ -11376,6 +11385,10 @@ function ProfilePage(_ref42) {
     _useState_ss2 = _slicedToArray(_useState_ss, 2),
     settingsPage = _useState_ss2[0],
     setSettingsPage = _useState_ss2[1];
+  var _useState_stm = useState(false),
+    _useState_stm2 = _slicedToArray(_useState_stm, 2),
+    showStatsModal = _useState_stm2[0],
+    setShowStatsModal = _useState_stm2[1];
   var _useState_sx = useState(function () {
     try { return localStorage.getItem("oosta_sfx") !== "0"; } catch (e) { return true; }
   }),
@@ -11754,20 +11767,23 @@ function ProfilePage(_ref42) {
                 /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 15, color: C.amber }),
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 800, color: C.ink } }, "Oosta Plus")),
               featList([["Full A1–C1 course", true], ["Daily practice & reviews", true], ["Streaks, leaderboard & friends", true], ["Bonus themed decks", true], ["Ad-free experience", true], ["Unlimited audio pronunciation", true]]),
-              /* Action buttons — choose a plan */
-              /*#__PURE__*/React.createElement("button", {
-                onClick: function () {}, className: "press",
-                style: { position: "relative", width: "100%", marginTop: 16, padding: "13px 14px", borderRadius: 14, border: "none", background: C.primary, color: "#fff", cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "space-between" }
-              },
-                /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: -9, right: 14, fontSize: 9.5, fontWeight: 800, color: C.primary, background: "#fff", border: "1px solid " + C.primary, borderRadius: 8, padding: "2px 8px" } }, "BEST VALUE"),
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14.5, fontWeight: 800 } }, "Annual"),
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14.5, fontWeight: 800 } }, "$34.99 / yr")),
-              /*#__PURE__*/React.createElement("button", {
-                onClick: function () {}, className: "press",
-                style: { width: "100%", marginTop: 10, padding: "13px 14px", borderRadius: 14, border: "1.5px solid " + C.primary, background: C.surface, color: C.primary, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "space-between" }
-              },
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14.5, fontWeight: 800 } }, "Monthly"),
-                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14.5, fontWeight: 800 } }, "$5.99 / mo"))
+              /* Action buttons — side by side (purchase wiring comes with IAP) */
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 18 } },
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function () {}, className: "press",
+                  style: { flex: 1, padding: "12px 8px", borderRadius: 14, border: "1.5px solid " + C.primary, background: C.surface, color: C.primary, cursor: "pointer", fontFamily: FONT, textAlign: "center" }
+                },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 700 } }, "Monthly"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 900, marginTop: 2 } }, "$5.99"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 600, opacity: 0.8, marginTop: 1 } }, "per month")),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function () {}, className: "press",
+                  style: { position: "relative", flex: 1, padding: "12px 8px", borderRadius: 14, border: "none", background: C.primary, color: "#fff", cursor: "pointer", fontFamily: FONT, textAlign: "center" }
+                },
+                  /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)", fontSize: 9, fontWeight: 800, color: C.primary, background: "#fff", border: "1px solid " + C.primary, borderRadius: 8, padding: "2px 7px", whiteSpace: "nowrap" } }, "BEST VALUE"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 700 } }, "Annual"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 17, fontWeight: 900, marginTop: 2 } }, "$34.99"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 600, opacity: 0.9, marginTop: 1 } }, "per year")))
             )
           )
         ),
@@ -11895,9 +11911,7 @@ function ProfilePage(_ref42) {
     var dePts = curLang === "de" ? totalPoints : (allLangPoints.de || 0);
     return [
       { value: dayStreak, sub: "day streak", icon: "fire", tint: C.amber, chipBg: C.amber + "16" },
-      { value: allPoints, sub: "total points", icon: "star", tint: C.primary, chipBg: C.primarySoft },
-      { value: faPts, sub: "Persian points", mono: "FA", tint: C.fa, chipBg: C.faSoft },
-      { value: dePts, sub: "German points", mono: "DE", tint: C.de, chipBg: C.deSoft }
+      { value: allPoints, sub: "total points", icon: "star", tint: C.primary, chipBg: C.primarySoft }
     ];
   })().map(function (s) {
     return /*#__PURE__*/React.createElement("div", {
@@ -11915,7 +11929,10 @@ function ProfilePage(_ref42) {
     }, s.value), /*#__PURE__*/React.createElement("div", {
       style: { fontSize: 9, color: C.sub, marginTop: 2, fontWeight: 700, letterSpacing: 0.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }
     }, s.sub)));
-  })), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() { setShowStatsModal(true); }, className: "press",
+    style: { width: "100%", padding: "11px 14px", borderRadius: 14, border: "1.5px solid " + C.line, background: C.surface, color: C.primary, fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }
+  }, "See all stats", /*#__PURE__*/React.createElement(Icon, { name: "chevron-right", size: 12, color: C.primary })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: C.sub,
@@ -11933,6 +11950,22 @@ function ProfilePage(_ref42) {
   }),
   delConfirmEl,
   acctModalEl,
+  showStatsModal && /*#__PURE__*/React.createElement(FriendDetailDialog, {
+    isSelf: true,
+    onClose: function onClose() { setShowStatsModal(false); },
+    user: {
+      avatar: user && user.avatar,
+      name: cap(user && user.name || "You"),
+      points: myStats.points != null ? myStats.points : allPoints,
+      streak: myStats.streak != null ? myStats.streak : dayStreak,
+      weekPts: myStats.weekPts != null ? myStats.weekPts : weekPoints,
+      activeDays: myStats.activeDays || 0,
+      bestDay: myStats.bestDay || 0,
+      bestStreak: myStats.bestStreak || 0,
+      faPts: myStats.faPts != null ? myStats.faPts : (allLangPoints.fa || 0),
+      dePts: myStats.dePts != null ? myStats.dePts : (allLangPoints.de || 0)
+    }
+  }),
   picker && /*#__PURE__*/React.createElement(AvatarPicker, {
     current: user && user.avatar,
     onPick: function onPick(a) {
