@@ -11425,9 +11425,9 @@ function ProfilePage(_ref42) {
   var legalLinks = /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 18, flexWrap: "wrap" }
   },
-    /*#__PURE__*/React.createElement("button", { onClick: function () { window.__memzyOpenURL(window.MEMZY_PRIVACY_URL); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Privacy Policy"),
+    /*#__PURE__*/React.createElement("button", { onClick: function () { setSettingsPage("privacy"); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Privacy Policy"),
     /*#__PURE__*/React.createElement("span", { style: { color: C.line, fontSize: 12 } }, "·"),
-    /*#__PURE__*/React.createElement("button", { onClick: function () { window.__memzyOpenURL(window.MEMZY_TERMS_URL); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Terms of Use")
+    /*#__PURE__*/React.createElement("button", { onClick: function () { setSettingsPage("terms"); }, className: "press", style: { border: "none", background: "transparent", color: C.sub, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 4, textDecoration: "underline", textUnderlineOffset: "2px" } }, "Terms of Use")
   );
   /* Teaser plan card for the Membership page (non-functional until IAP is wired) */
   var planCard = function planCard(name, price, sub, best) {
@@ -11640,7 +11640,7 @@ function ProfilePage(_ref42) {
   /* Settings as in-flow pages so the bottom TabBar stays visible. Sticky footer
      holds the page-level action (Sign out / Delete account) above the TabBar. */
   if (settingsPage) {
-    var settingsTitle = settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : settingsPage === "membership" ? "Membership" : "Settings";
+    var settingsTitle = settingsPage === "account" ? "Account management" : settingsPage === "notifications" ? "Notifications" : settingsPage === "preferences" ? "Preferences" : settingsPage === "membership" ? "Membership" : settingsPage === "privacy" ? "Privacy Policy" : settingsPage === "terms" ? "Terms of Use" : "Settings";
     var settingsFooter = settingsPage === "settings"
       ? /*#__PURE__*/React.createElement("button", {
           onClick: onSignOut, className: "press",
@@ -11674,10 +11674,23 @@ function ProfilePage(_ref42) {
             /*#__PURE__*/React.createElement("h1", { style: { fontSize: 19, fontWeight: 800, color: C.ink, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, settingsTitle)
           )
         ),
-        /* Scrollable body */
+        /* Scrollable body (full-bleed for the embedded legal pages) */
         /*#__PURE__*/React.createElement("div", {
-          style: { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "none", padding: "10px 20px 20px" }
+          style: { flex: 1, minHeight: 0, overflowY: (settingsPage === "privacy" || settingsPage === "terms") ? "hidden" : "auto", overscrollBehaviorY: "none", padding: (settingsPage === "privacy" || settingsPage === "terms") ? 0 : "10px 20px 20px" }
         },
+          /* ── Privacy Policy / Terms of Use (embedded in-app) ── */
+          (settingsPage === "privacy" || settingsPage === "terms") && /*#__PURE__*/React.createElement("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
+            /*#__PURE__*/React.createElement("iframe", {
+              src: settingsPage === "privacy" ? window.MEMZY_PRIVACY_URL : window.MEMZY_TERMS_URL,
+              title: settingsTitle,
+              style: { flex: 1, width: "100%", border: "none", background: C.bg }
+            }),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function () { window.__memzyOpenURL(settingsPage === "privacy" ? window.MEMZY_PRIVACY_URL : window.MEMZY_TERMS_URL); },
+              className: "press",
+              style: { flexShrink: 0, border: "none", borderTop: "1px solid " + C.line, background: C.surface, color: C.sub, fontSize: 12.5, fontWeight: 600, padding: "12px", cursor: "pointer", fontFamily: FONT }
+            }, "Open in browser")
+          ),
           /* ── Settings hub ── */
           settingsPage === "settings" && /*#__PURE__*/React.createElement(React.Fragment, null,
             settingsSectionLabel("Membership", 4),
