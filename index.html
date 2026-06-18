@@ -107,12 +107,12 @@ try {
    then reload so the existing mount-time logic restores the session unchanged. */
 var _CAP = window.Capacitor;
 var _IS_NATIVE = !!(_CAP && _CAP.isNativePlatform && _CAP.isNativePlatform());
-window.__MEMZY_NATIVE = _IS_NATIVE;
+window.__OOSTA_NATIVE = _IS_NATIVE;
 /* Web keeps its original redirect target; native uses the deep link scheme
    registered in Info.plist / AndroidManifest.xml. */
 var _WEB_REDIRECT = window.location.origin + window.location.pathname;
-window.__MEMZY_AUTH_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback" : _WEB_REDIRECT;
-window.__MEMZY_RECOVERY_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback?type=recovery" : _WEB_REDIRECT;
+window.__OOSTA_AUTH_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback" : _WEB_REDIRECT;
+window.__OOSTA_RECOVERY_REDIRECT = _IS_NATIVE ? "com.memzy.app://auth-callback?type=recovery" : _WEB_REDIRECT;
 
 if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
   var _App = _CAP.Plugins.App;
@@ -123,7 +123,7 @@ if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
     try { if (_Browser && _Browser.close) _Browser.close(); } catch (e) {}
     var isRecovery = rawUrl.indexOf("type=recovery") !== -1;
     var finish = function () {
-      if (isRecovery) { try { localStorage.setItem("memzy_recovery_pending", "1"); } catch (e) {} }
+      if (isRecovery) { try { localStorage.setItem("oosta_recovery_pending", "1"); } catch (e) {} }
       /* Reload so the mount-time getSession()/recovery logic runs as it does on web. */
       window.location.reload();
     };
@@ -156,20 +156,20 @@ if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
   if (_App.getLaunchUrl) { _App.getLaunchUrl().then(function (r) { if (r && r.url) _handleAuthUrl(r.url); }).catch(function () {}); }
 }
 
-/* ── Haptics bridge ── window.__memzyHaptic(style) fires a vibration when the
-   "Haptic feedback" preference (memzy_haptics) is on. Uses the native Haptics
+/* ── Haptics bridge ── window.__oostaHaptic(style) fires a vibration when the
+   "Haptic feedback" preference (oosta_haptics) is on. Uses the native Haptics
    plugin where available, falling back to the web Vibration API. */
 (function () {
   var H = _CAP && _CAP.Plugins && _CAP.Plugins.Haptics;
   var styleMap = { light: "LIGHT", medium: "MEDIUM", heavy: "HEAVY" };
-  window.__memzyHaptic = function (style) {
-    try { if (localStorage.getItem("memzy_haptics") === "0") return; } catch (e) {}
+  window.__oostaHaptic = function (style) {
+    try { if (localStorage.getItem("oosta_haptics") === "0") return; } catch (e) {}
     var s = style || "light";
     if (H && H.impact) { try { H.impact({ style: styleMap[s] || "LIGHT" }); return; } catch (e) {} }
     if (navigator.vibrate) { try { navigator.vibrate(s === "heavy" ? 24 : s === "medium" ? 14 : 8); } catch (e) {} }
   };
-  window.__memzyNotify = function (style) {
-    try { if (localStorage.getItem("memzy_haptics") === "0") return; } catch (e) {}
+  window.__oostaNotify = function (style) {
+    try { if (localStorage.getItem("oosta_haptics") === "0") return; } catch (e) {}
     if (H && H.notification) { try { H.notification({ type: (style || "SUCCESS") }); return; } catch (e) {} }
     if (navigator.vibrate) { try { navigator.vibrate([0, 18, 40, 18]); } catch (e) {} }
   };
@@ -177,9 +177,9 @@ if (_IS_NATIVE && _CAP.Plugins && _CAP.Plugins.App) {
 
 /* Legal document URLs (hosted on the live web app) + opener that uses the
    native in-app browser when available so the app isn't navigated away. */
-window.MEMZY_PRIVACY_URL = "https://milad-hajilotfali.github.io/learno/privacy.html";
-window.MEMZY_TERMS_URL = "https://milad-hajilotfali.github.io/learno/terms.html";
-window.__memzyOpenURL = function (url) {
+window.OOSTA_PRIVACY_URL = "https://milad-hajilotfali.github.io/learno/privacy.html";
+window.OOSTA_TERMS_URL = "https://milad-hajilotfali.github.io/learno/terms.html";
+window.__oostaOpenURL = function (url) {
   try {
     var B = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
     if (B && B.open) { B.open({ url: url }); return; }
@@ -189,8 +189,8 @@ window.__memzyOpenURL = function (url) {
 
 /* ── Local notifications bridge (on-device, no server) ──
    Schedules a daily streak reminder at 20:00 local time, gated by the "Reminders"
-   preference (memzy_notif_reminders). Reschedule on launch and after each session
-   via window.__memzyRescheduleReminders(practicedToday). */
+   preference (oosta_notif_reminders). Reschedule on launch and after each session
+   via window.__oostaRescheduleReminders(practicedToday). */
 (function () {
   var LN = _IS_NATIVE && _CAP.Plugins && _CAP.Plugins.LocalNotifications;
   var REMINDER_ID = 8201;            /* stable id so reschedules replace, not stack */
@@ -215,10 +215,10 @@ window.__memzyOpenURL = function (url) {
     if (practicedToday || now.getTime() >= d.getTime()) d.setDate(d.getDate() + 1);
     return d;
   };
-  window.__memzyRescheduleReminders = function (practicedToday) {
+  window.__oostaRescheduleReminders = function (practicedToday) {
     if (!LN) return;
     var on = true;
-    try { on = localStorage.getItem("memzy_notif_reminders") !== "0"; } catch (e) {}
+    try { on = localStorage.getItem("oosta_notif_reminders") !== "0"; } catch (e) {}
     /* Clear any existing reminder first so prefs-off truly silences it. */
     var clear = function () { try { return Promise.resolve(LN.cancel({ notifications: [{ id: REMINDER_ID }] })); } catch (e) { return Promise.resolve(); } };
     if (!on) { clear(); return; }
@@ -321,7 +321,7 @@ function migrateLearnedAt(ids) {
    and in Supabase so it survives sign-out / other devices. */
 function savePosition(userId, lang, lv, ch) {
   var l = lang || "de";
-  try { localStorage.setItem("memzy_pos_" + l, JSON.stringify({ lv: lv, ch: ch })); } catch (e) {}
+  try { localStorage.setItem("oosta_pos_" + l, JSON.stringify({ lv: lv, ch: ch })); } catch (e) {}
   if (!userId) return;
   supabase.from("progress").upsert({
     user_id: userId, language: l,
@@ -337,7 +337,7 @@ function loadPosition(userId, lang, callback) {
     return p && p.lv && CHAPTERS[p.lv] && CHAPTERS[p.lv].some(function (c) { return c.id === p.ch; });
   };
   var local = null;
-  try { local = JSON.parse(localStorage.getItem("memzy_pos_" + l) || "null"); } catch (e) {}
+  try { local = JSON.parse(localStorage.getItem("oosta_pos_" + l) || "null"); } catch (e) {}
   if (valid(local)) callback(local);
   if (!userId) return;
   supabase.from("progress").select("level")
@@ -585,12 +585,12 @@ function makePeepVariants(identity, n) {
 }
 function getPeep() {
   try {
-    var p = JSON.parse(localStorage.getItem("memzy_peep"));
+    var p = JSON.parse(localStorage.getItem("oosta_peep"));
     if (p && p.identity && p.variants && p.variants.length) return p;
   } catch (e) {}
   var id = { head: peepRnd(PEEP_HEADS), skinColor: peepRnd(PEEP_SKINS), facialHair: Math.random() < 0.3 ? peepRnd(PEEP_FACIAL) : null };
   var p2 = { identity: id, variants: makePeepVariants(id, 10) };
-  try { localStorage.setItem("memzy_peep", JSON.stringify(p2)); } catch (e) {}
+  try { localStorage.setItem("oosta_peep", JSON.stringify(p2)); } catch (e) {}
   return p2;
 }
 /* DiceBear busts are clipped; strip the clip so the body shows when peeking */
@@ -609,7 +609,7 @@ function unmaskPeep(url, cb) {
   }).catch(function () { cb(url); });
 }
 function rerollPeep() {
-  try { localStorage.removeItem("memzy_peep"); } catch (e) {}
+  try { localStorage.removeItem("oosta_peep"); } catch (e) {}
   return getPeep();
 }
 /* Full head/facial sets (from the avatar-builder prototype) for the 50-character picker */
@@ -618,7 +618,7 @@ var PEEP_FACIAL_FULL = ["chin","full","full2","full3","full4","goatee1","goatee2
 /* The 50 selectable characters — generated once, persisted so selection is stable */
 function getPeepChars() {
   try {
-    var c = JSON.parse(localStorage.getItem("memzy_peep_chars"));
+    var c = JSON.parse(localStorage.getItem("oosta_peep_chars"));
     if (c && c.length === 50) return c;
   } catch (e) {}
   var out = [], seen = {}, guard = 0;
@@ -630,14 +630,14 @@ function getPeepChars() {
     seen[k] = true;
     out.push(id);
   }
-  try { localStorage.setItem("memzy_peep_chars", JSON.stringify(out)); } catch (e) {}
+  try { localStorage.setItem("oosta_peep_chars", JSON.stringify(out)); } catch (e) {}
   return out;
 }
 function peepKey(id) { return id.head + "|" + id.skinColor + "|" + (id.facialHair || "n"); }
 /* Select a character: keeps it + generates its 10 random styles */
 function setPeepFromChar(identity) {
   var p = { identity: identity, variants: makePeepVariants(identity, 10) };
-  try { localStorage.setItem("memzy_peep", JSON.stringify(p)); } catch (e) {}
+  try { localStorage.setItem("oosta_peep", JSON.stringify(p)); } catch (e) {}
   return p;
 }
 /* Same character, fresh 10 styles */
@@ -1066,25 +1066,25 @@ function unlockSFX() {
    - _celebEnabled → end-screen / reward sounds (rare, rewarding) */
 var _sfxEnabled = true;
 var _celebEnabled = true;
-try { _sfxEnabled = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
-try { _celebEnabled = localStorage.getItem("memzy_celeb_sfx") !== "0"; } catch (e) {}
+try { _sfxEnabled = localStorage.getItem("oosta_sfx") !== "0"; } catch (e) {}
+try { _celebEnabled = localStorage.getItem("oosta_celeb_sfx") !== "0"; } catch (e) {}
 function setSFXEnabled(on) {
   _sfxEnabled = !!on;
-  try { localStorage.setItem("memzy_sfx", on ? "1" : "0"); } catch (e) {}
+  try { localStorage.setItem("oosta_sfx", on ? "1" : "0"); } catch (e) {}
 }
 function setCelebEnabled(on) {
   _celebEnabled = !!on;
-  try { localStorage.setItem("memzy_celeb_sfx", on ? "1" : "0"); } catch (e) {}
+  try { localStorage.setItem("oosta_celeb_sfx", on ? "1" : "0"); } catch (e) {}
 }
 /* Voice playback speed, persisted. Applied to the cloud-TTS <audio> element via
    playbackRate (pitch preserved so it never sounds chipmunky) and to the Web
    Speech fallback via utterance.rate. 1 = normal. */
 var _voiceSpeed = 1;
-try { var _vs0 = parseFloat(localStorage.getItem("memzy_voice_speed")); if (_vs0 >= 0.5 && _vs0 <= 2) _voiceSpeed = _vs0; } catch (e) {}
+try { var _vs0 = parseFloat(localStorage.getItem("oosta_voice_speed")); if (_vs0 >= 0.5 && _vs0 <= 2) _voiceSpeed = _vs0; } catch (e) {}
 function setVoiceSpeed(v) {
   v = parseFloat(v); if (!(v >= 0.5 && v <= 2)) v = 1;
   _voiceSpeed = v;
-  try { localStorage.setItem("memzy_voice_speed", String(v)); } catch (e) {}
+  try { localStorage.setItem("oosta_voice_speed", String(v)); } catch (e) {}
   try { if (_au) _applyVoiceRate(_au); } catch (e) {}
 }
 function _applyVoiceRate(a) {
@@ -1448,10 +1448,10 @@ function buildHistory() {
 /* Streak end-screen "shown today" flag — scoped PER USER so switching
    accounts in the same browser doesn't suppress the page for the other user */
 function streakShownKey(userId) {
-  return "memzy_streak_shown_" + (userId || "anon") + "_" + new Date().toDateString();
+  return "oosta_streak_shown_" + (userId || "anon") + "_" + new Date().toDateString();
 }
 /* Per-user log of every point grant: when + how many + for what */
-function pointLogKey(userId) { return "memzy_point_log_" + (userId || "anon"); }
+function pointLogKey(userId) { return "oosta_point_log_" + (userId || "anon"); }
 function logPointEvent(userId, pts, reason) {
   try {
     var k = pointLogKey(userId);
@@ -2139,7 +2139,7 @@ function App() {
   var _useState9 = useState(function() {
       /* Restore the last active tab so a refresh doesn't jump back to Home */
       try {
-        var t = localStorage.getItem("memzy_tab");
+        var t = localStorage.getItem("oosta_tab");
         return ["dashboard", "mywords", "friends", "profile"].includes(t) ? t : "dashboard";
       } catch (e) { return "dashboard"; }
     }),
@@ -2147,7 +2147,7 @@ function App() {
     tab = _useState0[0],
     _setTab = _useState0[1];
   var _useState1 = useState(function() {
-      var saved = localStorage.getItem("memzy_lang");
+      var saved = localStorage.getItem("oosta_lang");
       return saved ? [saved] : [];
     }),
     _useState10 = _slicedToArray(_useState1, 2),
@@ -2195,9 +2195,9 @@ function App() {
     setGlobalHistory = _useState_gh2[1];
   var _useState25 = useState(function() {
       var sfxOn = true, celebOn = true, vSpeed = 1;
-      try { sfxOn = localStorage.getItem("memzy_sfx") !== "0"; } catch (e) {}
-      try { celebOn = localStorage.getItem("memzy_celeb_sfx") !== "0"; } catch (e) {}
-      try { var pv = parseFloat(localStorage.getItem("memzy_voice_speed")); if (pv >= 0.5 && pv <= 2) vSpeed = pv; } catch (e) {}
+      try { sfxOn = localStorage.getItem("oosta_sfx") !== "0"; } catch (e) {}
+      try { celebOn = localStorage.getItem("oosta_celeb_sfx") !== "0"; } catch (e) {}
+      try { var pv = parseFloat(localStorage.getItem("oosta_voice_speed")); if (pv >= 0.5 && pv <= 2) vSpeed = pv; } catch (e) {}
       return {
         autoSpeak: false,
         onlyUnknown: true,
@@ -2237,7 +2237,7 @@ function App() {
   var _useState_ncard = useState(null), noteCard = _useState_ncard[0], setNoteCard = _useState_ncard[1];
   var _useState_ndraft = useState(""), noteDraft = _useState_ndraft[0], setNoteDraft = _useState_ndraft[1];
   var _useState_nbusy = useState(false), noteBusy = _useState_nbusy[0], setNoteBusy = _useState_nbusy[1];
-  var _cardNotesKey = function _cardNotesKey(uid) { return "memzy_card_notes_" + (uid || "anon"); };
+  var _cardNotesKey = function _cardNotesKey(uid) { return "oosta_card_notes_" + (uid || "anon"); };
   useEffect(function () {
     var uid = user && user.id;
     if (!uid) return;
@@ -2280,7 +2280,7 @@ function App() {
   var _isIOSDevice = /iphone|ipad|ipod/i.test((typeof navigator !== "undefined" && navigator.userAgent) || "");
   useEffect(function () {
     var onBip = function onBip(e) { e.preventDefault(); installEvtRef.current = e; };
-    var onInstalled = function onInstalled() { try { localStorage.setItem("memzy_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
+    var onInstalled = function onInstalled() { try { localStorage.setItem("oosta_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
     window.addEventListener("beforeinstallprompt", onBip);
     window.addEventListener("appinstalled", onInstalled);
     return function () { window.removeEventListener("beforeinstallprompt", onBip); window.removeEventListener("appinstalled", onInstalled); };
@@ -2290,12 +2290,12 @@ function App() {
     var standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
     if (standalone) return;
     var dismissed = false;
-    try { dismissed = !!localStorage.getItem("memzy_a2hs_done"); } catch (e) {}
+    try { dismissed = !!localStorage.getItem("oosta_a2hs_done"); } catch (e) {}
     if (dismissed) return;
     var t = setTimeout(function () { a2hsShownRef.current = true; setShowInstall(true); }, 1800);
     return function () { clearTimeout(t); };
   }, [screen]);
-  var dismissInstall = function dismissInstall() { try { localStorage.setItem("memzy_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
+  var dismissInstall = function dismissInstall() { try { localStorage.setItem("oosta_a2hs_done", "1"); } catch (e) {} setShowInstall(false); };
   var doInstall = function doInstall() {
     var e = installEvtRef.current;
     if (e && e.prompt) { try { e.prompt(); } catch (er) {} if (e.userChoice && e.userChoice.then) { e.userChoice.then(function () { installEvtRef.current = null; dismissInstall(); }); } else { dismissInstall(); } }
@@ -2380,7 +2380,7 @@ function App() {
   /* bumped when the Decks tab is re-tapped — pops MyFlashcardsPage to its root */
   var _useState_dreset = useState(0), _useState_dreset2 = _slicedToArray(_useState_dreset, 2), deckResetKey = _useState_dreset2[0], setDeckResetKey = _useState_dreset2[1];
   var _useState_customDecks = useState(function () {
-    try { return JSON.parse(localStorage.getItem("memzy_custom_decks") || "[]"); } catch (e) { return []; }
+    try { return JSON.parse(localStorage.getItem("oosta_custom_decks") || "[]"); } catch (e) { return []; }
   }), _useState_customDecks2 = _slicedToArray(_useState_customDecks, 2), customDecks = _useState_customDecks2[0], setCustomDecks = _useState_customDecks2[1];
   /* Non-null = a request for the Home path to scroll to the current chapter +
      open its bubble (Home tab re-tap, and "Take me there" from a locked deck).
@@ -2389,10 +2389,10 @@ function App() {
   var _useState_homeJump = useState(null), _useState_homeJump2 = _slicedToArray(_useState_homeJump, 2),
     homeJump = _useState_homeJump2[0], setHomeJump = _useState_homeJump2[1];
   useEffect(function () {
-    try { localStorage.setItem("memzy_custom_decks", JSON.stringify(customDecks)); } catch (e) {}
+    try { localStorage.setItem("oosta_custom_decks", JSON.stringify(customDecks)); } catch (e) {}
   }, [customDecks]);
   useEffect(function () {
-    try { localStorage.setItem("memzy_tab", tab); } catch (e) {}
+    try { localStorage.setItem("oosta_tab", tab); } catch (e) {}
   }, [tab]);
   var dayStreak = useMemo(function () {
     return calcStreak(globalHistory);
@@ -2554,7 +2554,7 @@ function App() {
   useEffect(function() {
     selectedLangsRef.current = selectedLangs;
     if (selectedLangs && selectedLangs.length > 0) {
-      localStorage.setItem("memzy_lang", selectedLangs[0]);
+      localStorage.setItem("oosta_lang", selectedLangs[0]);
     }
   }, [selectedLangs]);
   var lastSeenHeartsAtRef = useRef(null);
@@ -2575,7 +2575,7 @@ function App() {
   /* Custom cards live only in allCards, which initData replaces on every
      language switch/reload — so persist them separately and re-merge them
      back into allCards (filtered by language) whenever words are applied. */
-  var CUSTOM_CARDS_KEY = "memzy_custom_cards";
+  var CUSTOM_CARDS_KEY = "oosta_custom_cards";
   var loadCustomCardsLS = function loadCustomCardsLS() {
     try { var a = JSON.parse(localStorage.getItem(CUSTOM_CARDS_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   };
@@ -2596,7 +2596,7 @@ function App() {
       var table = lang === "fa" ? "words_fa" : "words";
       /* Instant load from cache (only if it holds real data), then refresh from
          the network in the background. Never cache or apply an empty list. */
-      var cacheKey = "memzy_words_" + lang;
+      var cacheKey = "oosta_words_" + lang;
       var servedFromCache = false;
       try {
         var cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
@@ -2722,9 +2722,9 @@ function App() {
   };
   var _useState_ob = useState(function () {
     try {
-      return { flip: localStorage.getItem("memzy_ob_flip") !== "1",
-               swipe: localStorage.getItem("memzy_ob_swipe") !== "1",
-               left: localStorage.getItem("memzy_ob_left") !== "1" };
+      return { flip: localStorage.getItem("oosta_ob_flip") !== "1",
+               swipe: localStorage.getItem("oosta_ob_swipe") !== "1",
+               left: localStorage.getItem("oosta_ob_left") !== "1" };
     } catch (e) { return { flip: true, swipe: true, left: true }; }
   }),
     _useState_ob2 = _slicedToArray(_useState_ob, 2),
@@ -2743,7 +2743,7 @@ function App() {
       if (!o[key]) return o;
       var n = _objectSpread({}, o); n[key] = false; return n;
     });
-    if (!_isTestUser()) { try { localStorage.setItem("memzy_ob_" + key, "1"); } catch (e) {} }
+    if (!_isTestUser()) { try { localStorage.setItem("oosta_ob_" + key, "1"); } catch (e) {} }
   };
   /* Flip hint clears the instant the user flips their first card. */
   useEffect(function () {
@@ -2992,9 +2992,9 @@ function App() {
   /* (Re)schedule the on-device daily streak reminder whenever practice history
      changes — covers app launch and end-of-session. No-op on web. */
   useEffect(function () {
-    if (typeof window.__memzyRescheduleReminders !== "function") return;
+    if (typeof window.__oostaRescheduleReminders !== "function") return;
     var last = globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null;
-    window.__memzyRescheduleReminders(isActiveDay(last));
+    window.__oostaRescheduleReminders(isActiveDay(last));
   }, [globalHistory]);
   useEffect(function () {
     if (screen === "deck" && queue.length > 0 && deckSettings.autoSpeak && !flipped) {
@@ -3016,7 +3016,7 @@ function App() {
     });
   }, [screen, (_queue$b = queue[0]) === null || _queue$b === void 0 ? void 0 : _queue$b.id, (_queue$c = queue[1]) === null || _queue$c === void 0 ? void 0 : _queue$c.id]);
   var commitSwipe = function commitSwipe(dir) {
-    if (typeof window.__memzyHaptic === "function") window.__memzyHaptic(dir === "right" ? "medium" : "light");
+    if (typeof window.__oostaHaptic === "function") window.__oostaHaptic(dir === "right" ? "medium" : "light");
     setQueue(function (q) {
       if (!q.length) return q;
       var top = q[0],
@@ -3189,18 +3189,18 @@ function App() {
             name: p ? cap(p.display_name) : cap(u.email.split("@")[0]),
             avatar: p ? p.avatar_emoji : "🐣", supaUser: u };
           setUser(restoredUser);
-          var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
+          var lang = (p && p.last_language) || localStorage.getItem("oosta_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
           loadGlobalProgressFromDB(u.id, setGlobalHistory);
           fetchAllLangPoints(u.id);
-          if ((p && p.last_language) || localStorage.getItem("memzy_lang")) {
+          if ((p && p.last_language) || localStorage.getItem("oosta_lang")) {
             /* Returning user with language set — go to app */
             initData([lang], "A1").then(function() {
               applyLearnedState(u.id, lang);
               loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
               loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-              /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("memzy_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
+              /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("oosta_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
               restorePosition(u.id, lang);
               /* Save lang to profile so future loads use Supabase */
               supabase.from("profiles").update({ last_language: lang }).eq("id", u.id).then(function(){});
@@ -3231,8 +3231,8 @@ function App() {
     /* Native recovery deep links can't put params on window.location, so the
        Capacitor auth bridge flags recovery via storage before reloading. */
     var nativeRecovery = false;
-    try { nativeRecovery = localStorage.getItem("memzy_recovery_pending") === "1"; } catch (e) {}
-    if (nativeRecovery) { try { localStorage.removeItem("memzy_recovery_pending"); } catch (e) {} }
+    try { nativeRecovery = localStorage.getItem("oosta_recovery_pending") === "1"; } catch (e) {}
+    if (nativeRecovery) { try { localStorage.removeItem("oosta_recovery_pending"); } catch (e) {} }
     if (urlAll.indexOf("type=recovery") !== -1 || nativeRecovery) {
       var waitForSession = function waitForSession(tries) {
         supabase.auth.getSession().then(function (r) {
@@ -3379,7 +3379,7 @@ function App() {
   /* Auto-save unlockedLevels */
   useEffect(function() {
     if (userRef.current && userRef.current.id && unlockedLevels && unlockedLevels.length > 0) {
-      try { localStorage.setItem("memzy_exam_levels", JSON.stringify(unlockedLevels)); } catch (e) {}
+      try { localStorage.setItem("oosta_exam_levels", JSON.stringify(unlockedLevels)); } catch (e) {}
       supabase.from("profiles").update({ unlocked_levels: JSON.stringify(unlockedLevels) }).eq("id", userRef.current.id).then(function(){});
     }
   }, [unlockedLevels]);
@@ -3491,7 +3491,7 @@ function App() {
       if (u._loadProgress) {
         supabase.from("profiles").select("*").eq("id", u.id).single().then(function(res) {
           var p = res.data;
-          var lang = (p && p.last_language) || localStorage.getItem("memzy_lang") || "de";
+          var lang = (p && p.last_language) || localStorage.getItem("oosta_lang") || "de";
           setSelectedLangs([lang]);
           loadProgressFromDB(u.id, lang, setHistory);
           loadGlobalProgressFromDB(u.id, setGlobalHistory);
@@ -3500,7 +3500,7 @@ function App() {
             applyLearnedState(u.id, lang);
             loadCardIds(u.id, lang, "__markedids__", function(ids) { if (ids.length) setMarkedIds(ids); });
             loadCardIds(u.id, lang, "__reviewids__", function(ids) { if (ids.length) setReviewIds(ids); });
-            /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("memzy_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
+            /* unlocked_levels now means EXAM-passed levels only; legacy rows from the old level system are ignored */ try { var ul = JSON.parse(localStorage.getItem("oosta_exam_levels") || "[]"); setUnlockedLevels(["A1"].concat(ul.filter(function (x) { return x !== "A1"; }))); } catch (e) {}
             loadPosition(u.id, lang, function(pos) { setCurLevel(pos.lv); setCurChapter(pos.ch); });
             setScreen("app");
           });
@@ -3691,10 +3691,10 @@ function App() {
                  Only levels they later unlock by passing an exam grant rewards.
                  Dashboard reads these from localStorage when it mounts. */
               try {
-                var _lc = JSON.parse(localStorage.getItem("memzy_level_claims") || "[]");
+                var _lc = JSON.parse(localStorage.getItem("oosta_level_claims") || "[]");
                 _upto.forEach(function (L) { if (LEVEL_CLAIM_POINTS[L] && _lc.indexOf(L) === -1) _lc.push(L); });
-                localStorage.setItem("memzy_level_claims", JSON.stringify(_lc));
-                var _guKey = "memzy_gifts_used_" + ((user && user.id) || "anon");
+                localStorage.setItem("oosta_level_claims", JSON.stringify(_lc));
+                var _guKey = "oosta_gifts_used_" + ((user && user.id) || "anon");
                 var _gu = JSON.parse(localStorage.getItem(_guKey) || "[]");
                 _upto.forEach(function (L) { if (_gu.indexOf(L + ":gift1") === -1) _gu.push(L + ":gift1"); });
                 localStorage.setItem(_guKey, JSON.stringify(_gu));
@@ -4999,9 +4999,9 @@ function AuthScreen(_ref16) {
     }
   };
   var oauthSignIn = function oauthSignIn(provider, queryParams) {
-    var opts = { provider: provider, options: { redirectTo: window.__MEMZY_AUTH_REDIRECT } };
+    var opts = { provider: provider, options: { redirectTo: window.__OOSTA_AUTH_REDIRECT } };
     if (queryParams) opts.options.queryParams = queryParams;
-    if (window.__MEMZY_NATIVE) {
+    if (window.__OOSTA_NATIVE) {
       /* Don't navigate the webview away — open the OAuth page in the system
          browser and let the appUrlOpen deep-link handler complete sign-in. */
       opts.options.skipBrowserRedirect = true;
@@ -5018,7 +5018,7 @@ function AuthScreen(_ref16) {
   var forgot = function forgot() {
     if (!email.includes("@")) { setAuthMsg(""); setAuthError("Enter your email above first."); return; }
     setAuthError(""); setAuthMsg("Sending reset link\u2026");
-    supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.__MEMZY_RECOVERY_REDIRECT })
+    supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.__OOSTA_RECOVERY_REDIRECT })
       .then(function (res) {
         if (res.error) { setAuthMsg(""); setAuthError(res.error.message); }
         else setAuthMsg("Reset link sent \u2014 check your email.");
@@ -6328,9 +6328,9 @@ function Dashboard(_ref27) {
     showLangSwitcher = _useState_langSwitcher2[0], setShowLangSwitcher = _useState_langSwitcher2[1];
   /* "Chapter has faded" banner — navigational, dismissible per day so it
      gently returns while faded chapters remain */
-  var rechargeIntroKey = "memzy_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString();
+  var rechargeIntroKey = "oosta_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString();
   var _useState_rIntro = useState(function () {
-    try { return localStorage.getItem("memzy_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString()) === "1"; } catch (e) { return false; }
+    try { return localStorage.getItem("oosta_rewind_banner_" + ((user && user.id) || "anon") + "_" + new Date().toDateString()) === "1"; } catch (e) { return false; }
   }), _useState_rIntro2 = _slicedToArray(_useState_rIntro, 2),
     rechargeIntroSeen = _useState_rIntro2[0], setRechargeIntroSeen = _useState_rIntro2[1];
   var dismissRechargeIntro = function dismissRechargeIntro() {
@@ -6368,7 +6368,7 @@ function Dashboard(_ref27) {
   /* First-ever home visit: auto-open the starting chapter's bubble and scroll
      to it, so a new user immediately sees where to begin. Shown once per user. */
   useEffect(function () {
-    var key = "memzy_home_intro_" + ((user && user.id) || "anon");
+    var key = "oosta_home_intro_" + ((user && user.id) || "anon");
     var seen = false;
     try { seen = localStorage.getItem(key) === "1"; } catch (e) {}
     if (seen) return;
@@ -6953,9 +6953,9 @@ function Dashboard(_ref27) {
     var iv = setInterval(function () { setBannerNow(Date.now()); }, 30000);
     return function () { clearInterval(iv); };
   }, []);
-  var rescueDismissKey = "memzy_rescue_dismissed_" + ((user && user.id) || "anon") + "_" + new Date(bannerNow).toDateString();
+  var rescueDismissKey = "oosta_rescue_dismissed_" + ((user && user.id) || "anon") + "_" + new Date(bannerNow).toDateString();
   var _useState_bDis = useState(function () {
-    try { return localStorage.getItem("memzy_rescue_dismissed_" + ((user && user.id) || "anon") + "_" + new Date().toDateString()) === "1"; } catch (e) { return false; }
+    try { return localStorage.getItem("oosta_rescue_dismissed_" + ((user && user.id) || "anon") + "_" + new Date().toDateString()) === "1"; } catch (e) { return false; }
   }), _useState_bDis2 = _slicedToArray(_useState_bDis, 2),
     rescueDismissed = _useState_bDis2[0], setRescueDismissed = _useState_bDis2[1];
   var dismissRescue = function dismissRescue() {
@@ -6996,7 +6996,7 @@ function Dashboard(_ref27) {
      a screen edge near the frontier, waits, and slides back out */
   /* Level unlock bonus + surprise gifts (both one-time, persisted) */
   var _useState_lc = useState(function () {
-    try { return JSON.parse(localStorage.getItem("memzy_level_claims") || "[]"); } catch (e) { return []; }
+    try { return JSON.parse(localStorage.getItem("oosta_level_claims") || "[]"); } catch (e) { return []; }
   }),
     _useState_lc2 = _slicedToArray(_useState_lc, 2),
     levelClaims = _useState_lc2[0],
@@ -7011,16 +7011,16 @@ function Dashboard(_ref27) {
     setClaimDone = _useState_cd2[1];
   /* Gift state is PER USER — a new account on the same device must start
      with all gifts unopened (the old global keys leaked across accounts) */
-  var giftsUsedKey = "memzy_gifts_used_" + ((user && user.id) || "anon");
-  var giftWonKey = "memzy_gift_prizes_" + ((user && user.id) || "anon");
+  var giftsUsedKey = "oosta_gifts_used_" + ((user && user.id) || "anon");
+  var giftWonKey = "oosta_gift_prizes_" + ((user && user.id) || "anon");
   var _useState_gu = useState(function () {
-    try { return JSON.parse(localStorage.getItem("memzy_gifts_used_" + ((user && user.id) || "anon")) || "[]"); } catch (e) { return []; }
+    try { return JSON.parse(localStorage.getItem("oosta_gifts_used_" + ((user && user.id) || "anon")) || "[]"); } catch (e) { return []; }
   }),
     _useState_gu2 = _slicedToArray(_useState_gu, 2),
     giftsUsed = _useState_gu2[0],
     setGiftsUsed = _useState_gu2[1];
   var _useState_gw = useState(function () {
-    try { return JSON.parse(localStorage.getItem("memzy_gift_prizes_" + ((user && user.id) || "anon")) || "{}"); } catch (e) { return {}; }
+    try { return JSON.parse(localStorage.getItem("oosta_gift_prizes_" + ((user && user.id) || "anon")) || "{}"); } catch (e) { return {}; }
   }),
     _useState_gw2 = _slicedToArray(_useState_gw, 2),
     giftWon = _useState_gw2[0],
@@ -7573,7 +7573,7 @@ function Dashboard(_ref27) {
                   if (onBonusPoints) onBonusPoints(n, "Level reward \u00b7 " + claimLv);
                   var next = levelClaims.concat([claimLv]);
                   setLevelClaims(next);
-                  try { localStorage.setItem("memzy_level_claims", JSON.stringify(next)); } catch (e) {}
+                  try { localStorage.setItem("oosta_level_claims", JSON.stringify(next)); } catch (e) {}
                   setClaimDone(true);
                 },
                 glow: true
@@ -11366,7 +11366,7 @@ function ProfilePage(_ref42) {
     settingsPage = _useState_ss2[0],
     setSettingsPage = _useState_ss2[1];
   var _useState_sx = useState(function () {
-    try { return localStorage.getItem("memzy_sfx") !== "0"; } catch (e) { return true; }
+    try { return localStorage.getItem("oosta_sfx") !== "0"; } catch (e) { return true; }
   }),
     _useState_sx2 = _slicedToArray(_useState_sx, 2),
     sfx = _useState_sx2[0],
@@ -11374,33 +11374,33 @@ function ProfilePage(_ref42) {
   var toggleSfx = function toggleSfx() {
     var v = !sfx;
     setSfx(v);
-    try { localStorage.setItem("memzy_sfx", v ? "1" : "0"); } catch (e) {}
+    try { localStorage.setItem("oosta_sfx", v ? "1" : "0"); } catch (e) {}
   };
-  /* Haptic feedback preference (mirrors memzy_sfx). Drives window.__memzyHaptic. */
+  /* Haptic feedback preference (mirrors oosta_sfx). Drives window.__oostaHaptic. */
   var _useState_hap = useState(function () {
-    try { return localStorage.getItem("memzy_haptics") !== "0"; } catch (e) { return true; }
+    try { return localStorage.getItem("oosta_haptics") !== "0"; } catch (e) { return true; }
   }),
     haptics = _useState_hap[0],
     setHaptics = _useState_hap[1];
   var toggleHaptics = function toggleHaptics(v) {
     setHaptics(v);
-    try { localStorage.setItem("memzy_haptics", v ? "1" : "0"); } catch (e) {}
-    if (v && typeof window.__memzyHaptic === "function") window.__memzyHaptic("light");
+    try { localStorage.setItem("oosta_haptics", v ? "1" : "0"); } catch (e) {}
+    if (v && typeof window.__oostaHaptic === "function") window.__oostaHaptic("light");
   };
-  /* Notification preferences — local for now; gate future push delivery. Mirrors memzy_sfx. */
+  /* Notification preferences — local for now; gate future push delivery. Mirrors oosta_sfx. */
   var _useState_notif = useState(function () {
     var read = function read(k) { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
-    return { reminders: read("memzy_notif_reminders"), friends: read("memzy_notif_friends"), leaderboard: read("memzy_notif_leaderboard"), announce: read("memzy_notif_announce") };
+    return { reminders: read("oosta_notif_reminders"), friends: read("oosta_notif_friends"), leaderboard: read("oosta_notif_leaderboard"), announce: read("oosta_notif_announce") };
   }),
     notif = _useState_notif[0],
     setNotif = _useState_notif[1];
   var setNotifPref = function setNotifPref(key, v) {
     setNotif(function (n) { var nn = Object.assign({}, n); nn[key] = v; return nn; });
-    try { localStorage.setItem("memzy_notif_" + key, v ? "1" : "0"); } catch (e) {}
+    try { localStorage.setItem("oosta_notif_" + key, v ? "1" : "0"); } catch (e) {}
     /* Toggling reminders schedules/cancels the on-device daily streak reminder. */
-    if (key === "reminders" && typeof window.__memzyRescheduleReminders === "function") {
+    if (key === "reminders" && typeof window.__oostaRescheduleReminders === "function") {
       var last = globalHistory && globalHistory.length ? globalHistory[globalHistory.length - 1] : null;
-      window.__memzyRescheduleReminders(isActiveDay(last));
+      window.__oostaRescheduleReminders(isActiveDay(last));
     }
   };
   /* Settings-page building blocks */
@@ -11546,7 +11546,7 @@ function ProfilePage(_ref42) {
             setShareMsg("Preparing…");
             text = "I'm learning languages with Oosta!\n⭐ " + allPoints + " points · 🔥 " + dayStreak + "-day streak\nJoin me at oosta.app!";
             _context0.n = 1;
-            return shareImage(cardRef.current, text, "memzy-profile.png", C.surface);
+            return shareImage(cardRef.current, text, "oosta-profile.png", C.surface);
           case 1:
             r = _context0.v;
             setShareMsg(r === "shared" ? "" : r === "downloaded" ? "Saved!" : "Couldn't share");
@@ -11681,12 +11681,12 @@ function ProfilePage(_ref42) {
           /* ── Privacy Policy / Terms of Use (embedded in-app) ── */
           (settingsPage === "privacy" || settingsPage === "terms") && /*#__PURE__*/React.createElement("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
             /*#__PURE__*/React.createElement("iframe", {
-              src: settingsPage === "privacy" ? window.MEMZY_PRIVACY_URL : window.MEMZY_TERMS_URL,
+              src: settingsPage === "privacy" ? window.OOSTA_PRIVACY_URL : window.OOSTA_TERMS_URL,
               title: settingsTitle,
               style: { flex: 1, width: "100%", border: "none", background: C.bg }
             }),
             /*#__PURE__*/React.createElement("button", {
-              onClick: function () { window.__memzyOpenURL(settingsPage === "privacy" ? window.MEMZY_PRIVACY_URL : window.MEMZY_TERMS_URL); },
+              onClick: function () { window.__oostaOpenURL(settingsPage === "privacy" ? window.OOSTA_PRIVACY_URL : window.OOSTA_TERMS_URL); },
               className: "press",
               style: { flexShrink: 0, border: "none", borderTop: "1px solid " + C.line, background: C.surface, color: C.sub, fontSize: 12.5, fontWeight: 600, padding: "12px", cursor: "pointer", fontFamily: FONT }
             }, "Open in browser")
@@ -12331,7 +12331,7 @@ function ExamComplete(_ref_ec) {
       ? "I just passed the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Oosta! \uD83C\uDF89 " + correct + "/" + total + " correct. oosta.app"
       : "Taking on the " + level + " \u00b7 " + LEVEL_LABEL[level] + " exam on Oosta \uD83D\uDCAA " + correct + "/" + total + ". oosta.app";
     setExamShareMsg("Preparing...");
-    Promise.resolve(shareImage(capRef.current, msg, "memzy-exam.png", passed ? "#EDFFF5" : "#FFF2F2")).then(function (r) {
+    Promise.resolve(shareImage(capRef.current, msg, "oosta-exam.png", passed ? "#EDFFF5" : "#FFF2F2")).then(function (r) {
       if (r !== "shared" && r !== "downloaded") {
         try {
           if (navigator.share) { navigator.share({ text: msg }).catch(function () {}); r = "shared"; }
@@ -12692,7 +12692,7 @@ function SessionComplete(_ref47) {
             setShareMsg("Preparing...");
             text = "Just finished a round in Oosta! " + points + " pts \u00B7 " + knownPct + "% known \u00B7 " + dayStreak + "-day streak. oosta.app";
             _context1.n = 1;
-            return shareImage(capRef.current, text, "memzy-result.png", C.bg);
+            return shareImage(capRef.current, text, "oosta-result.png", C.bg);
           case 1:
             r = _context1.v;
             if (r !== "shared" && r !== "downloaded") {
@@ -13260,10 +13260,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
   } catch (e) {}
   /* One-time: clear any empty/partial word cache saved by an earlier build. */
   try {
-    if (!localStorage.getItem('memzy_cache_fix_v1')) {
-      localStorage.removeItem('memzy_words_de');
-      localStorage.removeItem('memzy_words_fa');
-      localStorage.setItem('memzy_cache_fix_v1', '1');
+    if (!localStorage.getItem('oosta_cache_fix_v1')) {
+      localStorage.removeItem('oosta_words_de');
+      localStorage.removeItem('oosta_words_fa');
+      localStorage.setItem('oosta_cache_fix_v1', '1');
     }
   } catch (e) {}
 })();
