@@ -459,7 +459,12 @@ var NOTE_MAX = 120;
    derived from the chapter (45 cards → 3 rounds of 15) */
 var ROUNDS_PER_CHAPTER = 3;
 function roundSizeFor(total) { return Math.max(1, Math.ceil(total / ROUNDS_PER_CHAPTER)); }
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+/* LOCAL calendar day (YYYY-MM-DD). MUST be used for all streak/activity day-keys
+   instead of toISOString() (which is UTC) — otherwise a session just after local
+   midnight is recorded on the previous UTC day for users ahead of UTC, so the
+   streak doesn't advance and the calendar highlights the wrong day. */
+function localYMD(d) { d = d || new Date(); var m = d.getMonth() + 1, day = d.getDate(); return d.getFullYear() + "-" + (m < 10 ? "0" + m : m) + "-" + (day < 10 ? "0" + day : day); }
+function todayISO() { return localYMD(); }
 function wordExpired(v) {
   var dateStr = laDate(v);
   if (!dateStr) return false;
@@ -1442,7 +1447,7 @@ function buildHistory() {
        (Previously generated fake seeded demo points, shown as "random points".) */
     var pts = 0;
     out.push({
-      date: d.toISOString().slice(0, 10),
+      date: localYMD(d),
       label: DAY_NAMES[d.getDay()],
       dm: MONTHS[d.getMonth()] + " " + d.getDate(),
       points: pts,
@@ -2502,7 +2507,7 @@ function App() {
           total += r.score || 0;
           if (r.language) byLang[r.language] = (byLang[r.language] || 0) + (r.score || 0);
         });
-        var key = function key(x) { return x.toISOString().slice(0, 10); };
+        var key = function key(x) { return localYMD(x); };
         /* streak: consecutive active days ending today (or yesterday if today not yet played) */
         var streak = 0;
         var d = new Date();
@@ -2961,7 +2966,7 @@ function App() {
     var active = hadActivityRef.current;
     if (pts <= 0 && !active) return;
     if (pts > 0) logPointEvent(userRef.current && userRef.current.id, pts, reason || "Practice round");
-    var today = new Date().toISOString().slice(0,10);
+    var today = localYMD();
     var currentUser = userRef.current;
     var currentLangs = selectedLangsRef.current;
     setHistory(function(h) {
@@ -10348,7 +10353,7 @@ function FriendsPage(_ref37) {
       });
     /* Last week's points (Mon–Sun before the current week) from progress rows */
     (function () {
-      var key = function key(x) { return x.toISOString().slice(0, 10); };
+      var key = function key(x) { return localYMD(x); };
       var now = new Date();
       var mon = new Date(now); mon.setHours(0,0,0,0);
       mon.setDate(now.getDate() - ((now.getDay() + 6) % 7));
