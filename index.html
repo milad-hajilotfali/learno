@@ -52,6 +52,8 @@
     @keyframes obcardslide{0%,8%{transform:translateX(0) rotate(0)}20%{transform:translateX(-60px) rotate(-7deg)}34%{transform:translateX(0) rotate(0)}46%{transform:translateX(60px) rotate(7deg)}54%,100%{transform:translateX(0) rotate(0)}}
     @keyframes obcardtint{0%,10%{background:rgba(226,75,74,0)}20%{background:rgba(226,75,74,.5)}34%{background:rgba(0,0,0,0)}46%{background:rgba(29,158,117,.5)}54%,100%{background:rgba(29,158,117,0)}}
     @keyframes obcardflip{0%,22%{transform:perspective(800px) rotateY(0)}50%{transform:perspective(800px) rotateY(32deg)}78%,100%{transform:perspective(800px) rotateY(0)}}
+    @keyframes oblblL{0%,12%{opacity:0}20%{opacity:1}30%,100%{opacity:0}}
+    @keyframes oblblR{0%,38%{opacity:0}46%{opacity:1}54%,100%{opacity:0}}
     .fi{border-radius:4px;overflow:hidden;display:inline-block!important}
   </style>
 </head>
@@ -2743,7 +2745,7 @@ function App() {
   var _isTestUser = function _isTestUser() {
     var n = ((user && user.name) || "").toLowerCase();
     var e = ((user && user.email) || "").toLowerCase();
-    var ids = ["milad6", "milad7"];
+    var ids = ["milad6", "milad7", "milad15"];
     return ids.some(function (id) { return n === id || e.indexOf(id) === 0; });
   };
   /* Default to showing hints; the effect below loads the per-account seen-state. */
@@ -3880,7 +3882,7 @@ function App() {
     } : exitDir === "left" ? {
       c: C.red,
       o: 0.92,
-      t: "REVIEW"
+      t: "UNKNOWN"
     } : dragX > 0 ? {
       c: C.green,
       o: kh * 0.85,
@@ -3888,7 +3890,7 @@ function App() {
     } : dragX < 0 ? {
       c: C.red,
       o: rh * 0.85,
-      t: "REVIEW"
+      t: "UNKNOWN"
     } : {
       c: C.green,
       o: 0,
@@ -4252,7 +4254,11 @@ function App() {
         animation: _swipeDemo ? "obcardtint 6s ease-in-out infinite" : undefined,
         zIndex: 6
       }
-    }, tint.t && /*#__PURE__*/React.createElement("span", {
+    }, _swipeDemo
+      ? /*#__PURE__*/React.createElement(React.Fragment, null,
+          /*#__PURE__*/React.createElement("span", { style: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", color: "#fff", fontWeight: 900, fontSize: 32, letterSpacing: 4, fontFamily: FONT, textShadow: "0 2px 12px rgba(0,0,0,0.18)", whiteSpace: "nowrap", animation: "oblblL 6s ease-in-out infinite" } }, "UNKNOWN"),
+          /*#__PURE__*/React.createElement("span", { style: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", color: "#fff", fontWeight: 900, fontSize: 32, letterSpacing: 4, fontFamily: FONT, textShadow: "0 2px 12px rgba(0,0,0,0.18)", animation: "oblblR 6s ease-in-out infinite" } }, "KNOW"))
+      : (tint.t && /*#__PURE__*/React.createElement("span", {
       style: {
         color: "#fff",
         fontWeight: 900,
@@ -4261,7 +4267,7 @@ function App() {
         fontFamily: FONT,
         textShadow: "0 2px 12px rgba(0,0,0,0.18)"
       }
-    }, tint.t)))))), !sessionDone && /*#__PURE__*/React.createElement("div", {
+    }, tint.t))))))), !sessionDone && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: "10px 24px",
         paddingBottom: "calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))",
@@ -5584,11 +5590,7 @@ function CardBack(_ref22) {
       alignItems: "center",
       gap: 5
     }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "circle-info",
-    size: 12,
-    color: C.sub
-  }), card.note)),
+  }, card.note)),
   onEditNote && /*#__PURE__*/React.createElement("button", {
     onPointerDown: stop,
     onClick: function onClick(e) { stop(e); onEditNote(); },
@@ -5687,7 +5689,7 @@ function FlashcardModal(_ref23) {
   } : exitDir === "left" ? {
     c: C.red,
     o: 0.9,
-    t: "REVIEW"
+    t: "UNKNOWN"
   } : dragX > 0 ? {
     c: C.green,
     o: kh * 0.85,
@@ -5695,7 +5697,7 @@ function FlashcardModal(_ref23) {
   } : dragX < 0 ? {
     c: C.red,
     o: rh * 0.85,
-    t: "REVIEW"
+    t: "UNKNOWN"
   } : {
     c: C.green,
     o: 0,
