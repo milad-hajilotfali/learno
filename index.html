@@ -7294,7 +7294,7 @@ function Dashboard(_ref27) {
   }, /*#__PURE__*/React.createElement(Avatar, {
     seed: user && user.avatar,
     size: 46,
-    ring: C.primary
+    ring: isPlus ? "#F5C24A" : C.primary
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -7317,9 +7317,7 @@ function Dashboard(_ref27) {
       overflow: "hidden",
       textOverflow: "ellipsis"
     }
-  }, cap(user && user.name || "there"), " \uD83D\uDC4B",
-    isPlus && /*#__PURE__*/React.createElement("span", { title: "Oosta Plus", style: { display: "inline-flex", verticalAlign: "middle", marginLeft: 7, width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px " + C.primary + "55" } }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: "#FFD56A" }))
-  )), /*#__PURE__*/React.createElement("div", {
+  }, cap(user && user.name || "there"), " \uD83D\uDC4B")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -12051,15 +12049,16 @@ function ProfilePage(_ref42) {
       /*#__PURE__*/React.createElement("div", {
         style: { fontSize: 21, fontWeight: 800, color: C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }
       }, cap(user && user.name || "You")),
-      isPlus && /*#__PURE__*/React.createElement("div", {
-        style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.primarySoft, border: "1px solid " + C.primary + "55", color: C.primary, fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: C.primary }), "Oosta Plus"),
       (function () {
         var b = badgeFor(allPoints);
-        if (!b) return null;
-        return /*#__PURE__*/React.createElement("div", {
-          style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
-        }, /*#__PURE__*/React.createElement(Icon, { name: b.icon, size: 11, color: "#B45309" }), b.name);
+        if (!isPlus && !b) return null;
+        return /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+          isPlus && /*#__PURE__*/React.createElement("div", {
+            style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.primarySoft, border: "1px solid " + C.primary + "55", color: C.primary, fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: C.primary }), "Oosta Plus"),
+          b && /*#__PURE__*/React.createElement("div", {
+            style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.amber + "1A", border: "1px solid " + C.amber + "44", color: "#B45309", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
+          }, /*#__PURE__*/React.createElement(Icon, { name: b.icon, size: 11, color: "#B45309" }), b.name));
       })()
     )
   ),
