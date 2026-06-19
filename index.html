@@ -9371,10 +9371,7 @@ function MyFlashcardsPage(_ref31) {
     ),
     /* ── Oosta Plus Collection — premium, locked for free users ── */
     /*#__PURE__*/React.createElement("div", null,
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10 } },
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: isPlus ? C.primary : C.sub, textTransform: "uppercase", letterSpacing: 0.8 } }, "Special Collection"),
-        isPlus && /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.primary, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 7, padding: "2px 7px", letterSpacing: 0.3 } },
-          /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 8, color: "#FFD56A" }), "UNLOCKED")),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 } }, "Special Collection"),
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
         [
           { label: "Tehroon slang", chapter: "tehroon_slang", count: 50, icon: "comments", c: 0 },
@@ -9394,7 +9391,7 @@ function MyFlashcardsPage(_ref31) {
             key: d.label, label: d.label,
             sublabel: isPlus ? null : "+" + d.count + " cards",
             count: realCount, doneCount: realDone,
-            colorObj: col, icon: d.icon, badge: true,
+            colorObj: col, icon: d.icon, badge: !isPlus,
             onClick: isPlus
               ? function onClick() { setDeckScreen({ type: "plusDeck", chapter: d.chapter, chapterTitle: d.label, icon: d.icon, colorIdx: d.c }); setQ(""); }
               : function onClick() { setShowPlusPaywall(true); }
@@ -12043,7 +12040,6 @@ function ProfilePage(_ref42) {
         borderRadius: "50%",
         objectFit: "cover",
         border: "4px solid " + (isPlus ? "#F5C24A" : C.primarySoft),
-        boxShadow: isPlus ? "0 0 0 2px #fff, 0 0 0 5px #F5C24A88" : "none",
         display: "block"
       }
     }),
@@ -12056,8 +12052,8 @@ function ProfilePage(_ref42) {
         style: { fontSize: 21, fontWeight: 800, color: C.ink, letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }
       }, cap(user && user.name || "You")),
       isPlus && /*#__PURE__*/React.createElement("div", {
-        style: { display: "inline-flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg," + C.primary + ",#8B73F0)", color: "#fff", fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 11px", boxShadow: "0 4px 12px " + C.primary + "40" }
-      }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: "#FFD56A" }), "Oosta Plus"),
+        style: { display: "inline-flex", alignItems: "center", gap: 6, background: C.primarySoft, border: "1px solid " + C.primary + "55", color: C.primary, fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "4px 10px" }
+      }, /*#__PURE__*/React.createElement(Icon, { name: "crown", size: 11, color: C.primary }), "Oosta Plus"),
       (function () {
         var b = badgeFor(allPoints);
         if (!b) return null;
